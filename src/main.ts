@@ -167,9 +167,8 @@ game.cb.onPhase = (p: RunPhase) => {
 };
 
 function controlsHint() {
-  if (input.mode === 'tilt') return 'Tilt to steer · flick back to jump · tilt forward for magnet';
-  if (input.mode === 'touch') return 'Drag to steer · tap to jump · press & hold for magnet';
-  return '← → steer · Space jump · Shift magnet · ↑/↓ or swipe = propulsion';
+  if (input.mode === 'tilt') return 'Tilt left/right to steer · tilt the top toward you to jump · tilt it away for the magnet';
+  return '← → steer · Space jump · Shift magnet · ↑/↓ propulsion (desktop testing)';
 }
 
 // ----- Pause -----
@@ -252,28 +251,34 @@ game.cb.onPreviewEnd = () => {
   game.load(detailCourse, 'preview'); // loop the preview
 };
 
-// ----- Controls onboarding -----
+// ----- Tilt setup (touch devices). Gutterball is played by tilting only. -----
 const controls = el('div', 'passthrough');
 addScreen('controls', controls);
 let pendingPlay: CourseEntry | null = null;
-function askControls(c: CourseEntry) {
+const isTouchDevice = () => matchMedia('(pointer: coarse)').matches;
+function showTiltSetup(c: CourseEntry, failed: boolean) {
   pendingPlay = c;
-  const coarse = matchMedia('(pointer: coarse)').matches;
+  const framed = window.top !== window.self;
   controls.innerHTML = `
     <div class="sheet">
       <div class="grab"></div>
-      <h3>How do you want to roll?</h3>
-      <p class="sub">${coarse ? 'Tilt is the intended way to play: hold the phone naturally — that pose becomes "neutral".' : 'On a computer, use the keyboard.'}</p>
+      <h3>${failed ? 'Tilt sensors are off' : 'Steer by tilting'}</h3>
+      <p class="sub">${failed
+        ? (framed
+          ? 'This page is running inside a preview frame that blocks the motion sensors, so tilt cannot work here. Open the game\'s own web link in Safari instead.'
+          : 'The game needs motion access to steer. Tap "Enable tilt" and choose Allow. If you chose Don\'t Allow earlier, close this tab, reopen the game link in Safari, and allow it when asked.')
+        : 'Hold the device comfortably — that position becomes neutral when you launch.'}</p>
       <div class="card">
-        <div class="kv"><span>Steer</span><span>${coarse ? 'tilt left / right' : '← →'}</span></div>
-        <div class="kv"><span>Jump</span><span>${coarse ? 'flick top toward you' : 'Space'}</span></div>
-        <div class="kv"><span>Magnet</span><span>${coarse ? 'tilt top away, hold' : 'Shift (hold)'}</span></div>
-        <div class="kv"><span>Propulsion</span><span>${coarse ? 'swipe up / down' : '↑ / ↓'}</span></div>
+        <div class="kv"><span>Steer</span><span>tilt left / right</span></div>
+        <div class="kv"><span>Jump</span><span>tilt the top toward you</span></div>
+        <div class="kv"><span>Magnet tractor beam</span><span>tilt the top away, hold</span></div>
+        <div class="kv"><span>Launch / propulsion</span><span>swipe up / down</span></div>
       </div>
       <div class="row" style="flex-direction:column">
-        ${coarse ? `<button class="btn primary" data-act="useTilt">Use tilt controls</button><button class="btn" data-act="useTouch">Use touch controls instead</button>` : `<button class="btn primary" data-act="useKeys">Start</button>`}
+        <button class="btn primary" data-act="useTilt">${failed ? 'Try again' : 'Enable tilt and play'}</button>
+        <button class="btn" data-act="menu">Back</button>
       </div>
-      <div class="note">Touch controls: drag to steer, tap to jump, press &amp; hold for magnet, swipe up/down for propulsion. You can switch any time in Settings.</div>
+      <div class="note">Tip: turn on Rotation Lock in Control Center so the screen never rotates while you steer.</div>
     </div>`;
   show('controls');
 }
@@ -283,7 +288,7 @@ async function startPlay(c: CourseEntry) {
   game.load(c, 'play');
   $('.launch .sub2', hud).textContent = controlsHint();
   show('hud');
-  game.cb.onHint?.(input.mode === 'tilt' ? 'Hold the phone comfortably — that pose is neutral' : 'Swipe up (or press ↑) to launch');
+  game.cb.onHint?.(input.mode === 'tilt' ? 'Hold the device comfortably, then swipe up to launch' : 'Press ↑ to launch');
 }
 
 // ----- Ad Room -----
@@ -395,7 +400,7 @@ function renderSettings() {
   settingsEl.innerHTML = `
     <div class="panel-head"><button class="back" data-act="settingsBack">←</button><h2>Settings</h2></div>
     <div class="card"><h4>Controls</h4>
-      <label class="set"><span>Mode</span><select data-set="mode"><option value="tilt" ${input.mode === 'tilt' ? 'selected' : ''}>Tilt</option><option value="touch" ${input.mode === 'touch' ? 'selected' : ''}>Touch</option><option value="keyboard" ${input.mode === 'keyboard' ? 'selected' : ''}>Keyboard</option></select></label>
+      <label class="set"><span>Mode</span><select data-set="mode"><option value="tilt" ${input.mode === 'tilt' ? 'selected' : ''}>Tilt</option><option value="keyboard" ${input.mode === 'keyboard' ? 'selected' : ''}>Keyboard (desktop)</option></select></label>
       <label class="set"><span>Steering sensitivity <span class="note sens-val" style="display:inline">(full lock at ${(s.maxTilt / s.sensitivity).toFixed(0)}°)</span></span><input id="set-sens" type="range" min="0.5" max="3" step="0.05" value="${s.sensitivity}" data-set="sensitivity"></label>
       <label class="set"><span>Tilt dead zone</span><input id="set-dz" type="range" min="0" max="5" step="0.25" value="${s.deadzone}" data-set="deadzone"></label>
       <label class="set"><span>Keep view steady if the screen rotates</span><input id="set-keep" class="toggle" type="checkbox" ${s.keepView ? 'checked' : ''} data-set="keepView"></label>
@@ -454,7 +459,7 @@ function applySettings() {
   // Settings saved by the first build used much less sensitive tilt defaults; drop them
   if (settings.input && settings.input.keepView === undefined) settings.input = undefined;
   if (settings.input) input.settings = { ...input.settings, ...settings.input };
-  if (settings.mode && settings.mode !== 'tilt') input.mode = settings.mode;
+  if (settings.mode === 'keyboard' && !matchMedia('(pointer: coarse)').matches) input.mode = 'keyboard';
   haptics.enabled = settings.haptics;
   haptics.intensity = settings.hapticStrength;
   audio.setVolume(settings.volume);
@@ -478,21 +483,17 @@ ui.addEventListener('click', async (e) => {
     case 'play': {
       const c = courseById(id!);
       if (!entitlements.isEntitled(c.id)) { openDetail(c); break; }
-      if (!localStorage.getItem('gb.controlsChosen')) askControls(c); else {
-        if (input.mode === 'tilt' || (settings.mode === undefined && matchMedia('(pointer: coarse)').matches)) await input.requestSensors();
-        startPlay(c);
-      }
+      if (!isTouchDevice()) { input.mode = 'keyboard'; startPlay(c); break; }
+      // Touch device: tilt is required. Ask for motion access inside this tap (iOS rule).
+      if (await input.requestSensors()) startPlay(c);
+      else showTiltSetup(c, true);
       break;
     }
     case 'useTilt': {
-      const ok = await input.requestSensors();
-      if (!ok) { input.mode = 'touch'; toast('Tilt sensors unavailable — using touch controls'); }
-      localStorage.setItem('gb.controlsChosen', '1'); saveSettings();
-      startPlay(pendingPlay!);
+      if (await input.requestSensors()) startPlay(pendingPlay!);
+      else showTiltSetup(pendingPlay!, true);
       break;
     }
-    case 'useTouch': input.mode = 'touch'; localStorage.setItem('gb.controlsChosen', '1'); saveSettings(); startPlay(pendingPlay!); break;
-    case 'useKeys': input.mode = 'keyboard'; localStorage.setItem('gb.controlsChosen', '1'); saveSettings(); startPlay(pendingPlay!); break;
     case 'detail': openDetail(courseById(id!)); break;
     case 'closeDetail': goMenu(); break;
     case 'buy': {

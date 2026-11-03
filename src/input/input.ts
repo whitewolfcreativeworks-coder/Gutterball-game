@@ -2,8 +2,9 @@ import type { BallInput } from '../physics/ball';
 import { steerFromRoll, tiltFromGravity, wrap180 } from './tilt';
 
 /**
- * Input: device tilt + swipe gestures (primary), touch-drag (alternative and
- * accessibility) and keyboard (desktop testing).
+ * Input: device tilt (steer / jump / magnet) + swipe up/down (launch and
+ * propulsion). Keyboard exists only for desktop development. There are no
+ * on-screen or touch steering controls: Gutterball is a tilt game.
  *
  * Tilt is measured relative to a calibrated neutral pose, captured at launch
  * and on demand, so players can hold the phone however they like.
@@ -16,7 +17,7 @@ import { steerFromRoll, tiltFromGravity, wrap180 } from './tilt';
  * Jump requires a *flick* (fast change past a threshold) so ordinary slow
  * re-gripping doesn't trigger it; magnet uses a threshold with hysteresis.
  */
-export type InputMode = 'tilt' | 'touch' | 'keyboard';
+export type InputMode = 'tilt' | 'keyboard';
 
 export interface InputSettings {
   sensitivity: number;   // 0.5..3 (higher = less tilt for full steering)
@@ -73,9 +74,6 @@ export class InputManager {
   private magnetTilt = false;
   // touch
   private touchStart: { x: number; y: number; t: number; id: number } | null = null;
-  private touchSteer = 0;
-  private holdTimer: number | null = null;
-  private touchMagnet = false;
   enabled = true;
 
   constructor(private el: HTMLElement) {
@@ -89,7 +87,7 @@ export class InputManager {
     window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') this.onMouseUp(e); });
     window.addEventListener('deviceorientation', (e) => this.onOrientation(e));
     window.addEventListener('devicemotion', (e) => this.onMotion(e));
-    if (matchMedia('(pointer: coarse)').matches) this.mode = 'touch';
+    if (matchMedia('(pointer: coarse)').matches) this.mode = 'tilt';
   }
 
   /** Must be called from a user gesture on iOS. */
@@ -209,50 +207,26 @@ export class InputManager {
     if (lvl !== this.driveLevel) { this.driveLevel = lvl; this.onDriveChange?.(lvl); }
   }
 
+  // Touch is used only for swipe gestures (launch / propulsion). Taps do nothing.
   private onTouchStart(e: TouchEvent) {
     if (!this.enabled) return;
     e.preventDefault();
-    if (e.touches.length >= 2) { this.touchMagnet = true; return; }
     const t = e.changedTouches[0];
     this.touchStart = { x: t.clientX, y: t.clientY, t: performance.now(), id: t.identifier };
-    this.touchSteer = 0;
-    if (this.mode === 'touch') {
-      // long press = magnet (touch mode)
-      this.holdTimer = window.setTimeout(() => { this.touchMagnet = true; }, 260);
-    }
   }
-  private onTouchMove(e: TouchEvent) {
-    e.preventDefault();
-    if (!this.touchStart) return;
-    const t = Array.from(e.changedTouches).find((x) => x.identifier === this.touchStart!.id);
-    if (!t) return;
-    const [dx, dy] = this.rot(t.clientX - this.touchStart.x, t.clientY - this.touchStart.y);
-    if (Math.hypot(dx, dy) > 14 && this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
-    if (this.mode === 'touch') {
-      const w = Math.max(200, window.innerWidth * 0.35);
-      this.touchSteer = Math.max(-1, Math.min(1, dx / w));
-    }
-  }
+  private onTouchMove(e: TouchEvent) { e.preventDefault(); }
   private onTouchEnd(e: TouchEvent) {
     e.preventDefault();
-    if (e.touches.length < 2 && this.touchMagnet && !this.holdTimer) { /* release below */ }
-    if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
     const st = this.touchStart;
     if (st) {
       const t = Array.from(e.changedTouches).find((x) => x.identifier === st.id);
       if (t) {
         const [dx, dy] = this.rot(t.clientX - st.x, t.clientY - st.y);
         const dtm = performance.now() - st.t;
-        const vy = dy / Math.max(1, dtm);
-        if (Math.abs(dy) > 50 && Math.abs(dy) > Math.abs(dx) * 1.4 && Math.abs(vy) > 0.35 && dtm < 450) {
-          this.swipe(dy < 0 ? 1 : -1);
-        } else if (this.mode === 'touch' && Math.hypot(dx, dy) < 12 && dtm < 220 && !this.touchMagnet) {
-          // tap = jump in touch mode
-          this.jumpQueued = true;
-        }
+        if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < 600) this.swipe(dy < 0 ? 1 : -1);
       }
     }
-    if (e.touches.length === 0) { this.touchStart = null; this.touchSteer = 0; this.touchMagnet = false; }
+    if (e.touches.length === 0) this.touchStart = null;
   }
 
   /** Screen-space delta -> game-view delta when the view is counter-rotated. */
@@ -279,13 +253,11 @@ export class InputManager {
       steer = steerFromRoll(r, this.settings.deadzone, this.settings.maxTilt, this.settings.sensitivity);
       magnet = this.magnetTilt;
     }
-    if (this.mode === 'touch') { steer = this.touchSteer * this.settings.sensitivity; magnet = this.touchMagnet; }
     // keyboard always works
     const kl = this.keys.has('arrowleft') || this.keys.has('a');
     const kr = this.keys.has('arrowright') || this.keys.has('d');
     if (kl || kr) steer = (kr ? 1 : 0) - (kl ? 1 : 0);
     if (this.keys.has('shift') || this.keys.has('m') || this.keys.has('f')) magnet = true;
-    if (this.touchMagnet) magnet = true;
     if (this.settings.invertSteer) steer = -steer;
     steer = Math.max(-1, Math.min(1, steer));
     // light smoothing (sensor noise); keyboard ramps

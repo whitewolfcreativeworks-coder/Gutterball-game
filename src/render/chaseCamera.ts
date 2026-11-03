@@ -45,9 +45,9 @@ export class ChaseCamera {
     const bankFollow = inv ? 0.95 : 0.55;
     const desiredUp = new Vector3(0, 1, 0).lerp(this.U, bankFollow).normalize();
     // Camera rides behind along the track and above along its up vector
-    const back = 7.0 + Math.min(4, speed * 0.1);
+    const back = 7.8 + Math.min(4, speed * 0.1);
     this.airPull += ((b.airborne ? 1 : 0) - this.airPull) * Math.min(1, dt * 2.5);
-    const height = 3.5 + this.airPull * 1.4;
+    const height = 3.8 + this.airPull * 1.4;
     const behindS = Math.max(0, s - back);
     track.frameAtS(behindS, this.P2, this.T2, this.U2, this.R2);
     // lateral: follow ball partly so walls stay in view

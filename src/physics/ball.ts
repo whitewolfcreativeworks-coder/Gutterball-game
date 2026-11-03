@@ -56,7 +56,7 @@ export interface BallTuning {
 }
 
 export const DEFAULT_TUNING: BallTuning = {
-  radius: 0.36,
+  radius: 0.6,
   mass: 1,
   gravity: 9.81,
   steerAccel: 11,
@@ -473,7 +473,7 @@ export class BallPhysics {
           // approach limiter: firm but not brutal captures (max closing speed shrinks near the surface)
           const closing = -away;
           const vmax = 4 + 2.2 * Math.max(0, d - this.tune.radius);
-          if (closing > vmax) acc.addScaledVector(nn, Math.min(60, (closing - vmax) * 10));
+          if (closing > vmax) acc.addScaledVector(nn, Math.min(90, (closing - vmax) * 14));
           this.magnetForce = Math.min(1, a / tu.magnetAccel);
         }
       }
