@@ -6,21 +6,23 @@ A mobile-first 3D physics game: steer a polished steel ball down an enormous woo
 
 ## Play
 
+**On iPhone / iPad:** open https://whitewolfcreativeworks-coder.github.io/Gutterball-game/ in Safari, tap Timberline Run, allow motion access, swipe up to launch. Steering is by tilt only.
+
+Local development:
+
 ```bash
 npm install
 npm run dev        # http://localhost:5173  (add --host to open it from your phone on the same Wi-Fi)
 ```
 
-On a phone, open the page, tap **Timberline Run**, and choose tilt controls (iOS asks for motion permission).
-
-| Action | Phone (tilt) | Touch mode | Keyboard |
-|---|---|---|---|
-| Launch / propulsion up | swipe up | swipe up | ↑ / W |
-| Propulsion down (never brakes) | swipe down | swipe down | ↓ / S |
-| Steer | tilt left / right | drag left / right | ← → / A D |
-| Jump | flick top of phone toward you | tap | Space |
-| Magnet (hold) | tilt top away from you | press and hold | Shift / M |
-| Pause / restart | ❚❚ button | ❚❚ button | Esc / R |
+| Action | Phone / tablet (tilt only) | Keyboard (desktop testing) |
+|---|---|---|
+| Launch / propulsion up | swipe up | ↑ / W |
+| Propulsion down (never brakes) | swipe down | ↓ / S |
+| Steer | tilt left / right | ← → / A D |
+| Jump | tilt the top toward you | Space |
+| Magnet (hold) | tilt the top away from you | Shift / M |
+| Pause / restart | ❚❚ button | Esc / R |
 
 Debug URL parameters: `?play=wood`, `?preview=ice`, `?screen=adroom`, `?quality=low`, `?at=900` (teleport along the course), `?fixed=1` (fixed 60 Hz frame step).
 

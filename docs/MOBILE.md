@@ -8,7 +8,7 @@
 - Android Chrome: tilt works without a prompt; vibration haptics work after the first tap.
 - Desktop: keyboard controls.
 
-A GitHub Actions workflow (`.github/workflows/pages.yml`) is included to publish `dist/` to GitHub Pages. It runs only on manual dispatch until Pages is enabled for the repository (Settings → Pages → Source: GitHub Actions).
+**Live build:** https://whitewolfcreativeworks-coder.github.io/Gutterball-game/ — open it in Safari (not inside another app's preview, which blocks motion sensors). `.github/workflows/pages.yml` rebuilds and republishes the `gh-pages` branch on every push to `main`.
 
 **Limits of browser testing:** browsers don't expose Core Haptics; iOS Safari has no `navigator.vibrate`; WebGL performance on older phones is untested.
 
