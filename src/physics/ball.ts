@@ -59,9 +59,9 @@ export const DEFAULT_TUNING: BallTuning = {
   radius: 0.36,
   mass: 1,
   gravity: 9.81,
-  steerAccel: 7.5,
-  steerDirectFrac: 0.35,
-  airSteerAccel: 2.6,
+  steerAccel: 11,
+  steerDirectFrac: 0.5,
+  airSteerAccel: 4,
   driveAccel: [0, 1.6, 3.6],
   driveCap: [0, 22, 31],
   airDrag: 0.0011,
@@ -155,15 +155,16 @@ export class BallPhysics {
   }
 
   /** Local SDF and world-space normal at the ball centre. */
-  private sdfAndNormal(out: Vector3, includeObstacles = true): number {
+  private sdfAndNormal(out: Vector3, includeObstacles = true, visibleOnly = false): number {
     const pr = this.proj;
     const tr = this.track;
     const s = pr.s, x = pr.x, y = pr.y;
-    const d = tr.sdfLocal(s, x, y, includeObstacles);
+    const f = (a: number, b: number, c: number) => tr.sdfLocal(a, b, c, includeObstacles, visibleOnly);
+    const d = f(s, x, y);
     const e = 0.01;
-    const gs = (tr.sdfLocal(s + e, x, y, includeObstacles) - tr.sdfLocal(s - e, x, y, includeObstacles)) / (2 * e);
-    const gx = (tr.sdfLocal(s, x + e, y, includeObstacles) - tr.sdfLocal(s, x - e, y, includeObstacles)) / (2 * e);
-    const gy = (tr.sdfLocal(s, x, y + e, includeObstacles) - tr.sdfLocal(s, x, y - e, includeObstacles)) / (2 * e);
+    const gs = (f(s + e, x, y) - f(s - e, x, y)) / (2 * e);
+    const gx = (f(s, x + e, y) - f(s, x - e, y)) / (2 * e);
+    const gy = (f(s, x, y + e) - f(s, x, y - e)) / (2 * e);
     out.set(0, 0, 0).addScaledVector(pr.T, gs).addScaledVector(pr.R, gx).addScaledVector(pr.U, gy);
     const len = out.length();
     if (len > 1e-6) out.multiplyScalar(1 / len);
@@ -451,7 +452,7 @@ export class BallPhysics {
     if (active) {
       this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * dt);
       const nn = new Vector3();
-      const d = this.sdfAndNormal(nn, false);
+      const d = this.sdfAndNormal(nn, false, true);
       if (d < tu.magnetRange) {
         // Closest point on the track shell
         this.magnetTarget.copy(this.p).addScaledVector(nn, -d);

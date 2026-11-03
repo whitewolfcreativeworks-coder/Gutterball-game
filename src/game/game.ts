@@ -88,7 +88,9 @@ export class Game {
   }
 
   resize() {
-    const w = innerWidth, h = innerHeight;
+    // Size from the stage (it may be counter-rotated, swapping width and height)
+    const st = this.canvas.parentElement;
+    const w = st?.clientWidth || innerWidth, h = st?.clientHeight || innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.resize(w / h);
   }

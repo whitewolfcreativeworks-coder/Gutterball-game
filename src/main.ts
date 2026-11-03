@@ -3,6 +3,7 @@ import { Game, HudState } from './game/game';
 import { AudioEngine } from './audio/audioEngine';
 import { HapticEngine } from './haptics/haptics';
 import { InputManager } from './input/input';
+import { screenAngle } from './input/input';
 import { CATALOG, courseById, CourseEntry, formatPrice } from './commerce/catalog';
 import { DevEntitlementSimulator, EntitlementService } from './commerce/entitlements';
 import { AdPlayback, createMockServer, drawSampleAd, getPlayerId, SAMPLE_CREATIVES } from './commerce/adRoom';
@@ -15,6 +16,7 @@ import type { RunPhase } from './game/run';
 // Bootstrap
 // ---------------------------------------------------------------------------
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
+const stage = document.getElementById('stage')!;
 const ui = document.getElementById('ui')!;
 const audio = new AudioEngine();
 const haptics = new HapticEngine();
@@ -394,12 +396,13 @@ function renderSettings() {
     <div class="panel-head"><button class="back" data-act="settingsBack">←</button><h2>Settings</h2></div>
     <div class="card"><h4>Controls</h4>
       <label class="set"><span>Mode</span><select data-set="mode"><option value="tilt" ${input.mode === 'tilt' ? 'selected' : ''}>Tilt</option><option value="touch" ${input.mode === 'touch' ? 'selected' : ''}>Touch</option><option value="keyboard" ${input.mode === 'keyboard' ? 'selected' : ''}>Keyboard</option></select></label>
-      <label class="set"><span>Steering sensitivity</span><input type="range" min="0.5" max="2" step="0.05" value="${s.sensitivity}" data-set="sensitivity"></label>
-      <label class="set"><span>Tilt dead zone</span><input type="range" min="0" max="8" step="0.5" value="${s.deadzone}" data-set="deadzone"></label>
+      <label class="set"><span>Steering sensitivity <span class="note sens-val" style="display:inline">(full lock at ${(s.maxTilt / s.sensitivity).toFixed(0)}°)</span></span><input id="set-sens" type="range" min="0.5" max="3" step="0.05" value="${s.sensitivity}" data-set="sensitivity"></label>
+      <label class="set"><span>Tilt dead zone</span><input id="set-dz" type="range" min="0" max="5" step="0.25" value="${s.deadzone}" data-set="deadzone"></label>
+      <label class="set"><span>Keep view steady if the screen rotates</span><input id="set-keep" class="toggle" type="checkbox" ${s.keepView ? 'checked' : ''} data-set="keepView"></label>
       <label class="set"><span>Jump flick threshold</span><input type="range" min="8" max="30" step="1" value="${s.jumpThreshold}" data-set="jumpThreshold"></label>
       <label class="set"><span>Magnet tilt threshold</span><input type="range" min="6" max="25" step="1" value="${s.magnetThreshold}" data-set="magnetThreshold"></label>
       <label class="set"><span>Invert steering</span><input class="toggle" type="checkbox" ${s.invertSteer ? 'checked' : ''} data-set="invertSteer"></label>
-      <div class="calib" style="margin-top:10px"><div class="dot-area"><div class="dot"></div></div><div style="flex:1"><div class="note" style="margin:0 0 8px">Hold the phone the way you like to play, then set neutral.</div><button class="btn" data-act="enableTilt">Enable tilt sensors</button><button class="btn" style="margin-top:8px;width:100%" data-act="calibrate">Set neutral here</button></div></div>
+      <div class="calib" style="margin-top:10px"><div class="dot-area"><div class="dot"></div></div><div style="flex:1"><div class="note" style="margin:0 0 6px">Hold the device the way you like to play, then set neutral. Tilt like a steering wheel.</div><div class="meter" style="margin:0 0 8px;position:relative"><i class="steer-bar" style="position:absolute;left:50%;width:0"></i></div><button class="btn" data-act="enableTilt">Enable tilt sensors</button><button class="btn" style="margin-top:8px;width:100%" data-act="calibrate">Set neutral here</button></div></div>
     </div>
     <div class="card"><h4>Feel</h4>
       <label class="set"><span>Haptics <span class="note" style="display:inline">(${haptics.driver.tier === 'none' ? 'no actuator detected' : haptics.driver.tier})</span></span><input class="toggle" type="checkbox" ${settings.haptics ? 'checked' : ''} data-set="haptics"></label>
@@ -428,6 +431,9 @@ function calibLoop() {
   const r = input.tiltReadout();
   const x = Math.max(-1, Math.min(1, r.roll / 30)) * 47, y = Math.max(-1, Math.min(1, -r.pitch / 30)) * 47;
   d.style.transform = `translate(${x}px, ${y}px)`;
+  const bar = $('.steer-bar', settingsEl);
+  if (bar) { const v = r.steer; bar.style.width = `${Math.abs(v) * 50}%`; bar.style.left = v < 0 ? `${50 - Math.abs(v) * 50}%` : '50%'; }
+  const sv = $('.sens-val', settingsEl); if (sv) sv.textContent = `(full lock at ${(input.settings.maxTilt / input.settings.sensitivity).toFixed(0)}°)`;
   const f = $('.fps', settingsEl); if (f) f.textContent = `${game.fps.toFixed(0)} fps`;
 }
 calibLoop();
@@ -445,6 +451,8 @@ function saveSettings() {
   localStorage.setItem('gb.settings', JSON.stringify(settings));
 }
 function applySettings() {
+  // Settings saved by the first build used much less sensitive tilt defaults; drop them
+  if (settings.input && settings.input.keepView === undefined) settings.input = undefined;
   if (settings.input) input.settings = { ...input.settings, ...settings.input };
   if (settings.mode && settings.mode !== 'tilt') input.mode = settings.mode;
   haptics.enabled = settings.haptics;
@@ -456,7 +464,7 @@ function applySettings() {
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
-input.onLaunch = () => game.launch();
+input.onLaunch = () => { const ok = game.launch(); if (ok) { viewLockAngle = screenAngle(); applyViewLock(); } return ok; };
 input.onRestart = () => { if (screen === 'hud' || screen === 'results') { game.restart(); show('hud'); } };
 input.onDriveChange = (l) => game.cb.onHint?.(['Propulsion: coast', 'Propulsion: cruise', 'Propulsion: push'][l]);
 
@@ -534,6 +542,7 @@ ui.addEventListener('input', (e) => {
     const v = t.type === 'checkbox' ? t.checked : t.type === 'range' ? Number(t.value) : t.value;
     if (k in input.settings) (input.settings as any)[k] = v;
     if (k === 'mode') { input.mode = v as any; if (v === 'tilt') input.requestSensors(); }
+    if (k === 'keepView') applyViewLock();
     if (k === 'haptics') { settings.haptics = !!v; haptics.enabled = !!v; }
     if (k === 'hapticStrength') { settings.hapticStrength = Number(v); haptics.intensity = Number(v); }
     if (k === 'volume') { settings.volume = Number(v); audio.setVolume(Number(v)); }
@@ -551,8 +560,37 @@ ui.addEventListener('input', (e) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// View lock. Web pages can't lock screen orientation on iOS, so during a run we
+// remember the screen rotation at launch and, if the OS rotates the display
+// (because the player tilted far), rotate the stage back the other way.
+// ---------------------------------------------------------------------------
+let viewLockAngle: number | null = null;
+let rotationTipShown = false;
+function applyViewLock() {
+  let rot = 0;
+  const inRun = screen === 'hud' || screen === 'pause' || screen === 'results';
+  if (viewLockAngle !== null && inRun && input.settings.keepView) {
+    rot = -(((screenAngle() - viewLockAngle + 540) % 360) - 180);
+    if (rot === -180) rot = 180;
+  }
+  stage.classList.toggle('rot90', rot === 90);
+  stage.classList.toggle('rot-90', rot === -90);
+  stage.classList.toggle('rot180', rot === 180);
+  input.displayRotation = rot;
+  game.resize();
+  if (rot !== 0 && !rotationTipShown) {
+    rotationTipShown = true;
+    toast('Tip: turn on Rotation Lock in Control Center so the screen never rotates while you steer');
+  }
+}
+addEventListener('orientationchange', () => setTimeout(applyViewLock, 50));
+addEventListener('resize', () => setTimeout(applyViewLock, 50));
+(window.screen as any).orientation?.addEventListener?.('change', () => setTimeout(applyViewLock, 50));
+
 function goMenu() {
   detailCourse = null;
+  viewLockAngle = null;
   $('.preview-tag', hud).style.display = 'none';
   if (game.mode !== 'attract' || game.course?.id !== 'wood') game.load(courseById('wood'), 'attract');
   renderMenu();

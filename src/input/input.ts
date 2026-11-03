@@ -1,4 +1,5 @@
 import type { BallInput } from '../physics/ball';
+import { steerFromRoll, tiltFromGravity, wrap180 } from './tilt';
 
 /**
  * Input: device tilt + swipe gestures (primary), touch-drag (alternative and
@@ -18,17 +19,27 @@ import type { BallInput } from '../physics/ball';
 export type InputMode = 'tilt' | 'touch' | 'keyboard';
 
 export interface InputSettings {
-  sensitivity: number;   // 0.5..2
+  sensitivity: number;   // 0.5..3 (higher = less tilt for full steering)
   deadzone: number;      // degrees
-  maxTilt: number;       // degrees for full steer
+  maxTilt: number;       // degrees for full steer at sensitivity 1
   jumpThreshold: number; // degrees past neutral (backward)
   magnetThreshold: number; // degrees past neutral (forward)
   invertSteer: boolean;
+  keepView: boolean;     // keep the game view fixed if the OS rotates the screen mid-run
 }
 
 export const DEFAULT_INPUT_SETTINGS: InputSettings = {
-  sensitivity: 1, deadzone: 2.5, maxTilt: 24, jumpThreshold: 16, magnetThreshold: 13, invertSteer: false,
+  sensitivity: 1.3, deadzone: 1, maxTilt: 16, jumpThreshold: 16, magnetThreshold: 13, invertSteer: false, keepView: true,
 };
+
+/** Current screen rotation in window.orientation semantics (90 = device turned counter-clockwise). */
+export function screenAngle(): number {
+  const wo = (window as any).orientation;
+  if (typeof wo === 'number') return wo;
+  const so: any = (screen as any).orientation;
+  if (so && typeof so.angle === 'number') return so.angle > 180 ? so.angle - 360 : so.angle;
+  return 0;
+}
 
 export class InputManager {
   mode: InputMode = 'keyboard';
@@ -36,6 +47,8 @@ export class InputManager {
   sensorAvailable = false;
   sensorPermission: 'unknown' | 'granted' | 'denied' = 'unknown';
   driveLevel = 1;
+  /** Degrees the display is being counter-rotated (touch gestures are rotated to match). */
+  displayRotation = 0;
   onLaunch?: () => void;
   onDriveChange?: (lvl: number) => void;
   onRestart?: () => void;
@@ -44,10 +57,17 @@ export class InputManager {
   private keys = new Set<string>();
   private steerSmooth = 0;
   private jumpQueued = false;
-  private magnetHeld = false;
   // tilt
-  private beta = 0; private gamma = 0; private hasOrientation = false;
-  private beta0 = 60; private gamma0 = 0;
+  private hasMotion = false;      // accelerometer gravity available
+  private hasOrientation = false; // orientation (Euler) events available
+  private g = [0, 0, 0];          // low-passed gravity, "up" convention
+  private motionSign = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? -1 : 1;
+  private signVotes = 0;
+  private signLocked = false;
+  private lockAngle = 0;          // screen rotation captured at calibration
+  private roll = 0; private pitch = 0;
+  private roll0 = 0; private pitch0 = 60;
+  private beta = 0; private gamma = 0;
   private pitchHistory: Array<[number, number]> = [];
   private jumpArmed = true;
   private magnetTilt = false;
@@ -56,7 +76,6 @@ export class InputManager {
   private touchSteer = 0;
   private holdTimer: number | null = null;
   private touchMagnet = false;
-  private lastTap = 0;
   enabled = true;
 
   constructor(private el: HTMLElement) {
@@ -69,54 +88,89 @@ export class InputManager {
     el.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') this.onMouseDown(e); });
     window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') this.onMouseUp(e); });
     window.addEventListener('deviceorientation', (e) => this.onOrientation(e));
+    window.addEventListener('devicemotion', (e) => this.onMotion(e));
     if (matchMedia('(pointer: coarse)').matches) this.mode = 'touch';
   }
 
   /** Must be called from a user gesture on iOS. */
   async requestSensors(): Promise<boolean> {
     const DOE: any = (window as any).DeviceOrientationEvent;
-    if (!DOE) { this.sensorPermission = 'denied'; return false; }
+    const DME: any = (window as any).DeviceMotionEvent;
+    if (!DOE && !DME) { this.sensorPermission = 'denied'; return false; }
     try {
-      if (typeof DOE.requestPermission === 'function') {
-        const r = await DOE.requestPermission();
-        this.sensorPermission = r === 'granted' ? 'granted' : 'denied';
-      } else {
-        this.sensorPermission = 'granted';
-      }
+      // Both requests must start inside the same user gesture
+      const reqs: Promise<string>[] = [];
+      if (DME && typeof DME.requestPermission === 'function') reqs.push(DME.requestPermission());
+      if (DOE && typeof DOE.requestPermission === 'function') reqs.push(DOE.requestPermission());
+      const res = await Promise.all(reqs.map((p) => p.catch(() => 'denied')));
+      this.sensorPermission = res.length === 0 || res.some((r) => r === 'granted') ? 'granted' : 'denied';
     } catch {
       this.sensorPermission = 'denied';
     }
     if (this.sensorPermission === 'granted') {
       // wait briefly for a reading to confirm real hardware
-      await new Promise((r) => setTimeout(r, 250));
-      if (this.hasOrientation) { this.mode = 'tilt'; this.calibrate(); return true; }
+      await new Promise((r) => setTimeout(r, 300));
+      if (this.hasMotion || this.hasOrientation) { this.mode = 'tilt'; this.calibrate(); return true; }
     }
     return false;
   }
 
-  calibrate() { this.beta0 = this.beta; this.gamma0 = this.gamma; this.jumpArmed = true; }
+  /** Neutral = how the player is holding the device right now (also fixes the steering axis). */
+  calibrate() {
+    this.lockAngle = screenAngle();
+    this.updateTilt();
+    this.roll0 = this.roll;
+    this.pitch0 = this.pitch;
+    this.pitchHistory.length = 0;
+    this.jumpArmed = true;
+    this.magnetTilt = false;
+  }
 
-  private screenAngle() {
-    const so: any = (screen as any).orientation;
-    return (so && typeof so.angle === 'number' ? so.angle : (window as any).orientation) || 0;
+  private onMotion(e: DeviceMotionEvent) {
+    const a = e.accelerationIncludingGravity;
+    if (!a || a.x == null || a.y == null || a.z == null) return;
+    const sgn = this.motionSign;
+    const x = a.x * sgn, y = a.y * sgn, z = a.z * sgn;
+    if (!this.hasMotion) { this.g = [x, y, z]; this.hasMotion = true; this.sensorAvailable = true; }
+    // Low-pass to remove hand jitter while staying responsive (~60 Hz events)
+    const k = 0.35;
+    this.g[0] += (x - this.g[0]) * k; this.g[1] += (y - this.g[1]) * k; this.g[2] += (z - this.g[2]) * k;
+    this.updateTilt();
+    this.afterTilt();
   }
 
   private onOrientation(e: DeviceOrientationEvent) {
     if (e.beta == null || e.gamma == null) return;
-    // Map to portrait-relative pitch/roll depending on screen rotation
-    const a = this.screenAngle();
-    let pitch = e.beta, roll = e.gamma;
-    if (a === 90) { pitch = -e.gamma; roll = e.beta; }
-    else if (a === -90 || a === 270) { pitch = e.gamma; roll = -e.beta; }
-    else if (a === 180) { pitch = -e.beta; roll = -e.gamma; }
-    this.beta = pitch; this.gamma = roll;
-    if (!this.hasOrientation) { this.hasOrientation = true; this.sensorAvailable = true; this.beta0 = pitch; this.gamma0 = roll; }
+    this.beta = e.beta; this.gamma = e.gamma;
+    if (!this.hasOrientation) { this.hasOrientation = true; this.sensorAvailable = true; }
+    // Confirm the accelerometer sign convention using gamma where gamma is reliable
+    if (this.hasMotion && !this.signLocked && this.lockAngle === 0 && Math.abs(e.gamma) > 8 && Math.abs(e.gamma) < 50 && Math.abs(e.beta) < 60) {
+      const r = tiltFromGravity(this.g[0], this.g[1], this.g[2], 0).roll;
+      if (Math.abs(r) > 5) {
+        this.signVotes += Math.sign(r) === Math.sign(e.gamma) ? 1 : -1;
+        if (this.signVotes <= -12) { this.motionSign *= -1; this.g = this.g.map((v) => -v); this.signVotes = 0; this.signLocked = true; this.calibrate(); }
+        if (this.signVotes >= 12) this.signLocked = true;
+      }
+    }
+    if (!this.hasMotion) { this.updateTilt(); this.afterTilt(); }
+  }
+
+  private updateTilt() {
+    if (this.hasMotion) {
+      const t = tiltFromGravity(this.g[0], this.g[1], this.g[2], this.lockAngle);
+      this.roll = t.roll; this.pitch = t.pitch;
+    } else if (this.hasOrientation) {
+      this.roll = this.gamma; this.pitch = this.beta;
+    }
+  }
+
+  private afterTilt() {
     const now = performance.now();
-    this.pitchHistory.push([now, pitch - this.beta0]);
+    const dp = wrap180(this.pitch - this.pitch0);
+    this.pitchHistory.push([now, dp]);
     while (this.pitchHistory.length && now - this.pitchHistory[0][0] > 300) this.pitchHistory.shift();
     if (this.mode !== 'tilt') return;
-    const dp = pitch - this.beta0;
-    // Jump: backward flick (top toward player => beta increases)
+    // Jump: backward flick (top toward player => pitch increases)
     const oldest = this.pitchHistory[0]?.[1] ?? dp;
     if (this.jumpArmed && dp > this.settings.jumpThreshold && dp - oldest > this.settings.jumpThreshold * 0.6) {
       this.jumpQueued = true;
@@ -172,8 +226,7 @@ export class InputManager {
     if (!this.touchStart) return;
     const t = Array.from(e.changedTouches).find((x) => x.identifier === this.touchStart!.id);
     if (!t) return;
-    const dx = t.clientX - this.touchStart.x;
-    const dy = t.clientY - this.touchStart.y;
+    const [dx, dy] = this.rot(t.clientX - this.touchStart.x, t.clientY - this.touchStart.y);
     if (Math.hypot(dx, dy) > 14 && this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
     if (this.mode === 'touch') {
       const w = Math.max(200, window.innerWidth * 0.35);
@@ -188,19 +241,25 @@ export class InputManager {
     if (st) {
       const t = Array.from(e.changedTouches).find((x) => x.identifier === st.id);
       if (t) {
-        const dx = t.clientX - st.x, dy = t.clientY - st.y, dtm = performance.now() - st.t;
+        const [dx, dy] = this.rot(t.clientX - st.x, t.clientY - st.y);
+        const dtm = performance.now() - st.t;
         const vy = dy / Math.max(1, dtm);
         if (Math.abs(dy) > 50 && Math.abs(dy) > Math.abs(dx) * 1.4 && Math.abs(vy) > 0.35 && dtm < 450) {
           this.swipe(dy < 0 ? 1 : -1);
         } else if (this.mode === 'touch' && Math.hypot(dx, dy) < 12 && dtm < 220 && !this.touchMagnet) {
           // tap = jump in touch mode
           this.jumpQueued = true;
-          const now = performance.now();
-          this.lastTap = now;
         }
       }
     }
     if (e.touches.length === 0) { this.touchStart = null; this.touchSteer = 0; this.touchMagnet = false; }
+  }
+
+  /** Screen-space delta -> game-view delta when the view is counter-rotated. */
+  private rot(dx: number, dy: number): [number, number] {
+    const a = (-this.displayRotation * Math.PI) / 180;
+    const c = Math.cos(a), s = Math.sin(a);
+    return [dx * c - dy * s, dx * s + dy * c];
   }
 
   private mouseStart: { x: number; y: number; t: number } | null = null;
@@ -216,10 +275,8 @@ export class InputManager {
     let steer = 0;
     let magnet = false;
     if (this.mode === 'tilt') {
-      let r = this.gamma - this.gamma0;
-      const dz = this.settings.deadzone;
-      r = Math.abs(r) < dz ? 0 : (r - Math.sign(r) * dz);
-      steer = (r / (this.settings.maxTilt - dz)) * this.settings.sensitivity;
+      const r = wrap180(this.roll - this.roll0);
+      steer = steerFromRoll(r, this.settings.deadzone, this.settings.maxTilt, this.settings.sensitivity);
       magnet = this.magnetTilt;
     }
     if (this.mode === 'touch') { steer = this.touchSteer * this.settings.sensitivity; magnet = this.touchMagnet; }
@@ -232,7 +289,7 @@ export class InputManager {
     if (this.settings.invertSteer) steer = -steer;
     steer = Math.max(-1, Math.min(1, steer));
     // light smoothing (sensor noise); keyboard ramps
-    const k = this.mode === 'keyboard' ? 10 : 18;
+    const k = this.mode === 'keyboard' ? 10 : 30;
     this.steerSmooth += (steer - this.steerSmooth) * Math.min(1, dt * k);
     const jump = this.jumpQueued;
     this.jumpQueued = false;
@@ -240,5 +297,8 @@ export class InputManager {
   }
 
   /** Debug readout for the calibration screen. */
-  tiltReadout() { return { pitch: this.beta - this.beta0, roll: this.gamma - this.gamma0, has: this.hasOrientation }; }
+  tiltReadout() {
+    const roll = wrap180(this.roll - this.roll0);
+    return { pitch: wrap180(this.pitch - this.pitch0), roll, steer: steerFromRoll(roll, this.settings.deadzone, this.settings.maxTilt, this.settings.sensitivity), has: this.hasMotion || this.hasOrientation, source: this.hasMotion ? 'gravity' : this.hasOrientation ? 'orientation' : 'none' };
+  }
 }

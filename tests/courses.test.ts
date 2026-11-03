@@ -26,3 +26,27 @@ describe('courses are completable', () => {
     });
   }
 });
+
+describe('the ball cannot leave the gutter (except by falling into a gap)', () => {
+  const wood = CATALOG.find((c) => c.id === 'wood')!;
+  for (const steer of [-1, 0, 1]) {
+    it(`steering held at ${steer} through Timberline Run`, () => {
+      const tr = new Track(wood.layout());
+      const run = new Run(tr, MATERIALS.wood);
+      const ap = new Autopilot(tr);
+      run.launch();
+      const W = tr.profile.a + tr.profile.rc;
+      const nearGap = (s: number) => { for (let d = -60; d <= 10; d += 2) if (tr.isGap(s + d)) return true; return false; };
+      let escapes = 0;
+      for (let f = 0; f < 60 * 150 && run.phase !== 'finished'; f++) {
+        const a = ap.decide(run.ball);
+        run.update(1 / 60, { ...a, steer });
+        run.pendingEvents.length = 0;
+        const pr = run.ball.proj;
+        // escaping = beside the gutter at or above floor level (a ball that fell through a gap is below it)
+        if (run.phase === 'running' && !nearGap(pr.s) && pr.y > 0 && Math.abs(pr.x) > W + 0.05) escapes++;
+      }
+      expect(escapes).toBe(0);
+    });
+  }
+});

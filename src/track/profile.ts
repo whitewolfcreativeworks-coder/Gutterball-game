@@ -17,9 +17,10 @@ export interface GutterProfile {
   rc: number;  // fillet radius
   H: number;   // wall height above floor
   th: number;  // shell thickness
+  lip: number; // inward-curling rim at the wall tops (keeps the ball in the gutter)
 }
 
-export const DEFAULT_PROFILE: GutterProfile = { a: 1.7, rc: 2.5, H: 3.8, th: 0.28 };
+export const DEFAULT_PROFILE: GutterProfile = { a: 1.7, rc: 2.5, H: 4.3, th: 0.28, lip: 1.0 };
 
 export function halfWidth(p: GutterProfile): number {
   return p.a + p.rc;
@@ -63,10 +64,22 @@ export function innerSignedDistance(x: number, y: number, p: GutterProfile): num
  * Signed distance to the solid gutter shell (positive = outside material).
  * `closed` adds a roof (tunnel sections) at the wall tops.
  */
-export function shellSDF(x: number, y: number, p: GutterProfile, closed = false): number {
+export function shellSDF(x: number, y: number, p: GutterProfile, closed = false, visibleOnly = false): number {
   const din = innerSignedDistance(x, y, p);
   let sdf = Math.max(din, -din - p.th);
-  sdf = Math.max(sdf, y - p.H); // walls stop at H
+  // Collision walls continue invisibly above the rim ("containment field"), so
+  // the ball can never be thrown out of the gutter; only gaps can be fallen
+  // into. `visibleOnly` gives the real surface (for the magnet and visuals).
+  if (visibleOnly) sdf = Math.max(sdf, y - p.H);
+  if (p.lip > 0) {
+    // Rolled lip: a slab overhanging the channel at the top of each wall
+    const W = p.a + p.rc;
+    const cx = W - p.lip / 2 + p.th / 2;
+    const qx = Math.abs(Math.abs(x) - cx) - (p.lip / 2 + p.th / 2);
+    const qy = Math.abs(y - (p.H + p.th / 2)) - p.th / 2;
+    const lipD = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
+    sdf = Math.min(sdf, lipD);
+  }
   if (closed) {
     const W = p.a + p.rc + p.th;
     const roof = Math.max(p.H - y, Math.abs(x) - W, y - (p.H + p.th * 2.5));
@@ -79,7 +92,8 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false)
 export function profilePolyline(p: GutterProfile, arcSteps = 10): Array<[number, number]> {
   const pts: Array<[number, number]> = [];
   const W = p.a + p.rc;
-  // Left wall top down to fillet
+  // Lip underside (left), then left wall top down to fillet
+  if (p.lip > 0) pts.push([-W + p.lip, p.H]);
   pts.push([-W, p.H]);
   pts.push([-W, p.rc]);
   for (let i = 1; i < arcSteps; i++) {
@@ -95,5 +109,6 @@ export function profilePolyline(p: GutterProfile, arcSteps = 10): Array<[number,
   }
   pts.push([W, p.rc]);
   pts.push([W, p.H]);
+  if (p.lip > 0) pts.push([W - p.lip, p.H]);
   return pts;
 }

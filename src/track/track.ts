@@ -216,9 +216,9 @@ export class Track {
    * Signed distance of a point given in track-local coordinates (s, x, y) to
    * the gutter shell plus obstacles. Returns positive outside material.
    */
-  sdfLocal(s: number, x: number, y: number, includeObstacles = true): number {
+  sdfLocal(s: number, x: number, y: number, includeObstacles = true, visibleOnly = false): number {
     let d = 1e6;
-    if (s >= -2 && s <= this.length + 2 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s));
+    if (s >= -2 && s <= this.length + 2 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly);
     // End caps: a wall at the very start so the ball cannot roll backwards off
     if (s < 0.5) d = Math.min(d, Math.max(s - 0.5, -s - 2, Math.abs(x) - 5, y - 4));
     // ...and a soft end wall after the run-out
