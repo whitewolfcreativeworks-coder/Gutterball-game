@@ -1,0 +1,99 @@
+/**
+ * Gutter cross-section geometry.
+ *
+ * The gutter is a broad "U": a flat floor of half-width `a`, quarter-circle
+ * fillets of radius `rc` that blend into vertical side walls, walls rising to
+ * height `H` above the floor, and a solid shell of thickness `th`.
+ *
+ * Local 2-D coordinates: x = lateral (right positive), y = height above the
+ * floor centre. The interior (where the ball lives) is "inside".
+ *
+ * Physics never collides against triangles — it evaluates this analytic
+ * signed-distance function, so the surface is perfectly smooth with no seams
+ * or triangle edges for a fast ball to snag on.
+ */
+export interface GutterProfile {
+  a: number;   // flat floor half-width
+  rc: number;  // fillet radius
+  H: number;   // wall height above floor
+  th: number;  // shell thickness
+}
+
+export const DEFAULT_PROFILE: GutterProfile = { a: 1.7, rc: 2.5, H: 3.8, th: 0.28 };
+
+export function halfWidth(p: GutterProfile): number {
+  return p.a + p.rc;
+}
+
+/**
+ * Signed distance to the inner gutter curve (floor + fillets + walls extended
+ * to infinity). Positive = inside the open channel.
+ */
+export function innerSignedDistance(x: number, y: number, p: GutterProfile): number {
+  const ax = Math.abs(x);
+  const W = p.a + p.rc;
+  // Distance to floor segment [(-a,0),(a,0)]
+  let d: number;
+  if (ax <= p.a) d = Math.abs(y);
+  else d = Math.hypot(ax - p.a, y);
+  // Distance to fillet arc: centre (a, rc), radius rc, angles [-90deg, 0]
+  {
+    const vx = ax - p.a;
+    const vy = y - p.rc;
+    if (vx >= 0 && vy <= 0) {
+      d = Math.min(d, Math.abs(Math.hypot(vx, vy) - p.rc));
+    } else {
+      // closest endpoint
+      d = Math.min(d, Math.hypot(ax - p.a, y), Math.hypot(ax - W, y - p.rc));
+    }
+  }
+  // Distance to wall x = W, y >= rc
+  if (y >= p.rc) d = Math.min(d, Math.abs(ax - W));
+  else d = Math.min(d, Math.hypot(ax - W, y - p.rc));
+
+  // Inside test
+  let inside: boolean;
+  if (ax <= p.a) inside = y > 0;
+  else if (ax < W) inside = y >= p.rc || Math.hypot(ax - p.a, y - p.rc) < p.rc;
+  else inside = false;
+  return inside ? d : -d;
+}
+
+/**
+ * Signed distance to the solid gutter shell (positive = outside material).
+ * `closed` adds a roof (tunnel sections) at the wall tops.
+ */
+export function shellSDF(x: number, y: number, p: GutterProfile, closed = false): number {
+  const din = innerSignedDistance(x, y, p);
+  let sdf = Math.max(din, -din - p.th);
+  sdf = Math.max(sdf, y - p.H); // walls stop at H
+  if (closed) {
+    const W = p.a + p.rc + p.th;
+    const roof = Math.max(p.H - y, Math.abs(x) - W, y - (p.H + p.th * 2.5));
+    sdf = Math.min(sdf, roof);
+  }
+  return sdf;
+}
+
+/** Sample the inner profile as a polyline for mesh generation (left wall top -> right wall top). */
+export function profilePolyline(p: GutterProfile, arcSteps = 10): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  const W = p.a + p.rc;
+  // Left wall top down to fillet
+  pts.push([-W, p.H]);
+  pts.push([-W, p.rc]);
+  for (let i = 1; i < arcSteps; i++) {
+    const t = Math.PI + (i / arcSteps) * (Math.PI / 2); // 180 -> 270 deg around (-a, rc)
+    pts.push([-p.a + p.rc * Math.cos(t), p.rc + p.rc * Math.sin(t)]);
+  }
+  pts.push([-p.a, 0]);
+  pts.push([0, 0]);
+  pts.push([p.a, 0]);
+  for (let i = 1; i < arcSteps; i++) {
+    const t = -Math.PI / 2 + (i / arcSteps) * (Math.PI / 2); // -90 -> 0 around (a, rc)
+    pts.push([p.a + p.rc * Math.cos(t), p.rc + p.rc * Math.sin(t)]);
+  }
+  pts.push([W, p.rc]);
+  pts.push([W, p.H]);
+  return pts;
+}

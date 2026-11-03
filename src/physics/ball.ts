@@ -1,0 +1,514 @@
+import { Quaternion, Vector3 } from 'three';
+import type { RollingState, SensoryEvent, SensoryState } from '../core/events';
+import { Track, TrackProjector } from '../track/track';
+import { halfWidth } from '../track/profile';
+import type { MaterialProfile } from './materials';
+
+/**
+ * Ball dynamics.
+ *
+ * A rigid sphere (I = 2/5 m r^2) integrated with semi-implicit Euler at a
+ * fixed 240 Hz step. Contact is resolved against the analytic track SDF:
+ *   1. positional projection out of penetration,
+ *   2. a normal impulse (restitution above a speed threshold),
+ *   3. a Coulomb friction impulse at the contact point that couples linear
+ *      and angular velocity. If the impulse needed to make the contact point
+ *      stick exceeds mu_s * N the ball slides with mu_k * N instead.
+ *
+ * Rolling vs sliding therefore *emerges* from the simulation — it is not an
+ * animation state. Visual spin, audio and haptics read the same numbers.
+ *
+ * Gameplay fiction (documented in docs/PHYSICS.md): the ball contains a
+ * "gyro core" — an internal reaction-wheel that can apply torque to the
+ * shell. Steering and propulsion work through that torque, so they act
+ * *through traction*: on ice the core spins the ball and it drifts; on rubber
+ * it bites. A small direct "field" force (35%) keeps low-grip worlds
+ * playable. The track carries a magnetically responsive under-layer, which
+ * is what the magnet attracts — the same fiction on every material.
+ */
+
+export interface BallInput {
+  steer: number;        // -1..1 (right positive)
+  magnet: boolean;
+  jump: boolean;        // edge-triggered request
+  driveLevel: number;   // 0 coast, 1 cruise, 2 push
+}
+
+export interface BallTuning {
+  radius: number;
+  mass: number;
+  gravity: number;
+  steerAccel: number;
+  steerDirectFrac: number;
+  airSteerAccel: number;
+  driveAccel: [number, number, number];
+  driveCap: [number, number, number];
+  airDrag: number;          // k in a = -k|v|v
+  jumpSpeed: number;
+  jumpCooldown: number;
+  coyoteTime: number;
+  magnetPressG: number;     // extra normal acceleration in contact, in g
+  magnetAccel: number;      // max airborne attraction m/s^2
+  magnetRange: number;      // metres
+  magnetDrain: number;      // energy per second (energy 0..1)
+  magnetRegen: number;
+  magnetMinRestart: number;
+}
+
+export const DEFAULT_TUNING: BallTuning = {
+  radius: 0.36,
+  mass: 1,
+  gravity: 9.81,
+  steerAccel: 7.5,
+  steerDirectFrac: 0.35,
+  airSteerAccel: 2.6,
+  driveAccel: [0, 1.6, 3.6],
+  driveCap: [0, 22, 31],
+  airDrag: 0.0011,
+  jumpSpeed: 7.2,
+  jumpCooldown: 0.55,
+  coyoteTime: 0.12,
+  magnetPressG: 1.7,
+  magnetAccel: 26,
+  magnetRange: 16,
+  magnetDrain: 0.3,
+  magnetRegen: 0.16,
+  magnetMinRestart: 0.15,
+};
+
+const tmpA = new Vector3();
+const tmpB = new Vector3();
+const tmpC = new Vector3();
+const tmpQ = new Quaternion();
+const WORLD_UP = new Vector3(0, 1, 0);
+
+export class BallPhysics {
+  readonly p = new Vector3();
+  readonly v = new Vector3();
+  readonly w = new Vector3();
+  readonly q = new Quaternion();
+  readonly tune: BallTuning;
+  readonly proj: TrackProjector;
+  material: MaterialProfile;
+
+  // Contact state
+  readonly n = new Vector3(0, 1, 0);     // last contact normal (world)
+  contact = false;
+  contactSource: 'track' | 'obstacle' = 'track';
+  sinceContact = 1;
+  airborne = true;
+  airborneTime = 0;
+  normalAccel = 0;
+  slipSpeed = 0;
+  rollingState: RollingState = 'airborne';
+  jumpTimer = 0;
+  // Magnet
+  magnetActive = false;
+  magnetEngaged = false; // wanted & energy
+  magnetEnergy = 1;
+  magnetForce = 0;
+  readonly magnetTarget = new Vector3();
+  magnetHasTarget = false;
+  magnetSuppress = 0;
+  wasMagnetAirborne = false;
+  // Medium
+  submersion = 0;
+  inTunnel = false;
+  lastSeamIndex = -1;
+  driveLevel = 1;
+  t = 0;
+  events: SensoryEvent[] = [];
+  readonly I: number;
+
+  constructor(private track: Track, material: MaterialProfile, tune: Partial<BallTuning> = {}) {
+    this.tune = { ...DEFAULT_TUNING, ...tune };
+    this.material = material;
+    this.proj = new TrackProjector(track);
+    this.I = 0.4 * this.tune.mass * this.tune.radius * this.tune.radius;
+  }
+
+  /** Place the ball at rest (or with a speed) on the floor at arc length s. */
+  placeAt(s: number, speed = 0, x = 0) {
+    const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+    this.track.frameAtS(s, P, T, U, R);
+    this.p.copy(P).addScaledVector(U, this.tune.radius + 0.002).addScaledVector(R, x);
+    this.v.copy(T).multiplyScalar(speed);
+    // rolling without slipping: w = (n x v) / r
+    this.w.copy(U).cross(this.v).multiplyScalar(1 / this.tune.radius);
+    this.n.copy(U);
+    this.proj.reset(s);
+    this.proj.project(this.p.x, this.p.y, this.p.z);
+    this.contact = true;
+    this.airborne = false;
+    this.sinceContact = 0;
+    this.airborneTime = 0;
+    this.magnetEnergy = 1;
+    this.magnetActive = false;
+    this.magnetEngaged = false;
+    this.jumpTimer = 0;
+    this.lastSeamIndex = -1;
+    this.rollingState = 'rolling';
+  }
+
+  private emit(type: SensoryEvent['type'], intensity: number, magnitude?: number, source?: string) {
+    this.events.push({ type, t: this.t, intensity: Math.max(0, Math.min(1, intensity)), magnitude, source, material: this.material.id });
+  }
+
+  /** Local SDF and world-space normal at the ball centre. */
+  private sdfAndNormal(out: Vector3, includeObstacles = true): number {
+    const pr = this.proj;
+    const tr = this.track;
+    const s = pr.s, x = pr.x, y = pr.y;
+    const d = tr.sdfLocal(s, x, y, includeObstacles);
+    const e = 0.01;
+    const gs = (tr.sdfLocal(s + e, x, y, includeObstacles) - tr.sdfLocal(s - e, x, y, includeObstacles)) / (2 * e);
+    const gx = (tr.sdfLocal(s, x + e, y, includeObstacles) - tr.sdfLocal(s, x - e, y, includeObstacles)) / (2 * e);
+    const gy = (tr.sdfLocal(s, x, y + e, includeObstacles) - tr.sdfLocal(s, x, y - e, includeObstacles)) / (2 * e);
+    out.set(0, 0, 0).addScaledVector(pr.T, gs).addScaledVector(pr.R, gx).addScaledVector(pr.U, gy);
+    const len = out.length();
+    if (len > 1e-6) out.multiplyScalar(1 / len);
+    else out.copy(pr.U);
+    return d;
+  }
+
+  step(dt: number, input: BallInput) {
+    const tu = this.tune;
+    const m = tu.mass;
+    const r = tu.radius;
+    const mat = this.material;
+    this.t += dt;
+    this.driveLevel = input.driveLevel;
+    this.proj.project(this.p.x, this.p.y, this.p.z);
+    const pr = this.proj;
+    const grounded = this.sinceContact <= tu.coyoteTime;
+
+    // ---- Tunnel enter/exit events (acoustics) ----
+    const tun = this.track.isTunnel(pr.s) && Math.abs(pr.x) < halfWidth(this.track.profile) + 0.5;
+    if (tun !== this.inTunnel) { this.emit(tun ? 'TUNNEL_ENTER' : 'TUNNEL_EXIT', 1); this.inTunnel = tun; }
+
+    // ---- Forces -> velocity ----
+    const acc = tmpA.set(0, -tu.gravity, 0);
+    // Air drag (game-scaled)
+    const sp = this.v.length();
+    acc.addScaledVector(this.v, -tu.airDrag * sp);
+
+    // Medium: water (buoyancy, drag toward flow)
+    this.updateMedium(acc, dt);
+
+    // Tangent-plane axes from last contact normal
+    const n = this.n;
+    const Tt = tmpB.copy(pr.T).addScaledVector(n, -pr.T.dot(n));
+    if (Tt.lengthSq() < 1e-6) Tt.copy(pr.T);
+    Tt.normalize();
+    const Rt = tmpC.copy(pr.R).addScaledVector(n, -pr.R.dot(n));
+    if (Rt.lengthSq() < 1e-6) Rt.copy(pr.R);
+    Rt.normalize();
+
+    if (grounded) {
+      // Steering through the gyro core (torque) + direct field component
+      const st = input.steer * tu.steerAccel;
+      acc.addScaledVector(Rt, st * tu.steerDirectFrac);
+      // Δω = (n × dir)/r * Δv ; scale 3.5 so friction delivers ~the requested linear accel
+      const gyro = st * (1 - tu.steerDirectFrac) * 3.5 / r * dt;
+      const axis = new Vector3().copy(n).cross(Rt);
+      this.w.addScaledVector(axis, gyro);
+      // Propulsion (never braking): fades out approaching the level's cap speed
+      const lvl = Math.max(0, Math.min(2, input.driveLevel | 0));
+      const vf = this.v.dot(Tt);
+      const fade = Math.max(0, Math.min(1, (tu.driveCap[lvl] - vf) / 6));
+      const da = tu.driveAccel[lvl] * fade;
+      if (da > 0) {
+        acc.addScaledVector(Tt, da * 0.3);
+        const ax2 = new Vector3().copy(n).cross(Tt);
+        this.w.addScaledVector(ax2, da * 0.7 * 3.5 / r * dt);
+      }
+    } else {
+      acc.addScaledVector(pr.R, input.steer * tu.airSteerAccel);
+    }
+
+    // ---- Jump ----
+    this.jumpTimer -= dt;
+    if (input.jump && grounded && this.jumpTimer <= 0) {
+      // impulse away from the local surface; existing momentum preserved
+      this.v.addScaledVector(n, tu.jumpSpeed);
+      this.jumpTimer = tu.jumpCooldown;
+      this.sinceContact = tu.coyoteTime + 0.01;
+      this.magnetSuppress = 0.22;
+      this.emit('JUMP', 1, tu.jumpSpeed);
+    }
+
+    // ---- Magnet ----
+    this.magnetSuppress -= dt;
+    this.updateMagnet(acc, input, dt);
+
+    this.v.addScaledVector(acc, dt);
+    this.p.addScaledVector(this.v, dt);
+
+    // ---- Collision resolution ----
+    this.proj.project(this.p.x, this.p.y, this.p.z);
+    let touched = false;
+    let impactSpeed = 0;
+    let impactSource: 'track' | 'obstacle' = 'track';
+    let normalImpulseTotal = 0;
+    for (let iter = 0; iter < 3; iter++) {
+      const nn = tmpA;
+      const d = this.sdfAndNormal(nn);
+      const pen = r - d;
+      if (pen <= 0) break;
+      // classify source
+      const obd = this.track.nearestObstacleDist(pr.s, pr.x, pr.y);
+      const src: 'track' | 'obstacle' = obd <= d + 0.02 ? 'obstacle' : 'track';
+      touched = true;
+      this.p.addScaledVector(nn, pen);
+      const vn = this.v.dot(nn);
+      if (vn < 0) {
+        if (-vn > impactSpeed) { impactSpeed = -vn; impactSource = src; }
+        const e = -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0;
+        const Jn = -(1 + e) * m * vn;
+        this.v.addScaledVector(nn, Jn / m);
+        normalImpulseTotal += Jn;
+        this.frictionImpulse(nn, Jn, dt);
+      }
+      this.n.copy(nn);
+      this.contactSource = src;
+      this.proj.project(this.p.x, this.p.y, this.p.z);
+    }
+
+    // Resting contact within a small skin still counts as touching (for audio & rolling)
+    if (!touched) {
+      const d = this.sdfAndNormal(tmpA, true);
+      if (d < r + 0.015 && this.v.dot(tmpA) < 0.2) { touched = true; this.n.copy(tmpA); }
+    }
+
+    // Smoothed normal force (m/s^2)
+    const instN = normalImpulseTotal / (m * dt);
+    this.normalAccel += (instN - this.normalAccel) * Math.min(1, dt * 30);
+
+    if (touched) {
+      this.sinceContact = 0;
+      // Rolling resistance (opposes tangential velocity, scales with normal load)
+      this.rollingResistance(dt);
+      // Spin damping about the normal (drilling friction)
+      const wn = this.w.dot(this.n);
+      this.w.addScaledVector(this.n, -wn * Math.min(1, mat.spinDamping * dt));
+    } else {
+      this.sinceContact += dt;
+    }
+
+    // ---- Airborne state machine (debounced) ----
+    const nowAir = this.sinceContact > 0.06;
+    if (nowAir && !this.airborne) {
+      this.airborne = true;
+      this.emit('AIRBORNE_START', Math.min(1, sp / 30), sp);
+    } else if (!nowAir && this.airborne) {
+      this.airborne = false;
+      this.emit('AIRBORNE_END', Math.min(1, impactSpeed / 10), impactSpeed);
+      if (this.magnetActive || this.wasMagnetAirborne) this.emit('MAGNETIC_CAPTURE', 1, impactSpeed);
+      this.wasMagnetAirborne = false;
+    }
+    this.airborneTime = this.airborne ? this.airborneTime + dt : 0;
+    if (impactSpeed > 1.0) this.emit('COLLISION_IMPACT', Math.min(1, impactSpeed / 12), impactSpeed, impactSource);
+    this.contact = touched;
+
+    // ---- Rolling state from contact-point slip ----
+    let state: RollingState = 'airborne';
+    if (touched) {
+      const vc = tmpB.copy(this.w).cross(tmpC.copy(this.n).multiplyScalar(-r)).add(this.v);
+      vc.addScaledVector(this.n, -vc.dot(this.n));
+      this.slipSpeed = vc.length();
+      state = this.slipSpeed < 0.25 ? 'rolling' : this.slipSpeed < 2.5 ? 'sliding' : 'skidding';
+    } else this.slipSpeed = 0;
+    if (state !== this.rollingState) {
+      if (state === 'rolling') this.emit('ROLLING_CONTACT', 1);
+      else if (state !== 'airborne' && this.rollingState !== 'sliding' && this.rollingState !== 'skidding') this.emit('SLIDING_CONTACT', Math.min(1, this.slipSpeed / 5), this.slipSpeed);
+      this.rollingState = state;
+    }
+
+    // ---- Seam crossings (joints between planks/panels/bars) ----
+    if (touched && this.contactSource === 'track' && mat.seamSpacing > 0) {
+      const si = Math.floor(pr.s / mat.seamSpacing);
+      if (si !== this.lastSeamIndex && this.lastSeamIndex >= 0) {
+        const inten = Math.min(1, (sp / 25) * (0.5 + Math.min(1.5, this.normalAccel / tu.gravity) * 0.5));
+        this.emit('SURFACE_SEAM_CROSSING', inten, sp);
+        if (mat.medium === 'grating') {
+          const kick = (mat.mediumParams?.kick ?? 0.05) * Math.min(sp, 30);
+          this.v.addScaledVector(this.n, kick * (0.6 + 0.4 * Math.random()));
+        }
+      }
+      this.lastSeamIndex = si;
+    }
+
+    // ---- Orientation integration from angular velocity ----
+    const wl = this.w.length();
+    if (wl > 1e-6) {
+      tmpQ.setFromAxisAngle(tmpA.copy(this.w).multiplyScalar(1 / wl), wl * dt);
+      this.q.premultiply(tmpQ).normalize();
+    }
+  }
+
+  /** Coulomb friction at the contact point; couples v and w. */
+  private frictionImpulse(nn: Vector3, Jn: number, dt: number) {
+    const m = this.tune.mass, r = this.tune.radius, mat = this.material;
+    const rc = tmpB.copy(nn).multiplyScalar(-r); // centre -> contact
+    const vc = tmpC.copy(this.w).cross(rc).add(this.v);
+    vc.addScaledVector(nn, -vc.dot(nn));
+    const vt = vc.length();
+    if (vt < 1e-6) return;
+    // effective mass for tangential impulse on a solid sphere: m / (1 + m r^2 / I) = 2m/7
+    const mEff = m / (1 + (m * r * r) / this.I);
+    let Jreq = mEff * vt;
+    // Normal impulse budget includes the resting load this step
+    const gripMul = this.gripMultiplier();
+    const Jmax = mat.muStatic * gripMul * Jn;
+    let J: number;
+    if (Jreq <= Jmax) J = Jreq;
+    else J = mat.muKinetic * gripMul * Jn;
+    const dir = vc.multiplyScalar(-1 / vt); // opposing slip
+    this.v.addScaledVector(dir, J / m);
+    // angular: Δw = (rc × J dir) / I
+    const tq = new Vector3().copy(rc).cross(dir).multiplyScalar(J / this.I);
+    this.w.add(tq);
+  }
+
+  private gripMultiplier(): number {
+    const mat = this.material;
+    if (mat.medium === 'mud') {
+      const gv = mat.mediumParams?.gripVariation ?? 0.5;
+      const s = this.proj.s;
+      const noise = 0.5 + 0.5 * Math.sin(s * 0.23) * Math.sin(s * 0.071 + 1.3);
+      return 1 - gv * noise;
+    }
+    if (mat.medium === 'water') return 1 - 0.5 * this.submersion;
+    return 1;
+  }
+
+  private rollingResistance(dt: number) {
+    const mat = this.material;
+    const pr = this.proj;
+    let crr = mat.rollingResistance;
+    let viscous = 0;
+    const ax = Math.abs(pr.x);
+    if (mat.medium === 'sand') {
+      const loose = ax > (mat.mediumParams?.firmHalfWidth ?? 1.1);
+      crr *= loose ? (mat.mediumParams?.looseFactor ?? 2) : 1;
+      viscous += (mat.mediumParams?.sinkDrag ?? 0.05) * (loose ? 1.6 : 1);
+    } else if (mat.medium === 'mud') {
+      viscous += mat.mediumParams?.viscous ?? 0.3;
+    } else if (mat.medium === 'snow') {
+      if (ax > (mat.mediumParams?.packedHalfWidth ?? 1.4)) viscous += mat.mediumParams?.powderDrag ?? 0.08;
+      else viscous += 0.015;
+    }
+    const vt = tmpB.copy(this.v).addScaledVector(this.n, -this.v.dot(this.n));
+    const spd = vt.length();
+    if (spd < 1e-4) return;
+    const N = Math.max(this.normalAccel, 0);
+    const dv = Math.min(spd, (crr * N + viscous * spd) * dt);
+    this.v.addScaledVector(vt, -dv / spd);
+    // keep spin consistent with the slowed rolling
+    const wr = new Vector3().copy(this.n).cross(vt).multiplyScalar(-dv / spd / this.tune.radius);
+    this.w.add(wr);
+  }
+
+  private updateMedium(acc: Vector3, dt: number) {
+    const mat = this.material;
+    const pr = this.proj;
+    let sub = 0;
+    if (mat.medium === 'water' && !this.track.isGap(pr.s) && Math.abs(pr.x) < halfWidth(this.track.profile)) {
+      const depth = mat.mediumParams?.depth ?? 1.2;
+      const r = this.tune.radius;
+      sub = Math.max(0, Math.min(1, (depth - (pr.y - r)) / (2 * r)));
+      if (sub > 0) {
+        const flow = mat.mediumParams?.flow ?? 8;
+        const drag = mat.mediumParams?.drag ?? 1.5;
+        const buoy = mat.mediumParams?.buoyancy ?? 0.25;
+        acc.addScaledVector(WORLD_UP, this.tune.gravity * buoy * sub);
+        // drag relative to the moving water
+        const rel = new Vector3().copy(pr.T).multiplyScalar(flow).sub(this.v);
+        acc.addScaledVector(rel, drag * sub * 0.5);
+        // angular damping in fluid
+        this.w.multiplyScalar(1 - Math.min(0.5, 2 * sub * dt));
+      }
+    }
+    if (sub > 0.05 && this.submersion <= 0.05) this.emit('WATER_ENTRY', Math.min(1, this.v.length() / 12), this.v.length());
+    if (sub <= 0.05 && this.submersion > 0.05) this.emit('WATER_EXIT', 0.6);
+    this.submersion = sub;
+  }
+
+  private updateMagnet(acc: Vector3, input: BallInput, dt: number) {
+    const tu = this.tune;
+    const want = input.magnet && this.magnetSuppress <= 0;
+    // energy gate with hysteresis
+    if (want && !this.magnetEngaged && this.magnetEnergy > tu.magnetMinRestart) this.magnetEngaged = true;
+    if (!want) this.magnetEngaged = false;
+    if (this.magnetEngaged && this.magnetEnergy <= 0) this.magnetEngaged = false;
+    const active = this.magnetEngaged;
+    if (active !== this.magnetActive) {
+      this.emit(active ? 'MAGNET_ENGAGED' : 'MAGNET_RELEASED', 1);
+      this.magnetActive = active;
+    }
+    this.magnetHasTarget = false;
+    this.magnetForce = 0;
+    if (active) {
+      this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * dt);
+      const nn = new Vector3();
+      const d = this.sdfAndNormal(nn, false);
+      if (d < tu.magnetRange) {
+        // Closest point on the track shell
+        this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
+        this.magnetHasTarget = true;
+        const grounded = this.sinceContact <= 0.03;
+        if (grounded) {
+          // press into surface: raises normal load -> more traction
+          acc.addScaledVector(nn, -tu.magnetPressG * tu.gravity);
+          this.magnetForce = 0.55;
+        } else {
+          this.wasMagnetAirborne = true;
+          const fall = 1 - smoothstep(tu.magnetRange * 0.55, tu.magnetRange, d);
+          const a = tu.magnetAccel * fall;
+          acc.addScaledVector(nn, -a);
+          // damp velocity directed away from the surface (prevents orbiting)
+          const away = this.v.dot(nn);
+          if (away > 0) acc.addScaledVector(nn, -away * 2.2 * fall);
+          // approach limiter: firm but not brutal captures (max closing speed shrinks near the surface)
+          const closing = -away;
+          const vmax = 4 + 2.2 * Math.max(0, d - this.tune.radius);
+          if (closing > vmax) acc.addScaledVector(nn, Math.min(60, (closing - vmax) * 10));
+          this.magnetForce = Math.min(1, a / tu.magnetAccel);
+        }
+      }
+    } else if (this.sinceContact <= 0.05) {
+      this.magnetEnergy = Math.min(1, this.magnetEnergy + tu.magnetRegen * dt);
+    } else {
+      this.magnetEnergy = Math.min(1, this.magnetEnergy + tu.magnetRegen * 0.35 * dt);
+    }
+  }
+
+  snapshot(): SensoryState {
+    const pr = this.proj;
+    return {
+      t: this.t,
+      speed: this.v.length(),
+      angularSpeed: this.w.length(),
+      contact: this.contact,
+      rollingState: this.rollingState,
+      normalAccel: this.normalAccel,
+      slipSpeed: this.slipSpeed,
+      material: this.material.id,
+      airborneTime: this.airborneTime,
+      magnetActive: this.magnetActive,
+      magnetForce: this.magnetForce,
+      magnetEnergy: this.magnetEnergy,
+      submersion: this.submersion,
+      inTunnel: this.inTunnel,
+      lateral: pr.x,
+      height: pr.y,
+      s: pr.s,
+      driveLevel: this.driveLevel,
+    };
+  }
+}
+
+function smoothstep(a: number, b: number, x: number) {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}

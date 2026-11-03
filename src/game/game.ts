@@ -1,0 +1,229 @@
+import { ACESFilmicToneMapping, PCFSoftShadowMap, Scene, SRGBColorSpace, Vector3, WebGLRenderer, Group, Mesh, Material, Texture } from 'three';
+import { Track } from '../track/track';
+import { MATERIALS, MaterialProfile } from '../physics/materials';
+import { Run, RunPhase } from './run';
+import { Autopilot } from './autopilot';
+import { buildWorld, World } from '../render/world';
+import { buildTrackGroup } from '../render/trackMesh';
+import { BallView } from '../render/ballView';
+import { ChaseCamera } from '../render/chaseCamera';
+import { SensoryBus, SensoryEvent } from '../core/events';
+import type { AudioEngine } from '../audio/audioEngine';
+import type { HapticEngine } from '../haptics/haptics';
+import type { InputManager } from '../input/input';
+import type { CourseEntry } from '../commerce/catalog';
+import type { BallInput } from '../physics/ball';
+
+const FIXED_DT = typeof location !== 'undefined' && new URLSearchParams(location.search).has('fixed');
+
+export type GameMode = 'play' | 'preview' | 'attract';
+
+export interface Cosmetics { skin: string; beam: string; trail: boolean; }
+
+export interface GameCallbacks {
+  onHint?: (text: string) => void;
+  onPhase?: (phase: RunPhase) => void;
+  onHud?: (h: HudState) => void;
+  onPreviewEnd?: () => void;
+}
+
+export interface HudState {
+  speedKmh: number; progress: number; time: number; magnetEnergy: number; magnetActive: boolean;
+  driveLevel: number; falls: number; phase: RunPhase; airborne: boolean; mode: GameMode;
+}
+
+/**
+ * Orchestrates one loaded course: physics run, sensory bus, rendering,
+ * audio and haptics. The bus is the only link between the simulation and the
+ * output systems.
+ */
+export class Game {
+  readonly renderer: WebGLRenderer;
+  scene = new Scene();
+  quality: 'low' | 'high';
+  private world?: World;
+  private trackGroup?: Group;
+  private ballView?: BallView;
+  readonly camera: ChaseCamera;
+  run?: Run;
+  track?: Track;
+  material?: MaterialProfile;
+  course?: CourseEntry;
+  mode: GameMode = 'attract';
+  private autopilot?: Autopilot;
+  private bus = new SensoryBus();
+  private hintIndex = 0;
+  private previewTimer = 0;
+  private last = performance.now();
+  private time = 0;
+  paused = false;
+  cb: GameCallbacks = {};
+  cosmetics: Cosmetics = { skin: 'steel', beam: 'cyan', trail: false };
+  private frameTimes: number[] = [];
+  fps = 60;
+
+  constructor(private canvas: HTMLCanvasElement, private audio: AudioEngine, private haptics: HapticEngine, private input: InputManager) {
+    const mobile = matchMedia('(pointer: coarse)').matches;
+    this.quality = (new URLSearchParams(location.search).get('quality') as any) ?? (localStorage.getItem('gb.quality') as any) ?? 'high';
+    this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 2 : 2));
+    this.renderer.outputColorSpace = SRGBColorSpace;
+    this.renderer.toneMapping = ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
+    this.renderer.shadowMap.enabled = this.quality === 'high';
+    this.renderer.shadowMap.type = PCFSoftShadowMap;
+    this.camera = new ChaseCamera(innerWidth / innerHeight);
+    this.resize();
+    addEventListener('resize', () => this.resize());
+    this.bus.subscribe((st, ev) => this.onSensory(st, ev));
+    requestAnimationFrame(this.frame);
+  }
+
+  setQuality(q: 'low' | 'high') {
+    this.quality = q;
+    localStorage.setItem('gb.quality', q);
+    this.renderer.shadowMap.enabled = q === 'high';
+    this.renderer.setPixelRatio(q === 'high' ? Math.min(devicePixelRatio, 2) : Math.min(devicePixelRatio, 1.25));
+    if (this.course) this.load(this.course, this.mode);
+  }
+
+  resize() {
+    const w = innerWidth, h = innerHeight;
+    this.renderer.setSize(w, h, false);
+    this.camera.resize(w / h);
+  }
+
+  private disposeScene() {
+    this.scene.traverse((o) => {
+      const m = o as Mesh;
+      if (m.geometry) m.geometry.dispose();
+      const mats = (Array.isArray(m.material) ? m.material : m.material ? [m.material] : []) as Material[];
+      for (const mt of mats) {
+        for (const v of Object.values(mt)) if (v instanceof Texture && !(v as any).__shared) { /* textures are cached/shared */ }
+        mt.dispose();
+      }
+    });
+    this.scene = new Scene();
+  }
+
+  load(course: CourseEntry, mode: GameMode) {
+    this.disposeScene();
+    this.course = course;
+    this.mode = mode;
+    this.material = MATERIALS[course.materialId];
+    this.track = new Track(course.layout());
+    this.world = buildWorld(this.scene, this.renderer, this.track, this.material, this.quality);
+    this.trackGroup = buildTrackGroup(this.track, this.material, this.world.groundHeight);
+    this.scene.add(this.trackGroup);
+    this.run = new Run(this.track, this.material);
+    this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
+    this.ballView = new BallView(this.run.ball.tune.radius);
+    this.applyCosmetics();
+    this.scene.add(this.ballView.group);
+    this.autopilot = mode !== 'play' ? new Autopilot(this.track) : undefined;
+    this.hintIndex = 0;
+    this.previewTimer = mode === 'preview' ? 18 : 0;
+    this.audio.configure(this.material);
+    this.haptics.configure(this.material);
+    this.camera.snap();
+    this.input.driveLevel = 1;
+    if (mode !== 'play') {
+      // Previews start part-way in so the world's signature feature appears quickly
+      const startS = mode === 'preview' ? Math.min(this.track.length * 0.12, 220) : 6;
+      this.run.launch();
+      this.run.ball.placeAt(startS, 16);
+    }
+    this.paused = false;
+  }
+
+  applyCosmetics() {
+    if (!this.ballView) return;
+    this.ballView.setSkin(this.cosmetics.skin);
+    this.ballView.setBeamColor(this.cosmetics.beam);
+    this.ballView.setTrail(this.cosmetics.trail);
+  }
+
+  /** Returns true if this call launched the ball. */
+  launch(): boolean {
+    if (this.mode !== 'play' || !this.run || this.run.phase !== 'ready' || this.paused) return false;
+    this.input.calibrate();
+    this.run.launch();
+    return true;
+  }
+
+  restart() {
+    if (!this.run || !this.track) return;
+    this.run.reset();
+    this.hintIndex = 0;
+    this.camera.snap();
+    this.input.driveLevel = 1;
+    this.cb.onPhase?.('ready');
+    this.showHints(0);
+  }
+
+  private showHints(s: number) {
+    if (!this.track || this.mode !== 'play') return;
+    const hints = this.track.hints;
+    while (this.hintIndex < hints.length && s >= hints[this.hintIndex].s) {
+      this.cb.onHint?.(hints[this.hintIndex].text);
+      this.hintIndex++;
+    }
+  }
+
+  private onSensory(st: Parameters<Parameters<SensoryBus['subscribe']>[0]>[0], ev: SensoryEvent[]) {
+    if (this.mode === 'attract') { this.audio.quiet(); return; }
+    this.audio.update(st, ev, this.dtLast);
+    if (this.mode === 'play') this.haptics.update(st, ev, this.dtLast);
+    for (const e of ev) {
+      if (e.type === 'MAGNETIC_CAPTURE') this.ballView?.flashCapture();
+      if ((e.type === 'COLLISION_IMPACT' || e.type === 'AIRBORNE_END') && e.intensity > 0.45) this.camera.shake = Math.max(this.camera.shake, e.intensity * 0.6);
+    }
+  }
+  private dtLast = 1 / 60;
+
+  private frame = (now: number) => {
+    requestAnimationFrame(this.frame);
+    // ?fixed=1 makes every frame exactly 1/60 s (deterministic captures on slow software GPUs)
+    const dt = FIXED_DT ? 1 / 60 : Math.min(0.05, (now - this.last) / 1000);
+    this.last = now;
+    this.dtLast = dt;
+    this.frameTimes.push(dt);
+    if (this.frameTimes.length > 60) { this.frameTimes.shift(); this.fps = 1 / (this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length); }
+    if (!this.run || !this.track || !this.ballView) return;
+    this.time += dt;
+    let input: BallInput;
+    if (this.mode === 'play') input = this.input.sample(dt);
+    else input = this.autopilot!.decide(this.run.ball);
+    if (!this.paused) {
+      this.run.update(dt, input);
+      if (this.mode !== 'play' && this.run.phase === 'finished') {
+        this.run.reset(); this.run.launch(); this.run.ball.placeAt(6, 12);
+      }
+      if (this.mode !== 'play' && this.run.phase === 'ready') { this.run.launch(); }
+    }
+    const b = this.run.ball;
+    const events = this.run.pendingEvents.splice(0);
+    if (!this.paused) this.bus.publish(b.snapshot(), events);
+    else this.audio.quiet();
+    this.showHints(b.proj.s);
+    this.ballView.update(b, dt, this.time);
+    this.camera.update(b, this.track, dt);
+    // Shadow camera follows the ball
+    if (this.world) {
+      const sun = this.world.sun;
+      sun.target.position.copy(b.p);
+      sun.position.copy(b.p).addScaledVector(this.world.sunDir, 90);
+    }
+    this.renderer.render(this.scene, this.camera.cam);
+    if (this.mode === 'preview' && !this.paused) {
+      this.previewTimer -= dt;
+      if (this.previewTimer <= 0) { this.previewTimer = 1e9; this.cb.onPreviewEnd?.(); }
+    }
+    this.cb.onHud?.({
+      speedKmh: b.v.length() * 3.6, progress: this.run.progress, time: this.run.time, magnetEnergy: b.magnetEnergy,
+      magnetActive: b.magnetActive, driveLevel: this.mode === 'play' ? this.input.driveLevel : input.driveLevel, falls: this.run.falls,
+      phase: this.run.phase, airborne: b.airborne, mode: this.mode,
+    });
+    void Vector3;
+  };
+}

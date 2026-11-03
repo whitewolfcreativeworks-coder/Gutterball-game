@@ -1,0 +1,30 @@
+{
+  "name": "gutterball",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gutterball — mobile-first 3D physics rolling-ball adventure.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whitewolfcreativeworks-coder/gutterball-game.git"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "puppeteer-core": "^25.16.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  }
+}
