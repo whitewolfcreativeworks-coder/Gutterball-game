@@ -8,5 +8,5 @@ export default defineConfig({
   base: './',
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   build: { target: 'es2020', chunkSizeWarningLimit: 1500 },
-  test: { include: ['tests/**/*.test.ts', 'scratch/**/*.test.ts'] },
+  test: { include: ['tests/**/*.test.ts'] },
 } as any);

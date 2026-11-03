@@ -152,3 +152,4 @@ select { font: inherit; color: var(--ink); background: rgba(255,255,255,0.08); b
 .calib .dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--wood); left: 47px; top: 47px; }
 /* Scrolling flex panels: never let children shrink (the ad player collapsed otherwise) */
 .panel > *, .menu > * { flex-shrink: 0; }
+#ui > .toast { pointer-events: none; }

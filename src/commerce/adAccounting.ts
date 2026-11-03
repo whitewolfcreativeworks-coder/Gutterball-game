@@ -48,6 +48,7 @@ export interface AdSession {
   lastMediaMs: number;
   maxMediaMs: number;     // furthest media position credited (prevents replay credit)
   eligibleMs: number;     // validated playback time
+  playWallMs: number;     // server wall time spent in PLAYING (between playing heartbeats)
   heartbeats: number;
   suspicious: string[];   // validation notes
   settlement?: Settlement;
@@ -170,7 +171,7 @@ export class AdAccountingServer {
     const s: AdSession = {
       sessionId: `S${this.st.nextSession++}-${Math.floor(this.random() * 1e9).toString(36)}`,
       playerId, adId, campaignId: cr.campaignId, state: 'CREATED',
-      createdAt: now, lastHeartbeatServer: now, lastMediaMs: 0, maxMediaMs: 0, eligibleMs: 0, heartbeats: 0,
+      createdAt: now, lastHeartbeatServer: now, lastMediaMs: 0, maxMediaMs: 0, eligibleMs: 0, playWallMs: 0, heartbeats: 0,
       suspicious: [],
     };
     if (starts.length > COMMERCE_CONFIG.maxSessionsPerHour) s.suspicious.push('rate');
@@ -199,15 +200,20 @@ export class AdAccountingServer {
     const wall = Math.max(0, now - s.lastHeartbeatServer);
     const media = Math.max(0, Math.min(cr.durationMs, mediaMs));
     const advance = media - s.lastMediaMs;
-    if (s.state !== 'CREATED' && playing && s.state === 'PLAYING') {
+    if (playing && s.state === 'PLAYING') {
+      // Real time spent playing, measured by the server only
+      s.playWallMs += wall;
       if (advance < 0) s.suspicious.push('seek-back');
-      // credit only new media (beyond max position) and never more than real time passed
-      const fresh = Math.max(0, media - Math.max(s.lastMediaMs, s.maxMediaMs));
-      if (advance > wall * 1.25 + 300) s.suspicious.push('impossible-advance');
-      const credit = Math.min(fresh, wall + 50);
-      s.eligibleMs = Math.min(cr.durationMs, s.eligibleMs + Math.max(0, credit));
+      // Only media beyond the furthest credited position counts (no replay credit)
+      const fresh = Math.max(0, media - s.maxMediaMs);
+      // Cumulative cap: total credit can never exceed total real playing time
+      const room = Math.max(0, s.playWallMs + 50 - s.eligibleMs);
+      const credit = Math.min(fresh, room);
+      s.eligibleMs = Math.min(cr.durationMs, s.eligibleMs + credit);
+      s.maxMediaMs = Math.max(s.maxMediaMs, s.maxMediaMs + credit);
+      // Sustained over-reporting (not a single janky frame) is treated as manipulation
+      if (media > s.playWallMs * 1.25 + 1500 && !s.suspicious.includes('impossible-advance')) s.suspicious.push('impossible-advance');
     }
-    s.maxMediaMs = Math.max(s.maxMediaMs, Math.min(media, s.lastMediaMs + wall + 50));
     s.lastMediaMs = media;
     s.lastHeartbeatServer = now;
     s.heartbeats++;

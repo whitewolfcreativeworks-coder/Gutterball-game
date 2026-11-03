@@ -75,6 +75,17 @@ describe('Ad Room accounting', () => {
     expect(srv.balanceMs('p')).toBe(0);
   });
 
+  it('tolerates frame jitter: chunky media reports are not fraud and catch up to real time', () => {
+    const s = srv.createSession('p', 'a1');
+    srv.heartbeat(s.sessionId, 'p', 0, true);
+    // media advances in uneven chunks (janky device), real time steady at 1 s per heartbeat
+    const media = [400, 2400, 2400, 2400, 5600, 6000];
+    for (const m of media) { clock.advance(1000); srv.heartbeat(s.sessionId, 'p', m, true); }
+    const st = srv.stop(s.sessionId, 'p', 6000, false);
+    expect(st.outcome).toBe('SETTLED');
+    expect(st.creditedMs).toBe(6000);
+  });
+
   it('never credits more than real time even with slow heartbeats', () => {
     const s = srv.createSession('p', 'a1');
     srv.heartbeat(s.sessionId, 'p', 0, true);

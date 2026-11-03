@@ -191,18 +191,18 @@ function buildScenery(kind: string, gh: (x: number, z: number) => number, neares
   const m4 = new Matrix4(), q = new Quaternion(), sc = new Vector3(), p = new Vector3();
   let rs = 12345;
   const rnd = () => { rs = (rs * 1664525 + 1013904223) >>> 0; return rs / 4294967296; };
-  const place = (inst: InstancedMesh, minDist: number, sMin: number, sMax: number, yOff = 0, nearBias = 1) => {
+  const place = (inst: InstancedMesh, minDist: number, sMin: number, sMax: number, yOff = 0, nearBias = 1, footprint = 0) => {
     let n = 0;
     for (let tries = 0; tries < inst.count * 6 && n < inst.count; tries++) {
       // bias placement toward the track so the run feels dense
       const x = b[0] + rnd() * (b[1] - b[0]);
       const z = b[2] + rnd() * (b[3] - b[2]);
       const [d, ty] = nearest(x, z);
-      if (d < minDist) continue;
+      const s = sMin + rnd() * (sMax - sMin);
+      if (d < minDist + footprint * s) continue;
       if (d > 260 && rnd() < 0.7 * nearBias) continue;
       const y = gh(x, z);
       if (y > ty - 3 && d < 25) continue;
-      const s = sMin + rnd() * (sMax - sMin);
       p.set(x, y + yOff * s, z);
       q.setFromAxisAngle(new Vector3(0, 1, 0), rnd() * Math.PI * 2);
       sc.set(s, s * (0.8 + rnd() * 0.5), s);
@@ -244,7 +244,7 @@ function buildScenery(kind: string, gh: (x: number, z: number) => number, neares
     geo.translate(0, kind === 'temple' ? 9 : 15, 0);
     const mat = new MeshStandardMaterial({ color: col, roughness: 0.8, metalness: kind === 'industrial' ? 0.6 : 0, emissive: kind === 'neon' ? 0x2a1050 : 0x000000 });
     const inst = new InstancedMesh(geo, mat, kind === 'temple' ? 900 : 600);
-    place(inst, 16, kind === 'temple' ? 0.8 : 0.6, kind === 'temple' ? 1.4 : 3.2);
+    place(inst, 12, kind === 'temple' ? 0.8 : 0.6, kind === 'temple' ? 1.4 : 3.2, 0, 1, kind === 'temple' ? 2 : 8);
     g.add(inst);
     if (kind === 'neon') {
       const strip = new InstancedMesh(new BoxGeometry(10.4, 0.4, 10.4), new MeshStandardMaterial({ color: 0xff2bd6, emissive: 0xff2bd6, emissiveIntensity: 2 }), inst.count);
@@ -255,7 +255,7 @@ function buildScenery(kind: string, gh: (x: number, z: number) => number, neares
     const geo = new CylinderGeometry(6, 9, 40, 7);
     geo.translate(0, 18, 0);
     const mesas = new InstancedMesh(geo, new MeshStandardMaterial({ color: 0xb3693b, roughness: 1, flatShading: true }), 260);
-    place(mesas, 30, 0.6, 2.4);
+    place(mesas, 14, 0.6, 2.4, 0, 1, 10);
     const cactus = new InstancedMesh(new CylinderGeometry(0.4, 0.5, 4, 6).translate(0, 2, 0), new MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.9 }), 500);
     place(cactus, 8, 0.7, 1.6);
     g.add(mesas, cactus);
