@@ -1,7 +1,7 @@
 import { MATERIAL_ORDER, MATERIALS } from '../physics/materials';
 import type { CourseLayout } from '../track/track';
 import { WOOD_COURSE } from '../courses/wood';
-import { generateLayout } from '../courses/generated';
+import { WORLD_LAYOUTS } from '../courses/worlds';
 import { COMMERCE_CONFIG } from './config';
 
 /**
@@ -47,14 +47,14 @@ export const CATALOG: CourseEntry[] = MATERIAL_ORDER.map((id) => {
     id,
     materialId: id,
     world: MATERIALS[id].name,
-    name: free ? WOOD_COURSE.name : generateLayout(id).name,
+    name: free ? WOOD_COURSE.name : WORLD_LAYOUTS[id]().name,
     tagline: t[0],
     previewFocus: t[1],
     free,
     productId: free ? null : `com.gutterball.course.${id}`,
     displayPriceUsd: free ? null : COMMERCE_CONFIG.coursePriceUsd,
-    status: free ? 'designed' : 'prototype',
-    layout: free ? () => WOOD_COURSE : () => generateLayout(id),
+    status: 'designed',
+    layout: free ? () => WOOD_COURSE : WORLD_LAYOUTS[id],
   } as CourseEntry;
 });
 

@@ -249,6 +249,51 @@
 
 ---
 
+## Course styles: each world rides differently
+
+Each world gets one coaster or track style that fits both its material physics and its math, plus one main **verb** (what you mostly *do* there), its own intensity curve, and one signature moment. This follows the research on coaster styles, bobsleigh tracks, Trackmania surface identities and pacing.
+
+### Physics rules for a free ball (it isn't locked to rails like a coaster train)
+
+- **The trough banks itself.** In a turn the ball settles on the wall where tan θ = v²/(gR). Wall height and cross-section matter more than the built-in bank.
+- **Any crest faster than √(g·R) is a jump.** There are no up-stop wheels, and the magnet plays that role.
+- **Inversions need a tube, speed, or the magnet.** A ball rolling without slipping needs about 2.7 r of starting height for a circular loop. Rolls produce no holding force: a beautiful float inside a tube, a fall in the open.
+- **Shrinking loops absorb energy loss,** because a smaller loop needs less speed at the top. That's the physics behind Glass.
+- **Unbanked hairpins become wall-rides,** so wall height is the hazard. That's the physics behind Grating.
+
+### Pacing principles
+
+- **Build an intensity curve, with rests** such as helices and slow sections.
+- **One signature moment per course,** foreshadowed early and echoed at a smaller scale. That fits the fractal self-similarity.
+- **Contrast:** open against enclosed, loud against quiet.
+- **Teach, develop, test, conclude:** introduce the world's quirk safely, then build on it.
+- **Make splits differ in kind** (fast and risky against long and safe), and readable about 2 s ahead.
+- **Finish with a callback** to the signature, at full scale.
+
+| World | Style | Verb | Intensity curve | Signature moment | Splits |
+|---|---|---|---|---|---|
+| Wood | Classic coaster intro (reference) | learn everything | big drop first, varied, loop finale | tube splits, corkscrew, loop | tube splits, High Road |
+| Concrete | Storm-drain "tech": square culverts, 90° box corners, stepped spillways | manage momentum, brake by line | stop-start, rising | **The Sponge:** Menger cross with a 3-way split | always threes |
+| Sheet metal | Launched duelling looper | magnetise and invert | launch, high throughout, relaunch | **interlocking twin loops;** hop to the mirror track | mirrored twins |
+| Ice | Olympic bobsleigh run | drift and pick your line | builds all the way down | **The Kreisel:** a ~330° near-vertical-wall circle | 60° dendrite branches that rejoin |
+| Water | River run / water coaster | read the current | calm, rapids, calm, plunge | **The Oxbow:** jump the neck of a meander | braided channels |
+| Glass | Sky looper: Apollonian cascade | hold a precise line at height | exposed climb, then a shrinking cascade | **The Gasket:** tangent loops shrinking big → small | inner (small, fast) or outer circle |
+| Rubber | Rebound labyrinth (pinball meets spinning mouse) | bounce and grip | playful, chaotic middle | **The Mitosis Chamber:** a blob pinches into two lanes | mitosis pinches |
+| Sand | Dune terrain coaster | keep momentum, pick firm ground | long swells, slip-face plunges | **slip-face plunge into the girih star courtyard** (exits 72° apart) | firm against loose lanes, radial exits |
+| Mud | Crack delta ("Plinko" descent) | choose at 120° forks | heavy and slow, bursts of drops | **The Crack Delta:** a cascade of Y-forks | many 120° forks |
+| Polished stone | Hyper and dive coaster | hold top speed through pinch points | suspense hold, biggest drop, sweeps | **The Radial Dive:** teeter at a lip, then a near-vertical plunge | inner or outer lobe at pinch points |
+| Steel grating | Wild-mouse switchback stack (Hilbert) | survive hairpins in rhythm | climb, frantic hairpins, drops | **The Hilbert Stack:** stacked hairpins with drop hatches | vertical shortcuts |
+| Snow | Alpine slalom and ski jump | carve and fly | gentle, slalom, giant air | **The Ski Jump:** long flight, magnet landing | Koch notch cut-throughs, packed against powder |
+
+**Distinctness:**
+- **Inversions:** Metal and Glass. Wood has a few as the intro.
+- **Big air:** Snow, Sand, Rubber and Stone.
+- **Pure wall-riding:** Ice, Grating and Concrete.
+- **Most decisions:** Mud, Water and Concrete.
+- **Fastest:** Stone, then Ice and Metal. **Slowest:** Mud and Snow.
+
+The detailed ride-order sequences for each world come from the research report. They are built world by world; see the course files under `src/courses/`.
+
 ## New engine pieces this needs
 
 | Piece | For |

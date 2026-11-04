@@ -25,6 +25,8 @@ Legend: ✅ done & verified here · 🟡 done, not verifiable in this environmen
 | Attractive environment (sky, forest valley, trestles, fog) | ✅ | screenshots |
 | Performance on phones | 🟡 | unknown until tried on a device; Settings → Graphics → "Battery saver" halves the cost |
 
+| Eleven hand-composed courses, each with its own course style (bobsleigh, duelling looper, Apollonian loop cascade, wild-mouse stack, dive coaster, ski jump, river run, dune terrain, crack delta, rebound labyrinth, storm drain), from an element library; 3-way and 2-way splits with automatic junctions and rejoins | ✅ | tests: every world completes; every branch rides back onto the main course; self-intersection scan |
+
 ## Objective B — commercial foundation
 
 | Item | Status |

@@ -40,7 +40,7 @@ npm run smoke      # headless Chrome run with screenshots in screenshots/ (needs
 
 - **Physics** — analytic gutter SDF (no triangle seams to snag on), turtle-integrated track frames that survive loops without twist, a 240 Hz rigid sphere with Coulomb friction coupling spin and slide. → [docs/PHYSICS.md](docs/PHYSICS.md)
 - **Physical sensory engine** — one event stream (`ROLLING_CONTACT`, `COLLISION_IMPACT`, `MAGNETIC_CAPTURE`, …) drives procedural Web Audio synthesis and haptics. → [docs/SENSORY.md](docs/SENSORY.md)
-- **Twelve worlds** — Wood (free, hand-designed) plus eleven prototype courses, each with its own material profile: friction, rolling resistance, bounce, fluid/granular models, acoustics and haptic texture.
+- **Twelve worlds** — Wood (free) plus eleven hand-composed courses, each with its own course style (see docs/WORLD_MATH.md), wall mathematics and material profile: friction, rolling resistance, bounce, fluid/granular models, acoustics and haptic texture.
 - **Commerce foundation** — course catalog, entitlement service with a purchase *simulator*, and the optional Ad Room with server-authoritative, idempotent, append-only accounting. → [docs/COMMERCE.md](docs/COMMERCE.md), [docs/AD_ROOM.md](docs/AD_ROOM.md)
 - **Mobile packaging** — browser build now; native iOS/Android path via Capacitor. → [docs/MOBILE.md](docs/MOBILE.md)
 - **Engineering decisions** → [docs/DECISIONS.md](docs/DECISIONS.md) · **Assets & licences** → [docs/ASSETS.md](docs/ASSETS.md)

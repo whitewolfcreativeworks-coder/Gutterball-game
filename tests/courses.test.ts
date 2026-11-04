@@ -194,3 +194,31 @@ describe('Launch tube split (Timberline Run)', () => {
   it('staying put takes The Plunge and comes out onto the course', () => { const r = go('dark'); expect(r.done).toBe(true); expect(r.dayMax).toBeLessThan(60); });
   it('holding left takes Daybreak, which merges back into the pipe', () => { const r = go('day'); expect(r.done).toBe(true); expect(r.dayMax).toBeGreaterThan(200); });
 });
+
+describe('every world: branches rejoin cleanly and can be ridden', () => {
+  for (const c of CATALOG) {
+    if (c.id === 'wood') continue;
+    it(`${c.world}: ${c.name}`, () => {
+      const course = new Course(c.layout());
+      for (const e of course.rejoinError) expect(e).toBeLessThan(6);
+      // ride each branch from just past its split to back on the main course
+      for (let bi = 1; bi < course.all.length; bi++) {
+        const br = course.all[bi];
+        const j = course.junctions.find((x) => x.b === bi)!;
+        const b = new BallPhysics(course, MATERIALS[c.materialId]);
+        b.placeAt(j.bS[1] + 4, 22, 0, bi);
+        let ok = false, minDepth = 1e9;
+        for (let i = 0; i < 240 * 40; i++) {
+          const steer = Math.max(-1, Math.min(1, -b.proj.x * 0.5 - b.v.dot(b.proj.R) * 0.3));
+          b.step(1 / 240, { steer, magnet: false, jump: false, driveLevel: 1 }); b.events.length = 0;
+          let dep = -1e9;
+          for (let k = 0; k < b.tracks.length; k++) { const p = b.projs[k]; p.project(b.p.x, b.p.y, b.p.z); if (Math.abs(p.along) < 3) dep = Math.max(dep, b.tracks[k].channelDepthLocal(p.s, p.x, p.y)); }
+          minDepth = Math.min(minDepth, dep);
+          if (b.activeIndex === 0 && b.mainProj.s > (course.junctions.filter((x) => x.b === bi).pop()!.aS[1] + 20)) { ok = true; break; }
+        }
+        expect(ok, `${br.layout.id} rejoins`).toBe(true);
+        expect(minDepth, `${br.layout.id} stays in the gutter`).toBeGreaterThan(-0.3);
+      }
+    });
+  }
+});

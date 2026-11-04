@@ -89,7 +89,7 @@ export interface BranchSpec {
    * share one hollow for this distance, so you can roll from one into the other
    * (a tube that splits in two, or two tubes that merge back into one).
    */
-  junction?: number;
+  junction?: number | 'auto';
   /** Snap the branch's end onto this main-course point: the branch merges back in. */
   rejoin?: { at: string; s: number } | 'auto';
 }
@@ -488,9 +488,25 @@ export class Course {
         }
       }
       if (b.junction) {
-        const J = b.junction;
-        this.junctions.push({ a: 0, b: bi, aS: [s - 2, s + J + 2], bS: [0, J] });
-        if (sEnd >= 0) this.junctions.push({ a: 0, b: bi, aS: [sEnd - J - 2, sEnd + 2], bS: [br.length - J, br.length] });
+        let J0: number, J1: number;
+        if (b.junction === 'auto') {
+          // share the hollow until the two gutters have fully separated (centrelines > ~15 m apart)
+          const sep = (i: number) => {
+            let best = Infinity;
+            const k = i * 3, from = Math.max(0, Math.round(s / this.main.ds) - 40);
+            for (let j = from; j < this.main.n; j += 2) {
+              const d = (this.main.P[j * 3] - br.P[k]) ** 2 + (this.main.P[j * 3 + 1] - br.P[k + 1]) ** 2 + (this.main.P[j * 3 + 2] - br.P[k + 2]) ** 2;
+              if (d < best) best = d;
+            }
+            return Math.sqrt(best);
+          };
+          let i0 = 0; while (i0 < br.n - 1 && sep(i0) < 15) i0 += 4;
+          let i1 = br.n - 1; while (i1 > 0 && sep(i1) < 15) i1 -= 4;
+          J0 = Math.min(br.length * 0.45, i0 * br.ds + 4);
+          J1 = Math.min(br.length * 0.45, (br.n - 1 - i1) * br.ds + 4);
+        } else { J0 = J1 = b.junction; }
+        this.junctions.push({ a: 0, b: bi, aS: [s - 2, s + J0 + 2], bS: [0, J0] });
+        if (sEnd >= 0) this.junctions.push({ a: 0, b: bi, aS: [sEnd - J1 - 2, sEnd + 2], bS: [br.length - J1, br.length] });
       }
       this.branches.push(br);
     }
