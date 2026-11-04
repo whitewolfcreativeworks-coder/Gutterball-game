@@ -141,6 +141,10 @@ export class HapticEngine {
         this.fire(5 + 4 * roughness, roughness, 0);
       }
     }
+    // Warp rumble: at tube speeds the whole device trembles (gently, rate-limited)
+    if (st.inTunnel && st.speed > 42) {
+      if (performance.now() - this.lastPulseAt > 180 - Math.min(80, (st.speed - 42) * 3)) this.fire(6, Math.min(0.7, (st.speed - 42) / 40), 0);
+    }
     // Magnet hum: light periodic texture
     if (st.magnetActive && st.magnetForce > 0.3) {
       if (performance.now() - this.lastPulseAt > 110) this.fire(8, Math.min(1, st.magnetForce * 0.9), 0);

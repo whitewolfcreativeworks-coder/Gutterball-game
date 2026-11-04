@@ -58,6 +58,7 @@ export interface BallTuning {
   magnetMinRestart: number;
   tubeFlowAccel: number;    // pneumatic push inside tubes (m/s^2)
   tubeFlowCap: number;      // ...fading out near this speed
+  gutterCruise: number;     // open-gutter speed above which you ease back down (after a tube)
 }
 
 export const DEFAULT_TUNING: BallTuning = {
@@ -81,8 +82,9 @@ export const DEFAULT_TUNING: BallTuning = {
   magnetDrain: 0.1,
   magnetRegen: 0.45,
   magnetMinRestart: 0.05,
-  tubeFlowAccel: 9,
-  tubeFlowCap: 46,
+  tubeFlowAccel: 24,
+  tubeFlowCap: 72,
+  gutterCruise: 46,
 };
 
 const tmpA = new Vector3();
@@ -294,11 +296,14 @@ export class BallPhysics {
 
     if (grounded) {
       // Steering through the gyro core (torque) + direct field component
-      const st = input.steer * tu.steerAccel;
+      // steering stops adding sideways speed past ~12 m/s, so a held tilt
+      // carries you up a wall instead of spinning you round a pipe like a centrifuge
+      const vlat = this.v.dot(Rt);
+      const latFade = Math.max(0, Math.min(1, 1 - (Math.sign(input.steer) * vlat - 9) / 5));
+      const st = input.steer * tu.steerAccel * latFade;
       acc.addScaledVector(Rt, st * tu.steerDirectFrac);
       // Grip assist: sideways sliding settles quickly when you ease off the
       // tilt, so the ball goes where you point it instead of wandering.
-      const vlat = this.v.dot(Rt);
       acc.addScaledVector(Rt, -vlat * 1.6 * (1 - Math.min(1, Math.abs(input.steer))));
       // Δω = (n × dir)/r * Δv ; scale 3.5 so friction delivers ~the requested linear accel
       const gyro = st * (1 - tu.steerDirectFrac) * 3.5 / r * dt;
@@ -323,10 +328,22 @@ export class BallPhysics {
     // ---- Pneumatic tubes: an air current carries you along inside a pipe ----
     {
       const tk = this.track.tubeAt(pr.s);
+      const vf = this.v.dot(pr.T);
+      // the current goes calm approaching and through a split, so you have time to pick a side
+      let calm = false;
+      for (const j of this.junctions) {
+        if (j.bS[0] !== 0) continue; // only split starts (not merges)
+        if (this.activeIndex === j.a && pr.s > j.aS[0] - 60 && pr.s < j.aS[1]) calm = true;
+        if (this.activeIndex === j.b && pr.s < j.bS[1]) calm = true;
+      }
       if (tk > 0.3) {
-        const vf = this.v.dot(pr.T);
-        const fade = Math.max(0, Math.min(1, (tu.tubeFlowCap - vf) / 8));
+        // WARP: tubes fire you along at up to ~260 km/h (a gentle 100 km/h current near splits)
+        const capHere = this.track.warpCap[Math.max(0, Math.min(this.track.n - 1, Math.round(pr.s / this.track.ds)))] || tu.tubeFlowCap;
+        const fade = Math.max(0, Math.min(1, ((calm ? Math.min(28, capHere) : capHere) - vf) / 10));
         acc.addScaledVector(pr.T, tu.tubeFlowAccel * fade * Math.min(1, (tk - 0.3) / 0.5));
+      } else if (vf > tu.gutterCruise && !this.boosting) {
+        // back out in the open gutter the air brakes ease you down to cruising speed (~1 s)
+        acc.addScaledVector(pr.T, -(vf - tu.gutterCruise) * 1.6);
       }
     }
 

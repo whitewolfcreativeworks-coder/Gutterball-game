@@ -27,3 +27,19 @@ Each world has its own fractal family and palette: Kali-set filaments (wood, ice
 ## Performance
 
 Effects run on the GPU; resolution adapts automatically to hold ~60 fps. "Battery saver" quality disables post-processing and shadows.
+
+## Dome-theatre mode: tubes as a psychedelic warp ride
+
+Modelled on immersive dome theatres and flight rides (the Sphere in Las Vegas, teamLab-style projection rooms, 4D cinemas): fill the whole field of view with coherent motion, layer it for depth, cycle the colour, and add body cues.
+
+| Technique | Implementation |
+|---|---|
+| Wrap-around projection | Inside a tube the wood darkens and the fractal owns every surface, floor included; the pattern wraps seamlessly round the pipe |
+| Layered parallax | Two fractal layers at different scales flow at different speeds and twist in opposite directions |
+| Vection (self-motion from optic flow) | Everything streams toward you, scaled by your real speed; warp rings rush past; glowing "mist" streaks hang in the pipe and stretch into lines as you fly through them |
+| Psychedelic colour | Full-spectrum hue cycling in time, along the course and through the pattern (a gentler shimmer in the open gutter) |
+| Breathing | Push-pull zoom of the pattern, stronger in tubes |
+| Warp speed | Tubes are pneumatic: the air current fires you up to ~260 km/h; the field of view stretches up to 16° wider; air brakes ease you back to cruising speed (~165 km/h) when the pipe opens |
+| "4D" body cues | Wind roar rises in tubes (the fans), and the device trembles at warp speed (rate-limited rumble) |
+
+Splits stay fair: the current calms to ~100 km/h approaching and through a split, so there's time to pick a side, and branch tubes that lead into jumps have a lower warp cap.

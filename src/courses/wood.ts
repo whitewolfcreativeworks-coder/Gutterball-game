@@ -142,8 +142,8 @@ export const WOOD_COURSE: CourseLayout = {
       rejoin: { at: 'launchMerge', s: 45 }, // ...and the two pipes merge back here
       // (the Skylight's solved layout, mirrored left: lands exactly back on the main pipe)
       segments: [
-        { len: 70, yaw: 31.3, pitch: -4.8, tube: true, label: 'dayIn', fx: { twist: 1.5 } },
-        { len: 60, yaw: -31.3, pitch: -6.1, tube: true, fx: { flow: -1.5 } },
+        { len: 70, yaw: 31.3, pitch: -4.8, tube: true, warp: 34, label: 'dayIn', fx: { twist: 1.5 } },
+        { len: 60, yaw: -31.3, pitch: -6.1, tube: true, warp: 34, fx: { flow: -1.5 } },
         { len: 29.3, pitch: -6, label: 'dayOpen', fx: { flow: 1 } },
         { len: 16, pitch: 6, openSky: true, label: 'dayKick', fx: { pulse: 1 } },
         { len: 20, pitch: -13.8, openSky: true, fx: { flow: -1 } },
@@ -163,8 +163,8 @@ export const WOOD_COURSE: CourseLayout = {
       rejoin: { at: 'burrowMerge', s: 45 }, // ...and the two pipes merge back here
       // (layout solved numerically so the Skylight lands exactly back on the main pipe)
       segments: [
-        { len: 70, yaw: -31.3, pitch: -4.8, tube: true, label: 'skyIn', fx: { twist: 1.5 } },
-        { len: 60, yaw: 31.3, pitch: -6.1, tube: true, fx: { flow: -1.5 } },
+        { len: 70, yaw: -31.3, pitch: -4.8, tube: true, warp: 34, label: 'skyIn', fx: { twist: 1.5 } },
+        { len: 60, yaw: 31.3, pitch: -6.1, tube: true, warp: 34, fx: { flow: -1.5 } },
         { len: 29.3, pitch: -6, label: 'skyOpen', fx: { flow: 1 } },
         { len: 16, pitch: 6, openSky: true, label: 'skyKick', fx: { pulse: 1 } },
         { len: 20, pitch: -13.8, openSky: true, fx: { flow: -1 } },

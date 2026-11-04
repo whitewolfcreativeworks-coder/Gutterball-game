@@ -28,6 +28,7 @@ export interface Segment {
   gap?: boolean;      // no gutter here (must be jumped)
   openSky?: boolean;  // containment walls stop above the rim (fly-off-course zone)
   tube?: boolean;     // the walls curl over and close into a full pipe
+  warp?: number;      // top speed the tube's air current pushes you to here (m/s; default: full warp)
   /**
    * Fractal motion for this section (visual only):
    *  flow  +1 = streams WITH you at your speed (feels locked to the ball),
@@ -114,6 +115,8 @@ export class Track {
   readonly openSky: Uint8Array;
   /** 0 = open gutter .. 1 = closed tube, eased over ~24 m at each end. */
   readonly tubeK: Float32Array;
+  /** Per-sample tube current top speed (0 = default warp). */
+  readonly warpCap: Float32Array;
   /** Per-sample fractal motion [flow, pulse, twist], smoothed between sections. */
   readonly fxMode: Float32Array;
   readonly obstacles: Obstacle[];
@@ -138,6 +141,7 @@ export class Track {
     this.openSky = new Uint8Array(this.n);
     this.fxMode = new Float32Array(this.n * 3);
     this.tubeK = new Float32Array(this.n);
+    this.warpCap = new Float32Array(this.n);
     this.build();
     {
       // the walls curl closed gradually: box filter (+-12 m), then ease
@@ -259,6 +263,7 @@ export class Track {
         curOpen = !!seg.openSky || !!this.layout.openStart;
         curFx = [seg.fx?.flow ?? 0, seg.fx?.pulse ?? 0, seg.fx?.twist ?? 0];
         this.tubeK[i] = seg.tube ? 1 : 0;
+        this.warpCap[i] = seg.warp ?? 0;
         writeSample(i, !!seg.tunnel, !!seg.gap);
         i++;
         sGlobal += this.ds;

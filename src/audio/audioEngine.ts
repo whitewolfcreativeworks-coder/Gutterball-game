@@ -288,8 +288,10 @@ export class AudioEngine {
     }
     // --- wind ---
     const air = st.contact ? 0 : 1;
-    this.wind!.gain.gain.setTargetAtTime(Math.min(0.5, (sp / 30) ** 2 * (0.22 + 0.25 * air)), t, 0.08);
-    this.wind!.filt.frequency.setTargetAtTime(250 + sp * 35, t, 0.08);
+    // in a tube the pneumatic air current roars around you (the "fans" of a 4D ride)
+    const tubeAir = st.inTunnel ? 1 : 0;
+    this.wind!.gain.gain.setTargetAtTime(Math.min(0.62, (sp / 30) ** 2 * (0.22 + 0.25 * air + 0.18 * tubeAir)), t, 0.08);
+    this.wind!.filt.frequency.setTargetAtTime(250 + sp * (tubeAir ? 48 : 35), t, 0.08);
     // --- magnet hum ---
     // magnet hum; when boosting on the track it becomes a rising thrust tone tied to speed
     const mag = st.magnetActive ? (st.boosting ? 0.22 : 0.12 + 0.16 * st.magnetForce) : 0;

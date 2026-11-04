@@ -5,6 +5,7 @@ import { Run, RunPhase } from './run';
 import { Autopilot } from './autopilot';
 import { buildWorld, World } from '../render/world';
 import { buildTrackGroup } from '../render/trackMesh';
+import { TubeStreaks } from '../render/streaks';
 import { BallView } from '../render/ballView';
 import { ChaseCamera } from '../render/chaseCamera';
 import { SpeedEffects } from '../render/speedFx';
@@ -54,6 +55,7 @@ export class Game {
   track?: Track;
   courseGeo?: Course;
   private branchGroups: Group[] = [];
+  private streaks?: TubeStreaks;
   material?: MaterialProfile;
   course?: CourseEntry;
   mode: GameMode = 'attract';
@@ -146,6 +148,8 @@ export class Game {
     this.run = new Run(this.courseGeo, this.material);
     this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
     this.ballView = new BallView(this.run.ball.tune.radius);
+    this.streaks = new TubeStreaks();
+    this.scene.add(this.streaks.mesh);
     this.applyCosmetics();
     this.scene.add(this.ballView.group);
     this.autopilot = mode !== 'play' ? new Autopilot(this.track) : undefined;
@@ -260,6 +264,7 @@ export class Game {
     }
     this.camera.fx = this.speedFx;
     this.camera.update(b, b.track, dt);
+    this.streaks?.update(b.track, b.proj.s, b.v.length(), dt, this.time, 0.5 + 0.5 * this.speedFx);
     // ribs overhead: whoosh as each one passes
     const rib = Math.floor(b.proj.s / RIB_SPACING);
     if (rib !== this.lastRib) {

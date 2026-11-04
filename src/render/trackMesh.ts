@@ -172,7 +172,8 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   const theme = FRACTAL_THEMES[mat.id] ?? FRACTAL_THEMES.wood;
   const centerU = 0;
   const fx: FractalUniforms = { uFxTime: { value: 0 }, uFxIntensity: { value: 0.5 }, uFxSpeed: { value: 0 }, uFxTravel: { value: 0 } };
-  applyFractal(surfaceMat, theme, centerU, fx);
+  const closed = ringFor(1).filter((r) => r.part === 0);
+  applyFractal(surfaceMat, theme, centerU, fx, closed[closed.length - 1].u - closed[0].u);
   g.userData.fx = fx;
   g.userData.fxStrength = theme.strength;
 

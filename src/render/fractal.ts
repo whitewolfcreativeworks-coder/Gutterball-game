@@ -56,6 +56,7 @@ uniform float uFxFlow;
 uniform vec2 uFxC;
 uniform float uFxCenter;
 uniform float uFxTravel;
+uniform float uFxRing; // distance all the way round the closed pipe
 varying vec2 vFxUv;
 varying vec4 vFxMode;
 
@@ -99,24 +100,52 @@ float fxPattern(vec2 p) {
 #endif
 }
 
+// rotate a colour's hue (radians) around the grey axis
+vec3 fxHue(vec3 c, float a) {
+  const vec3 k = vec3(0.57735);
+  float ca = cos(a);
+  return c * ca + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - ca);
+}
+
 vec3 fxColor() {
   // metres from the floor centre (walls are far from it)
   float across = (vFxUv.x - uFxCenter);
   float tube = vFxMode.w;
-  // inside a closed pipe the whole surface is the light show (floor included)
   float wall = max(smoothstep(1.4, 3.8, abs(across)), tube * 0.5);
-  float flowK = vFxMode.x, push = vFxMode.y, twist = vFxMode.z;
-  // flow with/against the ball (scaled by distance travelled), slow drift, twist round the tube
-  float along = vFxUv.y - uFxTime * uFxFlow - uFxTravel * flowK;
-  vec2 p = vec2(across + uFxTime * twist * 1.6, along) * uFxScale;
-  // push-pull: the pattern breathes in and out
+  // every section moves: a baseline rush toward you, much stronger in tubes
+  float flowK = vFxMode.x - mix(0.7, 1.6, tube);
+  float push = max(vFxMode.y, tube * 0.6);
+  float twist = vFxMode.z + tube * 1.2 * sin(uFxTime * 0.23);
   float breathe = sin(uFxTime * 2.4 + vFxUv.y * 0.04);
-  p *= 1.0 + push * 0.35 * breathe;
-  float f = fxPattern(fxMirror(p));
-  vec3 col = mix(uFxB, uFxA, f);
+  float zoom = 1.0 + push * 0.35 * breathe;
+
+  // LAYER 1: the main fractal, streaming with the ride and spiralling (helical twist)
+  float along = vFxUv.y - uFxTime * uFxFlow - uFxTravel * flowK;
+  // across-scale chosen so the pattern wraps seamlessly all the way round a pipe
+  float kx = 4.0 * 2.0 * max(1.0, floor(uFxRing * uFxScale / 8.0 + 0.5)) / uFxRing;
+  vec2 p1 = vec2((across + uFxTime * twist * 1.6 + along * twist * 0.04) * kx, along * uFxScale) * zoom;
+  float f1 = fxPattern(fxMirror(p1));
+  // LAYER 2: a bigger, slower layer drifting the other way (parallax depth, like
+  // the stacked projection layers of a dome show)
+  vec2 p2 = vec2((across - uFxTime * twist * 1.6) * kx * 0.5, (vFxUv.y * 0.55 - uFxTravel * flowK * 0.4 + uFxTime * 0.5) * uFxScale) / zoom;
+  float f2 = fxPattern(fxMirror(p2 + 0.37));
+  float f = clamp(f1 + f2 * mix(0.35, 0.7, tube), 0.0, 1.4);
+
+  // psychedelic colour: hue cycles in time, along the course and through the
+  // pattern itself (full spectrum in tubes, a gentle shimmer in the open)
+  vec3 col = mix(uFxB, uFxA, clamp(f1, 0.0, 1.0));
+  col = mix(col, mix(uFxA, uFxB, 0.5) * 1.2, clamp(f2, 0.0, 1.0) * 0.4);
+  float psy = mix(0.35, 1.0, tube);
+  col = fxHue(col, psy * (uFxTime * 0.9 + vFxUv.y * 0.025 - uFxTravel * 0.01 + f1 * 2.5 + cos(across * 6.2832 / uFxRing) * 1.5));
+  col = max(col, 0.0);
+
+  // WARP RINGS: bright bands around the pipe rushing at you with your speed
+  float ring = pow(0.5 + 0.5 * sin((vFxUv.y + uFxTravel * 1.0) * 0.45 + uFxTime * 3.0), 10.0) * (0.25 + tube * 1.1);
+  vec3 ringCol = fxHue(uFxA, uFxTime * 1.3 + vFxUv.y * 0.05);
+
   float pulse = (0.85 + 0.15 * sin(uFxTime * 2.0 + vFxUv.y * 0.6)) * (1.0 + push * 0.45 * breathe);
-  float k = (0.07 + 0.93 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 0.9 * tube);
-  return col * k * uFxIntensity * 2.2;
+  float k = (0.07 + 0.93 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 1.3 * tube);
+  return (col * k + ringCol * ring * (0.4 + 0.6 * uFxSpeed) * (0.3 + 0.7 * wall)) * uFxIntensity * 2.2;
 }
 `;
 
@@ -124,16 +153,19 @@ vec3 fxColor() {
  * Inject the fractal layer into a Standard/Physical material. The geometry
  * must carry an `fxuv` attribute in metres (across, along).
  */
-export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: number, shared: FractalUniforms) {
+export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: number, shared: FractalUniforms, ring = 43) {
   const a = new Color(theme.a), b = new Color(theme.b);
   mat.defines = { ...(mat.defines ?? {}), FX_KIND: theme.kind };
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, {
       uFxA: { value: a }, uFxB: { value: b }, uFxScale: { value: theme.scale }, uFxFlow: { value: theme.flow },
-      uFxC: { value: theme.c }, uFxCenter: { value: centerAcross },
+      uFxC: { value: theme.c }, uFxCenter: { value: centerAcross }, uFxRing: { value: ring },
     });
     sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec4 fxmode;\nvarying vec2 vFxUv;\nvarying vec4 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
-    sh.fragmentShader = GLSL + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();');
+    // inside a tube the wood itself goes dark so the projection owns the walls (dome-screen look)
+    sh.fragmentShader = GLSL + sh.fragmentShader
+      .replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb *= 1.0 - 0.72 * vFxMode.w;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();');
   };
   mat.customProgramCacheKey = () => `fx${theme.kind}`;
   mat.needsUpdate = true;
