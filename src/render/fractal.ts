@@ -42,6 +42,7 @@ export interface FractalUniforms {
   uFxTime: { value: number };
   uFxIntensity: { value: number };
   uFxSpeed: { value: number };
+  uFxTravel: { value: number }; // distance the ball has travelled (metres)
 }
 
 const GLSL = /* glsl */ `
@@ -54,7 +55,9 @@ uniform float uFxScale;
 uniform float uFxFlow;
 uniform vec2 uFxC;
 uniform float uFxCenter;
+uniform float uFxTravel;
 varying vec2 vFxUv;
+varying vec3 vFxMode;
 
 vec2 fxMirror(vec2 p) { return abs(mod(p, 4.0) - 2.0) - 1.0; }
 
@@ -99,11 +102,17 @@ float fxPattern(vec2 p) {
 vec3 fxColor() {
   // metres from the floor centre (walls are far from it)
   float across = (vFxUv.x - uFxCenter);
-  float wall = smoothstep(1.2, 3.2, abs(across));
-  vec2 p = vec2(across, vFxUv.y - uFxTime * uFxFlow) * uFxScale;
+  float wall = smoothstep(1.4, 3.8, abs(across));
+  float flowK = vFxMode.x, push = vFxMode.y, twist = vFxMode.z;
+  // flow with/against the ball (scaled by distance travelled), slow drift, twist round the tube
+  float along = vFxUv.y - uFxTime * uFxFlow - uFxTravel * flowK;
+  vec2 p = vec2(across + uFxTime * twist * 1.6, along) * uFxScale;
+  // push-pull: the pattern breathes in and out
+  float breathe = sin(uFxTime * 2.4 + vFxUv.y * 0.04);
+  p *= 1.0 + push * 0.35 * breathe;
   float f = fxPattern(fxMirror(p));
   vec3 col = mix(uFxB, uFxA, f);
-  float pulse = 0.85 + 0.15 * sin(uFxTime * 2.0 + vFxUv.y * 0.6);
+  float pulse = (0.85 + 0.15 * sin(uFxTime * 2.0 + vFxUv.y * 0.6)) * (1.0 + push * 0.45 * breathe);
   float k = (0.07 + 0.93 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed);
   return col * k * uFxIntensity * 2.2;
 }
@@ -121,7 +130,7 @@ export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: n
       uFxA: { value: a }, uFxB: { value: b }, uFxScale: { value: theme.scale }, uFxFlow: { value: theme.flow },
       uFxC: { value: theme.c }, uFxCenter: { value: centerAcross },
     });
-    sh.vertexShader = 'attribute vec2 fxuv;\nvarying vec2 vFxUv;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv;');
+    sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec3 fxmode;\nvarying vec2 vFxUv;\nvarying vec3 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
     sh.fragmentShader = GLSL + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();');
   };
   mat.customProgramCacheKey = () => `fx${theme.kind}`;

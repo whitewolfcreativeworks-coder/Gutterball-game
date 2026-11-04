@@ -20,7 +20,7 @@ export interface GutterProfile {
   lip: number; // inward-curling rim at the wall tops (keeps the ball in the gutter)
 }
 
-export const DEFAULT_PROFILE: GutterProfile = { a: 2.0, rc: 3.0, H: 5.2, th: 0.3, lip: 1.2 };
+export const DEFAULT_PROFILE: GutterProfile = { a: 2.8, rc: 3.6, H: 6.6, th: 0.32, lip: 1.4 };
 
 export const CONTAIN_ABOVE_RIM = 2.6;
 

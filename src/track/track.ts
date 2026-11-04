@@ -27,6 +27,14 @@ export interface Segment {
   tunnel?: boolean;   // closed roof
   gap?: boolean;      // no gutter here (must be jumped)
   openSky?: boolean;  // containment walls stop above the rim (fly-off-course zone)
+  /**
+   * Fractal motion for this section (visual only):
+   *  flow  +1 = streams WITH you at your speed (feels locked to the ball),
+   *        -1 = streams AGAINST you (rushes toward you), 0 = none;
+   *  pulse 0..1 push-pull breathing (the pattern zooms in and out);
+   *  twist  spin around the gutter (+/- direction, ~1 = moderate).
+   */
+  fx?: { flow?: number; pulse?: number; twist?: number };
   label?: string;
 }
 
@@ -92,6 +100,8 @@ export class Track {
   readonly angles: Float64Array;
   readonly gap: Uint8Array;
   readonly openSky: Uint8Array;
+  /** Per-sample fractal motion [flow, pulse, twist], smoothed between sections. */
+  readonly fxMode: Float32Array;
   readonly obstacles: Obstacle[];
   readonly hints: HintSpec[];
   readonly checkpoints: number[];
@@ -112,7 +122,18 @@ export class Track {
     this.angles = new Float64Array(this.n * 3);
     this.gap = new Uint8Array(this.n);
     this.openSky = new Uint8Array(this.n);
+    this.fxMode = new Float32Array(this.n * 3);
     this.build();
+    // blend fractal motion across ~16 m so sections morph into each other
+    {
+      const src = this.fxMode.slice();
+      const win = 16;
+      for (let i = 0; i < this.n; i++) {
+        let a = 0, b = 0, c = 0, w = 0;
+        for (let j = Math.max(0, i - win); j <= Math.min(this.n - 1, i + win); j++) { a += src[j * 3]; b += src[j * 3 + 1]; c += src[j * 3 + 2]; w++; }
+        this.fxMode[i * 3] = a / w; this.fxMode[i * 3 + 1] = b / w; this.fxMode[i * 3 + 2] = c / w;
+      }
+    }
     const base = (label?: string) => {
       if (!label) return 0;
       const seg = this.segmentStarts.find((g) => g.label === label);
@@ -159,8 +180,10 @@ export class Track {
     const ss = (x: number) => x * x * x * (x * (x * 6 - 15) + 10); // smootherstep
 
     let curOpen = false;
+    let curFx: [number, number, number] = [0, 0, 0];
     const writeSample = (k: number, tunnel: boolean, gap: boolean) => {
       this.openSky[k] = curOpen ? 1 : 0;
+      this.fxMode[k * 3] = curFx[0]; this.fxMode[k * 3 + 1] = curFx[1]; this.fxMode[k * 3 + 2] = curFx[2];
       this.angles[k * 3] = curYaw; this.angles[k * 3 + 1] = curPitch; this.angles[k * 3 + 2] = curBank;
       this.P[k * 3] = pos.x; this.P[k * 3 + 1] = pos.y; this.P[k * 3 + 2] = pos.z;
       this.T[k * 3] = t.x; this.T[k * 3 + 1] = t.y; this.T[k * 3 + 2] = t.z;
@@ -207,6 +230,7 @@ export class Track {
         shiftPrev = sh;
         frameAt(y0 + dy * ss(uu), p0 + (p1 - p0 + loopAdd) * ss(uu), b0 + (b1 - b0) * ss(uu));
         curOpen = !!seg.openSky || !!this.layout.openStart;
+        curFx = [seg.fx?.flow ?? 0, seg.fx?.pulse ?? 0, seg.fx?.twist ?? 0];
         writeSample(i, !!seg.tunnel, !!seg.gap);
         i++;
         sGlobal += this.ds;

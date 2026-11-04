@@ -531,6 +531,18 @@ export class BallPhysics {
       const prj = this.proj, prof = this.track.profile;
       const Wc = halfWidth(prof);
       const outside = Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > prof.H;
+      const grounded0 = this.sinceContact <= 0.03;
+      if (!outside && !grounded0 && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
+        // In the air inside the channel: aim at the gutter surface directly
+        // beneath the ball (keeps your lateral line; never a far wall or the rim).
+        const ax = Math.abs(prj.x);
+        const ys = ax <= prof.a ? 0 : prof.rc - Math.sqrt(Math.max(0, prof.rc * prof.rc - (Math.min(ax, Wc) - prof.a) ** 2));
+        this.magnetTarget.copy(prj.P).addScaledVector(prj.R, prj.x).addScaledVector(prj.U, ys);
+        nn.copy(this.p).sub(this.magnetTarget);
+        const dl = nn.length();
+        if (dl > 1e-4) nn.multiplyScalar(1 / dl); else nn.copy(prj.U);
+        d = Math.max(0, dl - this.tune.radius);
+      }
       if (outside && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
         // Rescue: above the rim or beside the gutter, the beam pulls you back
         // INTO the channel (towards the floor), never onto the outside of a wall.
@@ -545,7 +557,7 @@ export class BallPhysics {
       }
       if (d < tu.magnetRange) {
         // Closest point on the track shell (or the rescue point)
-        if (!outside) this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
+        if (!outside && grounded0) this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
         this.magnetHasTarget = true;
         const grounded = this.sinceContact <= 0.03;
         if (grounded) {

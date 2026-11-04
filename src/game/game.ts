@@ -246,11 +246,12 @@ export class Game {
     const fx = this.trackGroup?.userData.fx;
     if (fx) {
       fx.uFxTime.value = this.time;
+      fx.uFxTravel.value += b.v.length() * dt;
       fx.uFxIntensity.value = this.fractalLevel * (this.trackGroup!.userData.fxStrength ?? 0.6);
       fx.uFxSpeed.value += (Math.min(1, b.v.length() / 30) - fx.uFxSpeed.value) * Math.min(1, dt * 3);
       for (const bg of this.branchGroups) {
         const f2 = bg.userData.fx;
-        if (f2) { f2.uFxTime.value = fx.uFxTime.value; f2.uFxIntensity.value = fx.uFxIntensity.value; f2.uFxSpeed.value = fx.uFxSpeed.value; }
+        if (f2) { f2.uFxTime.value = fx.uFxTime.value; f2.uFxIntensity.value = fx.uFxIntensity.value; f2.uFxSpeed.value = fx.uFxSpeed.value; f2.uFxTravel.value = fx.uFxTravel.value; }
       }
     }
     this.camera.fx = this.speedFx;

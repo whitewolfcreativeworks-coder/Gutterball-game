@@ -60,7 +60,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
 
   const step = 2; // every 2 samples = 1 m
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
-  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [], fxuvs: number[] = [];
+  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [], fxuvs: number[] = [], fxmodes: number[] = [];
   const shellPositions: number[] = [], shellNormals: number[] = [], shellUvs: number[] = [], shellIdx: number[] = [];
   const M = ring.length;
   let runStart = -1;
@@ -79,6 +79,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
         const nx = R.x * r.nx + U.x * r.ny, ny = R.y * r.nx + U.y * r.ny, nz = R.z * r.nx + U.z * r.ny;
         if (r.part === 0) {
           positions.push(wx, wy, wz); normals.push(nx, ny, nz); uvs.push(r.u / TILE, s / TILE); fxuvs.push(r.u, s);
+          fxmodes.push(track.fxMode[i * 3], track.fxMode[i * 3 + 1], track.fxMode[i * 3 + 2]);
         } else {
           shellPositions.push(wx, wy, wz); shellNormals.push(nx, ny, nz); shellUvs.push(r.u / TILE, s / TILE);
         }
@@ -114,6 +115,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   geo.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
   geo.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
   geo.setAttribute('fxuv', new BufferAttribute(new Float32Array(fxuvs), 2));
+  geo.setAttribute('fxmode', new BufferAttribute(new Float32Array(fxmodes), 3));
   geo.setIndex(indices);
   geo.computeTangents?.();
   const surf = new Mesh(geo, surfaceMat);
@@ -123,7 +125,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   // Animated fractal glow layer (see fractal.ts)
   const theme = FRACTAL_THEMES[mat.id] ?? FRACTAL_THEMES.wood;
   const centerU = ring.find((r) => r.part === 0 && Math.abs(r.x) < 1e-6 && Math.abs(r.y) < 1e-6)?.u ?? 0;
-  const fx: FractalUniforms = { uFxTime: { value: 0 }, uFxIntensity: { value: 0.5 }, uFxSpeed: { value: 0 } };
+  const fx: FractalUniforms = { uFxTime: { value: 0 }, uFxIntensity: { value: 0.5 }, uFxSpeed: { value: 0 }, uFxTravel: { value: 0 } };
   applyFractal(surfaceMat, theme, centerU, fx);
   g.userData.fx = fx;
   g.userData.fxStrength = theme.strength;

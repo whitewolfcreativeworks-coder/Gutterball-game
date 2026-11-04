@@ -81,8 +81,8 @@ export function generateLayout(id: string, seed = 7): CourseLayout {
       segs.push({ len: 60, pitch: st.pitch, tunnel: tunnels-- > 0, label });
       const count = Math.round(st.obstacles * 2);
       for (let o = 0; o < count; o++) {
-        const x = (rnd() < 0.5 ? -1 : 1) * (st.narrow ? 1.9 : 2.6);
-        obstacles.push({ at: label, s: 14 + o * 22, x, ls: 1.6, w: st.narrow ? 3.0 : 3.8, h: 1.3 });
+        const x = (rnd() < 0.5 ? -1 : 1) * (st.narrow ? 2.4 : 3.3);
+        obstacles.push({ at: label, s: 14 + o * 24, x, ls: 2.0, w: st.narrow ? 4.0 : 5.1, h: 1.75 });
       }
     }
   }
