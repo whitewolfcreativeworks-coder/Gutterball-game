@@ -136,9 +136,12 @@ export class Game {
     this.track = this.courseGeo.main;
     this.lastRib = -1;
     this.world = buildWorld(this.scene, this.renderer, this.courseGeo.all, this.material, this.quality);
-    this.trackGroup = buildTrackGroup(this.track, this.material, this.world.groundHeight);
+    const cg = this.courseGeo;
+    const carveFor = (idx: number) => cg.junctions.flatMap((j) =>
+      j.a === idx ? [{ s0: j.aS[0], s1: j.aS[1], other: cg.all[j.b] }] : j.b === idx ? [{ s0: j.bS[0], s1: j.bS[1], other: cg.all[j.a] }] : []);
+    this.trackGroup = buildTrackGroup(this.track, this.material, this.world.groundHeight, false, carveFor(0));
     this.scene.add(this.trackGroup);
-    this.branchGroups = this.courseGeo.branches.map((t) => { const g = buildTrackGroup(t, this.material!, this.world!.groundHeight, true); this.scene.add(g); return g; });
+    this.branchGroups = cg.branches.map((t, k) => { const g = buildTrackGroup(t, this.material!, this.world!.groundHeight, true, carveFor(k + 1)); this.scene.add(g); return g; });
     this.post.setScene(this.scene, this.camera.cam);
     this.run = new Run(this.courseGeo, this.material);
     this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };

@@ -58,7 +58,8 @@ describe('High Road branch (Timberline Run)', () => {
   const attempt = (v0: number, jumps: number) => {
     const course = new Course(lay);
     const kick = course.main.segmentStarts.find((g) => g.label === 'highKicker')!.s;
-    const b = new BallPhysics(course.all, MATERIALS.wood);
+    const b = new BallPhysics(course, MATERIALS.wood);
+    const HR = course.all.findIndex((t) => t.layout.id === 'highroad');
     b.placeAt(kick - 40, v0);
     let jumped = false, t2 = -1, topT = 0, backOnMain = false, rode = false;
     for (let i = 0; i < 240 * 30; i++) {
@@ -67,15 +68,77 @@ describe('High Road branch (Timberline Run)', () => {
       if (i === t2) jump = true;
       const steer = Math.max(-1, Math.min(1, -b.proj.x * 0.5 - b.v.dot(b.proj.R) * 0.3));
       b.step(1 / 240, { steer, magnet: false, jump, driveLevel: 1 }); b.events.length = 0;
-      if (b.activeIndex === 1 && b.contact && b.proj.y > 0 && b.proj.y < 3) topT += 1 / 240;
+      if (b.activeIndex === HR && b.contact && b.proj.y > 0 && b.proj.y < 3) topT += 1 / 240;
       if (topT > 4) rode = true;
       if (rode && b.activeIndex === 0 && b.contact && b.mainProj.y < 3) { backOnMain = true; break; }
     }
-    return { rode, backOnMain, brS: +b.projs[1].s.toFixed(0), act: b.activeIndex, mainS: +b.mainProj.s.toFixed(0), mainY: +b.mainProj.y.toFixed(1) };
+    return { rode, backOnMain, brS: +b.projs[HR].s.toFixed(0), act: b.activeIndex, mainS: +b.mainProj.s.toFixed(0), mainY: +b.mainProj.y.toFixed(1) };
   };
   it('without a jump you stay on the main gutter', () => { expect(attempt(26, 0).rode).toBe(false); });
   it('a single jump is not enough', () => { expect(attempt(26, 1).rode).toBe(false); });
   it('a double jump off the ramp reaches the High Road, which drops you back into the main gutter', () => {
     for (const v0 of [22, 32]) { const r = attempt(v0, 2); expect(r.rode).toBe(true); expect(r.backOnMain).toBe(true); }
+  });
+});
+
+describe('The Burrow: full tube with a split (Timberline Run)', () => {
+  const lay = CATALOG.find((c) => c.id === 'wood')!.layout();
+  const course = new Course(lay);
+  const at = (label: string) => course.main.segmentStarts.find((g) => g.label === label)!.s;
+  const SKY = course.all.findIndex((t) => t.layout.id === 'skylight');
+  const ride = (from: number, v0: number, ctl: (b: BallPhysics, t: number) => { steer: number; magnet?: boolean }, until: (b: BallPhysics) => boolean, secs = 40) => {
+    const b = new BallPhysics(course, MATERIALS.wood);
+    b.placeAt(from, v0);
+    let minDepth = 1e9, maxY = -1e9, skyMax = -1, t = 0;
+    for (let i = 0; i < 240 * secs; i++) {
+      t = i / 240;
+      const c = ctl(b, t);
+      b.step(1 / 240, { steer: c.steer, magnet: !!c.magnet, jump: false, driveLevel: 1 }); b.events.length = 0;
+      // deepest inside any hollow (at a junction the two pipes' hollows are one)
+      let dep = -1e9;
+      for (let k = 0; k < b.tracks.length; k++) { const p = b.projs[k]; p.project(b.p.x, b.p.y, b.p.z); if (Math.abs(p.along) < 3) dep = Math.max(dep, b.tracks[k].channelDepthLocal(p.s, p.x, p.y)); }
+      minDepth = Math.min(minDepth, dep);
+      maxY = Math.max(maxY, b.proj.y);
+      // (the two pipes share a hollow for 50 m at each end; count only the separate middle)
+      if (b.activeIndex === SKY && b.proj.s < course.all[SKY].length - 55) skyMax = Math.max(skyMax, b.proj.s);
+      if (until(b)) return { done: true, minDepth, maxY, skyMax, b, t };
+    }
+    return { done: false, minDepth, maxY, skyMax, b, t };
+  };
+  const follow = (target: number) => (b: BallPhysics) => ({ steer: Math.max(-1, Math.min(1, (target - b.proj.x) * 0.5 - b.v.dot(b.proj.R) * 0.3)) });
+
+  it('the gutter curls into a closed pipe and opens again', () => {
+    expect(course.main.tubeAt(at('burrowIn'))).toBe(0);
+    expect(course.main.tubeAt(at('darkLine') + 20)).toBe(1);
+    expect(course.main.tubeAt(at('burrowOut') + 30)).toBe(0);
+  });
+
+  it('rolls straight through the dark pipe and comes out the far end', () => {
+    const r = ride(at('burrowIn') - 20, 24, follow(-2.5), (b) => b.activeIndex === 0 && b.mainProj.s > at('burrowOut') + 30);
+    expect(r.done).toBe(true);
+    expect(r.minDepth).toBeGreaterThan(0.5);   // never left the hollow
+    expect(r.skyMax).toBeLessThan(60);         // stayed on the dark line
+  });
+
+  it('steering hard rolls you up the wall and over the roof of the pipe', () => {
+    const r = ride(at('burrow') + 5, 24, () => ({ steer: 1, magnet: true }), () => false, 3);
+    expect(r.maxY).toBeGreaterThan(9);         // the roof is ~13 m up
+    expect(r.minDepth).toBeGreaterThan(0.5);
+  });
+
+  it('breaking right at the split takes the Skylight, which merges back into the pipe', () => {
+    // a player breaking right: hold full right through the split (you ride up
+    // the right wall and over the divider), then steer for the middle of the Skylight
+    const toSky = (b: BallPhysics) => {
+      const p = b.projs[SKY];
+      if (p.s > -25 && p.s < 75 && Math.abs(p.along) < 3) return { steer: 1 };
+      if (p.s >= 75 && p.s < 140 && Math.abs(p.along) < 3) return { steer: Math.max(-1, Math.min(1, -p.x * 0.6 - b.v.dot(p.R) * 0.35)) };
+      return follow(0)(b);
+    };
+    const r = ride(at('burrowSplit') - 25, 24, toSky,
+      (b) => b.activeIndex === 0 && b.mainProj.s > at('burrowOut') + 30);
+    expect(r.skyMax).toBeGreaterThan(200);     // rode the Skylight's separate middle section
+    expect(r.done).toBe(true);
+    expect(r.minDepth).toBeGreaterThan(0.5);
   });
 });

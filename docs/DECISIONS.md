@@ -48,3 +48,11 @@ The Ad Room accounting (`src/commerce/adAccounting.ts`) runs in the browser *as 
 ## 9. Provisional numbers live in one file
 
 `src/commerce/config.ts` holds every commercial parameter (price, reward threshold, durations, caps, simulated rate). Nothing else hard-codes them.
+
+## Full tubes and Y-junctions (The Burrow)
+
+- **Tubes are a profile parameter, not a separate track type.** Each sample carries a `tubeK` curl (0 open gutter … 1 closed pipe), eased over ~24 m. Above the wall tops the walls curl inward along a circle of radius W centred at (0, H); at curl 1 both sides meet overhead (a stadium-shaped pipe ~13 m tall). Physics (`shellSDF`) and the mesh (`profileRing`, constant vertex count at every curl) use the same curve, so you see exactly what you roll on.
+- **Steering and camera in a pipe follow the ball around it.** Inside a tube "right" is `T × n` (your right around the pipe), and the camera's up vector points from the ball to the pipe's axis, so riding up the wall and over the roof turns the world around you.
+- **Splits/merges are junctions between two tracks.** For a stretch at each joined end the solid is (walls of A minus hollow of B) ∪ (walls of B minus hollow of A): `sdf = min(max(dA, cB), max(dB, cA))`. A plain max of shell SDFs is wrong (the *outside* of one pipe would punch a hole in the other's floor). The mesh carves triangles that lie inside the other track's hollow.
+- **Rejoining branches are solved, then snapped.** The Skylight's segment lengths/pitches were found by a small numerical search so its end lands on the main pipe with matching angles; the remaining ~2 m is spread along the branch as a smooth correction (< 0.5° of slope).
+- **Taking the Skylight is a skill choice.** Momentum carries you straight, so you hold right hard before the split, ride up the right wall and cross the divider. Doing nothing keeps you on the Dark Line.

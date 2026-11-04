@@ -1,6 +1,6 @@
 # Gutterball
 
-A mobile-first 3D physics game: steer a polished steel ball down an enormous wooden U-shaped gutter — banked turns, wall rides, jumps, a spiral, a vertical loop — using device tilt and a magnetic tractor beam. Physics, sound and haptics are driven from one shared simulation.
+A mobile-first 3D physics game: steer a polished steel ball down an enormous wooden U-shaped gutter — banked turns, wall rides, jumps, a spiral, a vertical loop, and full tubes that split into alternative routes — using device tilt and a magnetic tractor beam. Physics, sound and haptics are driven from one shared simulation.
 
 **Status:** first playable build. See [docs/STATUS.md](docs/STATUS.md) for exactly what is done, what is verified, and what isn't.
 
@@ -29,7 +29,7 @@ Debug URL parameters: `?play=wood`, `?preview=ice`, `?screen=adroom`, `?quality=
 ## Build & test
 
 ```bash
-npm test           # 49 unit tests: physics, track frames, accounting, entitlements, every course completable
+npm test           # 72 unit tests: physics, track frames, accounting, entitlements, every course completable
 npm run typecheck
 npm run build      # static site in dist/ (relative paths; host anywhere)
 npm run smoke      # headless Chrome run with screenshots in screenshots/ (needs Chrome; set CHROME=path)

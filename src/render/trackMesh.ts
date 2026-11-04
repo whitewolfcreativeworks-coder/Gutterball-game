@@ -2,8 +2,8 @@ import {
   BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
   Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry,
 } from 'three';
-import type { Track } from '../track/track';
-import { profilePolyline, halfWidth } from '../track/profile';
+import { TrackProjector, type Track } from '../track/track';
+import { profileRing, halfWidth } from '../track/profile';
 import type { MaterialProfile } from '../physics/materials';
 import { surfaceMaps, TILE } from './textures';
 import { applyFractal, FRACTAL_THEMES, FractalUniforms } from './fractal';
@@ -12,7 +12,7 @@ import { applyFractal, FRACTAL_THEMES, FractalUniforms } from './fractal';
  * Builds the visible gutter from the same frames and profile the physics
  * uses, so what you see is exactly what the ball rolls on.
  */
-export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, isBranch = false): Group {
+export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, isBranch = false, junctions?: { s0: number; s1: number; other: Track }[]): Group {
   const g = new Group();
   const vis = mat.visual;
   const maps = surfaceMaps(vis.surface, vis.tint);
@@ -27,75 +27,107 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   if (maps.map) { (surfaceMat as MeshStandardMaterial).color?.set(0xffffff); }
 
   const prof = track.profile;
-  const poly = profilePolyline(prof, 12);
-  // Outer shell polyline: inner offset by thickness along outward normal
-  const inner = poly;
-  const nIn: Array<[number, number]> = inner.map((p, i) => {
-    const a = inner[Math.max(0, i - 1)], b = inner[Math.min(inner.length - 1, i + 1)];
-    const tx = b[0] - a[0], ty = b[1] - a[1];
-    const l = Math.hypot(tx, ty) || 1;
-    return [-ty / l, tx / l]; // left-hand normal => points into channel for our winding
-  });
-  // ensure normals point inward (toward +y at floor centre)
-  const mid = Math.floor(inner.length / 2);
-  if (nIn[mid][1] < 0) for (const n of nIn) { n[0] = -n[0]; n[1] = -n[1]; }
-  const outer = inner.map((p, i) => [p[0] - nIn[i][0] * prof.th, p[1] - nIn[i][1] * prof.th] as [number, number]);
-  // Full closed loop: inner (L->R), rim right, outer (R->L), rim left
-  const ring: Array<{ x: number; y: number; nx: number; ny: number; u: number; part: 0 | 1 }> = [];
-  let u = 0;
-  for (let i = 0; i < inner.length; i++) {
-    if (i > 0) u += Math.hypot(inner[i][0] - inner[i - 1][0], inner[i][1] - inner[i - 1][1]);
-    ring.push({ x: inner[i][0], y: inner[i][1], nx: nIn[i][0], ny: nIn[i][1], u, part: 0 });
-  }
-  const rimR = outer[outer.length - 1];
-  ring.push({ x: inner[inner.length - 1][0], y: inner[inner.length - 1][1], nx: 0, ny: 1, u, part: 1 });
-  ring.push({ x: rimR[0], y: rimR[1], nx: 0, ny: 1, u: u + prof.th, part: 1 });
-  u += prof.th;
-  for (let i = outer.length - 1; i >= 0; i--) {
-    if (i < outer.length - 1) u += Math.hypot(outer[i][0] - outer[i + 1][0], outer[i][1] - outer[i + 1][1]);
-    ring.push({ x: outer[i][0], y: outer[i][1], nx: -nIn[i][0], ny: -nIn[i][1], u, part: 1 });
-  }
-  ring.push({ x: outer[0][0], y: outer[0][1], nx: 0, ny: 1, u, part: 1 });
-  ring.push({ x: inner[0][0], y: inner[0][1], nx: 0, ny: 1, u: u + prof.th, part: 1 });
+  // Ring of the cross-section at a given tube curl: inner surface (part 0),
+  // then the rim, outer shell and other rim (part 1). Every curl gives the same
+  // vertex count, so rows of an open gutter and a closed pipe stitch together.
+  type RingPt = { x: number; y: number; nx: number; ny: number; u: number; part: 0 | 1 };
+  const ringCache = new Map<number, RingPt[]>();
+  const ringFor = (curl: number): RingPt[] => {
+    const key = Math.round(curl * 200);
+    const hit = ringCache.get(key);
+    if (hit) return hit;
+    const { pts: inner, nrm: nIn } = profileRing(prof, key / 200, 12, 14);
+    const outer = inner.map((p, i) => [p[0] - nIn[i][0] * prof.th, p[1] - nIn[i][1] * prof.th] as [number, number]);
+    const ring: RingPt[] = [];
+    let u = 0;
+    for (let i = 0; i < inner.length; i++) {
+      if (i > 0) u += Math.hypot(inner[i][0] - inner[i - 1][0], inner[i][1] - inner[i - 1][1]);
+      ring.push({ x: inner[i][0], y: inner[i][1], nx: nIn[i][0], ny: nIn[i][1], u, part: 0 });
+    }
+    // across-coordinate measured from the floor centre (stable as the walls curl)
+    const mid = Math.floor(inner.length / 2);
+    const u0 = ring[mid].u;
+    for (const r of ring) r.u -= u0;
+    u -= u0;
+    const rimR = outer[outer.length - 1];
+    ring.push({ x: inner[inner.length - 1][0], y: inner[inner.length - 1][1], nx: 0, ny: 1, u, part: 1 });
+    ring.push({ x: rimR[0], y: rimR[1], nx: 0, ny: 1, u: u + prof.th, part: 1 });
+    u += prof.th;
+    for (let i = outer.length - 1; i >= 0; i--) {
+      if (i < outer.length - 1) u += Math.hypot(outer[i][0] - outer[i + 1][0], outer[i][1] - outer[i + 1][1]);
+      ring.push({ x: outer[i][0], y: outer[i][1], nx: -nIn[i][0], ny: -nIn[i][1], u, part: 1 });
+    }
+    ring.push({ x: outer[0][0], y: outer[0][1], nx: 0, ny: 1, u, part: 1 });
+    ring.push({ x: inner[0][0], y: inner[0][1], nx: 0, ny: 1, u: u + prof.th, part: 1 });
+    ringCache.set(key, ring);
+    return ring;
+  };
+  const nInner = profileRing(prof, 0, 12, 14).pts.length;
 
-  const step = 2; // every 2 samples = 1 m
+  // Junction carving: drop triangles of this track that lie inside the other
+  // track's hollow, so a split pipe is a real opening, not two pipes crossing.
+  const carve = (junctions ?? []).map((j) => ({ ...j, proj: new TrackProjector(j.other) }));
+  const carved = (ax: number, ay: number, az: number, s: number) => {
+    for (const c of carve) {
+      if (s < c.s0 || s > c.s1) continue;
+      c.proj.relocate(ax, ay, az);
+      c.proj.project(ax, ay, az);
+      if (Math.abs(c.proj.along) > 1.5 || c.proj.s < 0.2 || c.proj.s > c.other.length - 0.2) continue;
+      if (c.other.channelDepthLocal(c.proj.s, c.proj.x, c.proj.y) > 0.03) return true;
+    }
+    return false;
+  };
+
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
   const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [], fxuvs: number[] = [], fxmodes: number[] = [];
   const shellPositions: number[] = [], shellNormals: number[] = [], shellUvs: number[] = [], shellIdx: number[] = [];
-  const M = ring.length;
+  const M = ringFor(0).length;
   let runStart = -1;
-  const rowsInner: number[] = [];
-  const emitRun = (from: number, to: number) => {
-    // inner surface rows: ring entries with part 0 go to surface mesh; others to shell mesh
+  const emitRun = (from: number, to: number, step: number) => {
     const baseS = positions.length / 3;
     const baseO = shellPositions.length / 3;
     let rows = 0;
+    const rowS: number[] = [];
     for (let i = from; i <= to; i += step) {
       track.sample(i, P, T, U, R);
       const s = i * track.ds;
+      const ring = ringFor(track.tubeK[i]);
+      rowS.push(s);
       for (let k = 0; k < M; k++) {
         const r = ring[k];
         const wx = P.x + R.x * r.x + U.x * r.y, wy = P.y + R.y * r.x + U.y * r.y, wz = P.z + R.z * r.x + U.z * r.y;
         const nx = R.x * r.nx + U.x * r.ny, ny = R.y * r.nx + U.y * r.ny, nz = R.z * r.nx + U.z * r.ny;
         if (r.part === 0) {
-          positions.push(wx, wy, wz); normals.push(nx, ny, nz); uvs.push(r.u / TILE, s / TILE); fxuvs.push(r.u, s);
-          fxmodes.push(track.fxMode[i * 3], track.fxMode[i * 3 + 1], track.fxMode[i * 3 + 2]);
+          positions.push(wx, wy, wz); normals.push(nx, ny, nz); uvs.push((r.u + 24) / TILE, s / TILE); fxuvs.push(r.u, s);
+          fxmodes.push(track.fxMode[i * 3], track.fxMode[i * 3 + 1], track.fxMode[i * 3 + 2], track.tubeK[i]);
         } else {
-          shellPositions.push(wx, wy, wz); shellNormals.push(nx, ny, nz); shellUvs.push(r.u / TILE, s / TILE);
+          shellPositions.push(wx, wy, wz); shellNormals.push(nx, ny, nz); shellUvs.push((r.u + 24) / TILE, s / TILE);
         }
       }
       rows++;
     }
-    const nInner = inner.length;
     const nShell = M - nInner;
+    const keep = (arr: number[], base: number, a: number, b: number, c: number, s: number) => {
+      if (!carve.length) return true;
+      const ia = (a - base) * 3, ib = (b - base) * 3, ic = (c - base) * 3;
+      const off = base * 3;
+      const cx = (arr[off + ia] + arr[off + ib] + arr[off + ic]) / 3;
+      const cy = (arr[off + ia + 1] + arr[off + ib + 1] + arr[off + ic + 1]) / 3;
+      const cz = (arr[off + ia + 2] + arr[off + ib + 2] + arr[off + ic + 2]) / 3;
+      return !carved(cx, cy, cz, s);
+    };
     for (let rI = 0; rI < rows - 1; rI++) {
+      const sRow = (rowS[rI] + rowS[rI + 1]) / 2;
+      const inCarve = carve.some((c) => sRow >= c.s0 - 1 && sRow <= c.s1 + 1);
       for (let k = 0; k < nInner - 1; k++) {
         const a = baseS + rI * nInner + k, b = a + 1, c = a + nInner, d = c + 1;
-        indices.push(a, b, c, b, d, c);
+        if (!inCarve || keep(positions, baseS, a, b, c, sRow)) indices.push(a, b, c);
+        if (!inCarve || keep(positions, baseS, b, d, c, sRow)) indices.push(b, d, c);
       }
       for (let k = 0; k < nShell - 1; k++) {
         const a = baseO + rI * nShell + k, b = a + 1, c = a + nShell, d = c + 1;
-        shellIdx.push(a, b, c, b, d, c);
+        if (!inCarve || keep(shellPositions, baseO, a, b, c, sRow)) shellIdx.push(a, b, c);
+        if (!inCarve || keep(shellPositions, baseO, b, d, c, sRow)) shellIdx.push(b, d, c);
       }
     }
   };
@@ -104,18 +136,32 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
     if (!isGap && runStart < 0) runStart = i;
     if ((isGap || i === track.n - 1) && runStart >= 0) {
       const end = isGap ? i - 1 : i;
-      if (end - runStart >= step) emitRun(runStart, end - ((end - runStart) % step));
+      // finer rows where the walls are curling or a junction is carved
+      let a = runStart;
+      while (a < end) {
+        const fine = (track.tubeK[a] > 0 && track.tubeK[a] < 1) || carve.some((c) => a * track.ds >= c.s0 - 2 && a * track.ds <= c.s1 + 2);
+        let b = a;
+        while (b < end) {
+          const f2 = (track.tubeK[b] > 0 && track.tubeK[b] < 1) || carve.some((c) => b * track.ds >= c.s0 - 2 && b * track.ds <= c.s1 + 2);
+          if (f2 !== fine) break;
+          b++;
+        }
+        let st = fine ? 1 : 2;
+        let to = b - ((b - a) % st);
+        if (to <= a) { to = b; st = 1; }
+        emitRun(a, to, st);
+        a = to;
+      }
       runStart = -1;
     }
   }
-  void rowsInner;
 
   const geo = new BufferGeometry();
   geo.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
   geo.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
   geo.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
   geo.setAttribute('fxuv', new BufferAttribute(new Float32Array(fxuvs), 2));
-  geo.setAttribute('fxmode', new BufferAttribute(new Float32Array(fxmodes), 3));
+  geo.setAttribute('fxmode', new BufferAttribute(new Float32Array(fxmodes), 4));
   geo.setIndex(indices);
   geo.computeTangents?.();
   const surf = new Mesh(geo, surfaceMat);
@@ -124,7 +170,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   g.add(surf);
   // Animated fractal glow layer (see fractal.ts)
   const theme = FRACTAL_THEMES[mat.id] ?? FRACTAL_THEMES.wood;
-  const centerU = ring.find((r) => r.part === 0 && Math.abs(r.x) < 1e-6 && Math.abs(r.y) < 1e-6)?.u ?? 0;
+  const centerU = 0;
   const fx: FractalUniforms = { uFxTime: { value: 0 }, uFxIntensity: { value: 0.5 }, uFxSpeed: { value: 0 }, uFxTravel: { value: 0 } };
   applyFractal(surfaceMat, theme, centerU, fx);
   g.userData.fx = fx;
@@ -166,7 +212,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   if (!isBranch) {
     g.add(buildArch(track, 3, 'START', mat));
     g.add(buildArch(track, track.length - 62, 'FINISH', mat));
-    for (let c = 1; c < track.checkpoints.length; c++) g.add(buildCheckpointPosts(track, track.checkpoints[c]));
+    for (let c = 1; c < track.checkpoints.length; c++) if (track.tubeAt(track.checkpoints[c]) === 0) g.add(buildCheckpointPosts(track, track.checkpoints[c]));
   } else {
     g.add(buildArch(track, 2, track.layout.name.toUpperCase(), mat));
   }
@@ -188,7 +234,7 @@ function buildRibs(track: Track, mat: MaterialProfile, theme: { a: number }) {
   const archH = 2.6;
   for (let s = 20; s < track.length - 70; s += RIB_SPACING) {
     const i = Math.round(s / track.ds);
-    if (track.gap[i] || track.tunnel[i] || track.openSky[i]) continue; // keep fork zones clear
+    if (track.gap[i] || track.tunnel[i] || track.openSky[i] || track.tubeK[i] > 0) continue; // keep fork zones and tubes clear
     track.sample(i, P, T, U, R);
     if (U.y < 0.45) continue; // keep loops open
     // torus lies in its XY plane: x across (R), y up (U), scaled into a flat arch

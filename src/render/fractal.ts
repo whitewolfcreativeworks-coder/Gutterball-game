@@ -57,7 +57,7 @@ uniform vec2 uFxC;
 uniform float uFxCenter;
 uniform float uFxTravel;
 varying vec2 vFxUv;
-varying vec3 vFxMode;
+varying vec4 vFxMode;
 
 vec2 fxMirror(vec2 p) { return abs(mod(p, 4.0) - 2.0) - 1.0; }
 
@@ -102,7 +102,9 @@ float fxPattern(vec2 p) {
 vec3 fxColor() {
   // metres from the floor centre (walls are far from it)
   float across = (vFxUv.x - uFxCenter);
-  float wall = smoothstep(1.4, 3.8, abs(across));
+  float tube = vFxMode.w;
+  // inside a closed pipe the whole surface is the light show (floor included)
+  float wall = max(smoothstep(1.4, 3.8, abs(across)), tube * 0.5);
   float flowK = vFxMode.x, push = vFxMode.y, twist = vFxMode.z;
   // flow with/against the ball (scaled by distance travelled), slow drift, twist round the tube
   float along = vFxUv.y - uFxTime * uFxFlow - uFxTravel * flowK;
@@ -113,7 +115,7 @@ vec3 fxColor() {
   float f = fxPattern(fxMirror(p));
   vec3 col = mix(uFxB, uFxA, f);
   float pulse = (0.85 + 0.15 * sin(uFxTime * 2.0 + vFxUv.y * 0.6)) * (1.0 + push * 0.45 * breathe);
-  float k = (0.07 + 0.93 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed);
+  float k = (0.07 + 0.93 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 0.9 * tube);
   return col * k * uFxIntensity * 2.2;
 }
 `;
@@ -130,7 +132,7 @@ export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: n
       uFxA: { value: a }, uFxB: { value: b }, uFxScale: { value: theme.scale }, uFxFlow: { value: theme.flow },
       uFxC: { value: theme.c }, uFxCenter: { value: centerAcross },
     });
-    sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec3 fxmode;\nvarying vec2 vFxUv;\nvarying vec3 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
+    sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec4 fxmode;\nvarying vec2 vFxUv;\nvarying vec4 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
     sh.fragmentShader = GLSL + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();');
   };
   mat.customProgramCacheKey = () => `fx${theme.kind}`;

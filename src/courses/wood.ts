@@ -60,6 +60,18 @@ export const WOOD_COURSE: CourseLayout = {
     { len: 15, pitch: 10, label: 'kicker2', fx: { flow: -1 } },
     { len: 14, pitch: -12, gap: true, shift: 1.2, label: 'gap2' },
     { len: 35, pitch: -9, label: 'landing2' },
+    // THE BURROW: the gutter's walls curl over and close into a full pipe.
+    // Roll all the way round inside it. Halfway down the pipe splits: stay in
+    // the dark (left) or break right for the SKYLIGHT, which bursts out into an
+    // open gutter in daylight and dives back into the pipe further down.
+    { len: 30, pitch: -7, label: 'burrowIn', fx: { flow: -1 } },
+    { len: 45, pitch: -12, tube: true, label: 'burrow', fx: { twist: 1.5, flow: -1.5 } },
+    { len: 30, pitch: -12, tube: true, label: 'burrowSplit', fx: { pulse: 1 } },
+    { len: 153, pitch: -13.4, tube: true, label: 'darkLine', fx: { flow: -2.5, twist: -1 } },
+    { len: 142, pitch: -6.3, tube: true, label: 'darkRun', fx: { twist: 2, pulse: 0.5 } },
+    { len: 45, pitch: -4.04, tube: true, label: 'burrowMerge', fx: { pulse: 1 } },
+    { len: 30, pitch: -7, tube: true },
+    { len: 40, pitch: -8, label: 'burrowOut', fx: { flow: 1 } },
     { len: 125, yaw: 55, bank: 40, pitch: -8, label: 'finale', fx: { flow: -1, twist: 0.6 } },
     { len: 95, yaw: -55, bank: -40, pitch: -8, label: 'finale2', fx: { flow: -1, twist: -0.6 } },
     { len: 55, bank: 0, pitch: -4, label: 'finish', fx: { flow: 1 } },
@@ -98,10 +110,35 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'forkRun', s: 0, text: 'HIGH ROAD ahead: jump off the ramp, then flick again (double jump) to reach it' },
     { at: 'preLoop', s: 10, text: 'Loop — hold MAGNET at the top' },
     { at: 'kicker2', s: -20, text: 'Big jump: JUMP, then MAGNET to pull back in' },
+    { at: 'burrowIn', s: 0, text: 'The Burrow — the walls close over you' },
+    { at: 'burrowIn', s: 22, text: 'Steer hard to roll up the wall and over the top' },
+    { at: 'burrow', s: 6, text: 'The pipe splits! Hold RIGHT hard for the Skylight' },
+    { at: 'darkLine', s: 10, text: 'The Dark Line' },
     { at: 'finale', s: 0, text: 'Final run' },
     { at: 'finish', s: 15, text: 'Finish!' },
   ],
   branches: [
+    {
+      id: 'skylight',
+      name: 'Skylight',
+      at: 'burrowSplit',
+      s: 4,
+      offset: [0, 0],
+      junction: 63,              // the pipe splits in two here...
+      rejoin: { at: 'burrowMerge', s: 45 }, // ...and the two pipes merge back here
+      // (layout solved numerically so the Skylight lands exactly back on the main pipe)
+      segments: [
+        { len: 70, yaw: -31.3, pitch: -4.8, tube: true, label: 'skyIn', fx: { twist: 1.5 } },
+        { len: 60, yaw: 31.3, pitch: -6.1, tube: true, fx: { flow: -1.5 } },
+        { len: 29.3, pitch: -6, label: 'skyOpen', fx: { flow: 1 } },
+        { len: 16, pitch: 6, openSky: true, label: 'skyKick', fx: { pulse: 1 } },
+        { len: 20, pitch: -13.8, openSky: true, fx: { flow: -1 } },
+        { len: 65.8, yaw: 25.6, bank: 25, pitch: -10.2, label: 'skySwing', fx: { twist: -1 } },
+        { len: 89.8, yaw: -25.6, bank: 0, pitch: -21.8, tube: true, label: 'skyDive', fx: { flow: -2.5 } },
+        { len: 30, pitch: -4.04, tube: true, fx: { pulse: 1 } },
+      ],
+      hints: [],
+    },
     {
       id: 'highroad',
       name: 'High Road',

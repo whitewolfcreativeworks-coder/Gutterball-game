@@ -30,7 +30,7 @@ export class Run {
   constructor(course: Course | Track, material: MaterialProfile, tuning: Partial<BallTuning> = {}) {
     this.course = course instanceof Course ? course : ({ main: course, branches: [], all: [course] } as unknown as Course);
     this.track = this.course.main;
-    this.ball = new BallPhysics(this.course.all, material, tuning);
+    this.ball = new BallPhysics(this.course, material, tuning);
     this.reset();
   }
 

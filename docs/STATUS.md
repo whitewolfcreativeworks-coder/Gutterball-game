@@ -13,6 +13,8 @@ Legend: ✅ done & verified here · 🟡 done, not verifiable in this environmen
 | Jump (threshold, debounce, cooldown, coyote time, momentum kept) | ✅ | tests |
 | Magnetic traction + airborne capture, tractor beam VFX & sound | ✅ | tests: bounded force, moderate capture; loop screenshots |
 | Vertical loop, spiral, banked 52° wall ride, covered-bridge tunnel, 2 gaps | ✅ | course test, screenshots |
+| Full tubes ("The Burrow"): gutter walls curl closed into a pipe you can roll all the way round; camera rolls with you | ✅ | tests: ride through, roll over the roof; screenshots tube-*.png |
+| Tube split + merge (Y-junctions): the pipe splits into the Dark Line and the Skylight (bursts out into daylight), which merge back | ✅ | tests: both routes; branch layout solved numerically to rejoin within ~2 m |
 | Obstacles (barrier, offset blocks, slalom posts, gates) | ✅ | autopilot avoids them; physics collides |
 | Complete wooden course "Timberline Run" (1.9 km, ~90 s) | ✅ | completes with 0 falls under autopilot |
 | Completion, results, best time, checkpoints, fast respawn, restart | ✅ | |

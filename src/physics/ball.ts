@@ -1,6 +1,6 @@
 import { Quaternion, Vector3 } from 'three';
 import type { RollingState, SensoryEvent, SensoryState } from '../core/events';
-import { Track, TrackProjector } from '../track/track';
+import { Track, TrackProjector, type Junction } from '../track/track';
 import { halfWidth } from '../track/profile';
 import type { MaterialProfile } from './materials';
 
@@ -84,6 +84,9 @@ export const DEFAULT_TUNING: BallTuning = {
 const tmpA = new Vector3();
 const tmpB = new Vector3();
 const tmpC = new Vector3();
+const jTmp = new Vector3();
+const jA = new Vector3();
+const jB = new Vector3();
 const tmpQ = new Quaternion();
 const WORLD_UP = new Vector3(0, 1, 0);
 
@@ -99,6 +102,8 @@ export class BallPhysics {
   track: Track;
   readonly tracks: Track[];
   readonly projs: TrackProjector[];
+  /** Where two tracks share one hollow (tube splits / merges). */
+  junctions: Junction[] = [];
   /** Projection onto the main course (progress, checkpoints, finish). */
   get mainProj() { return this.projs[0]; }
   activeIndex = 0;
@@ -137,10 +142,12 @@ export class BallPhysics {
   events: SensoryEvent[] = [];
   readonly I: number;
 
-  constructor(tracks: Track | Track[], material: MaterialProfile, tune: Partial<BallTuning> = {}) {
+  constructor(tracks: Track | Track[] | { all: Track[]; junctions?: Junction[] }, material: MaterialProfile, tune: Partial<BallTuning> = {}) {
     this.tune = { ...DEFAULT_TUNING, ...tune };
     this.material = material;
-    this.tracks = Array.isArray(tracks) ? tracks : [tracks];
+    if (tracks instanceof Track) this.tracks = [tracks];
+    else if (Array.isArray(tracks)) this.tracks = tracks;
+    else { this.tracks = tracks.all; this.junctions = tracks.junctions ?? []; }
     this.projs = this.tracks.map((t) => new TrackProjector(t));
     this.track = this.tracks[0];
     this.proj = this.projs[0];
@@ -177,10 +184,58 @@ export class BallPhysics {
     this.events.push({ type, t: this.t, intensity: Math.max(0, Math.min(1, intensity)), magnitude, source, material: this.material.id });
   }
 
-  /** Local SDF and world-space normal at the ball centre. */
+  /**
+   * Local SDF and world-space normal at the ball centre. Inside a junction
+   * the hollow is the union of both tracks' hollows (max of the two SDFs), so
+   * a tube can split in two and you roll into whichever side you steer for.
+   */
   private sdfAndNormal(out: Vector3, includeObstacles = true, visibleOnly = false): number {
-    const pr = this.proj;
-    const tr = this.track;
+    const d = this.sdfTrack(this.activeIndex, out, includeObstacles, visibleOnly);
+    if (!this.junctions.length) return d;
+    const ai = this.activeIndex, sA = this.proj.s;
+    for (const j of this.junctions) {
+      let other = -1, oS: [number, number] | null = null;
+      if (j.a === ai && sA >= j.aS[0] && sA <= j.aS[1]) { other = j.b; oS = j.bS; }
+      else if (j.b === ai && sA >= j.bS[0] && sA <= j.bS[1]) { other = j.a; oS = j.aS; }
+      if (other < 0 || !oS) continue;
+      const po = this.projs[other];
+      po.project(this.p.x, this.p.y, this.p.z);
+      const tl = this.tracks[other].length;
+      if (po.s < Math.max(0.3, oS[0]) || po.s > Math.min(tl - 0.3, oS[1]) || Math.abs(po.along) > 3) continue;
+      // Junction solid = (walls of A minus hollow of B) + (walls of B minus hollow of A):
+      //   sdf = min( max(dA, cB), max(dB, cA) ),  c = depth inside a hollow.
+      const cA = this.depthTrack(ai, jA, false), cB = this.depthTrack(other, jB, false);
+      const dB = this.sdfTrack(other, jTmp, includeObstacles, visibleOnly);
+      const t1 = Math.max(d, cB), t2 = Math.max(dB, cA);
+      if (t1 <= t2) {
+        if (cB > d) this.depthTrack(other, out, true);
+        return t1;
+      }
+      if (cA > dB) this.depthTrack(ai, out, true); else out.copy(jTmp);
+      return t2;
+    }
+    return d;
+  }
+
+  /** Depth inside a track's hollow; optional world gradient (points deeper inside). */
+  private depthTrack(index: number, grad: Vector3, withGrad: boolean): number {
+    const pr = this.projs[index], tr = this.tracks[index];
+    const f = (a: number, b: number, c: number) => tr.channelDepthLocal(a, b, c);
+    const d = f(pr.s, pr.x, pr.y);
+    if (!withGrad) return d;
+    const e = 0.01;
+    const gs = (f(pr.s + e, pr.x, pr.y) - f(pr.s - e, pr.x, pr.y)) / (2 * e);
+    const gx = (f(pr.s, pr.x + e, pr.y) - f(pr.s, pr.x - e, pr.y)) / (2 * e);
+    const gy = (f(pr.s, pr.x, pr.y + e) - f(pr.s, pr.x, pr.y - e)) / (2 * e);
+    grad.set(0, 0, 0).addScaledVector(pr.T, gs).addScaledVector(pr.R, gx).addScaledVector(pr.U, gy);
+    const l = grad.length();
+    if (l > 1e-6) grad.multiplyScalar(1 / l); else grad.copy(pr.U);
+    return d;
+  }
+
+  private sdfTrack(index: number, out: Vector3, includeObstacles: boolean, visibleOnly: boolean): number {
+    const pr = this.projs[index];
+    const tr = this.tracks[index];
     const s = pr.s, x = pr.x, y = pr.y;
     const f = (a: number, b: number, c: number) => tr.sdfLocal(a, b, c, includeObstacles, visibleOnly);
     const d = f(s, x, y);
@@ -207,7 +262,7 @@ export class BallPhysics {
     const grounded = this.sinceContact <= tu.coyoteTime;
 
     // ---- Tunnel enter/exit events (acoustics) ----
-    const tun = this.track.isTunnel(pr.s) && Math.abs(pr.x) < halfWidth(this.track.profile) + 0.5;
+    const tun = (this.track.isTunnel(pr.s) || this.track.isTube(pr.s)) && Math.abs(pr.x) < halfWidth(this.track.profile) + 0.5;
     if (tun !== this.inTunnel) { this.emit(tun ? 'TUNNEL_ENTER' : 'TUNNEL_EXIT', 1); this.inTunnel = tun; }
 
     // ---- Forces -> velocity ----
@@ -227,6 +282,9 @@ export class BallPhysics {
     const Rt = tmpC.copy(pr.R).addScaledVector(n, -pr.R.dot(n));
     if (Rt.lengthSq() < 1e-6) Rt.copy(pr.R);
     Rt.normalize();
+    // Inside a tube the camera rolls with you, so "right" is always to your
+    // right around the pipe: steering carries you up the wall and over the top.
+    if (this.track.tubeAt(pr.s) > 0.5) { Rt.copy(Tt).cross(n); if (Rt.lengthSq() < 1e-6) Rt.copy(pr.R); Rt.normalize(); }
 
     if (grounded) {
       // Steering through the gyro core (torque) + direct field component
@@ -249,7 +307,7 @@ export class BallPhysics {
     } else {
       // In the air you can still steer; holding the magnet gives extra authority
       // so you can line up your landing while the beam pulls you down.
-      acc.addScaledVector(pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel));
+      acc.addScaledVector(this.track.tubeAt(pr.s) > 0.5 ? Rt : pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel));
     }
 
     // ---- Swipe push: a physical shove that rolls the ball faster ----
@@ -409,6 +467,8 @@ export class BallPhysics {
       // a branch far away (or beyond its ends) can't be the one we're on
       if (Math.abs(pr.along) > 3 || Math.abs(pr.x) > 30 || Math.abs(pr.y) > 40) continue;
       let d = this.tracks[i].sdfLocal(pr.s, pr.x, pr.y, false, true);
+      // being inside a track's hollow beats being merely near its outside
+      if (this.tracks[i].channelDepthLocal(pr.s, pr.x, pr.y) < -0.05) d += 4;
       if (i === this.activeIndex) d -= 0.3;
       if (d < bestD) { bestD = d; best = i; }
     }
@@ -530,9 +590,10 @@ export class BallPhysics {
       let d = this.sdfAndNormal(nn, false, true);
       const prj = this.proj, prof = this.track.profile;
       const Wc = halfWidth(prof);
-      const outside = Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > prof.H;
+      const inTube = this.track.tubeAt(prj.s) > 0.85;
+      const outside = !inTube && (Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > prof.H);
       const grounded0 = this.sinceContact <= 0.03;
-      if (!outside && !grounded0 && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
+      if (!inTube && !outside && !grounded0 && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
         // In the air inside the channel: aim at the gutter surface directly
         // beneath the ball (keeps your lateral line; never a far wall or the rim).
         const ax = Math.abs(prj.x);
@@ -557,7 +618,7 @@ export class BallPhysics {
       }
       if (d < tu.magnetRange) {
         // Closest point on the track shell (or the rescue point)
-        if (!outside && grounded0) this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
+        if (!outside && (grounded0 || inTube)) this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
         this.magnetHasTarget = true;
         const grounded = this.sinceContact <= 0.03;
         if (grounded) {

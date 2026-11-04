@@ -71,6 +71,17 @@ export class ChaseCamera {
     const inv = this.U.y < 0.35;
     const bankFollow = inv ? 0.95 : 0.85;
     const desiredUp = new Vector3(0, 1, 0).lerp(this.U, bankFollow).normalize();
+    // --- inside a tube: the camera rides with the ball around the pipe ---
+    // "Up" points from the ball toward the pipe's axis, so as you roll up the
+    // wall and over the top the whole world turns around you.
+    const tk = track.tubeAt(s);
+    const Hc = track.profile.H;
+    let tdx = -b.proj.x, tdy = Hc - b.proj.y;
+    const tl = Math.hypot(tdx, tdy) || 1; tdx /= tl; tdy /= tl;
+    if (tk > 0.001) {
+      const tubeUp = this.R.clone().multiplyScalar(tdx).addScaledVector(this.U, tdy).normalize();
+      desiredUp.lerp(tubeUp, tk).normalize();
+    }
     const lean = Math.max(-0.22, Math.min(0.22, -this.latG * 0.012)) * fx; // radians
     desiredUp.applyQuaternion(new Quaternion().setFromAxisAngle(this.T, lean));
 
@@ -85,11 +96,21 @@ export class ChaseCamera {
     const vert = Math.max(0, b.proj.y - 0.75) * 0.55;
     const camUp = new Vector3(0, 1, 0).lerp(this.U2, bankFollow).normalize();
     const desiredPos = this.P2.clone().addScaledVector(this.R2, lat0).addScaledVector(this.U2, vert).addScaledVector(camUp, height);
+    if (tk > 0.001) {
+      // 3 m from the ball toward the pipe's axis (always inside the pipe)
+      const tubePos = this.P2.clone().addScaledVector(this.R2, b.proj.x + tdx * 3.0).addScaledVector(this.U2, b.proj.y + tdy * 3.0);
+      desiredPos.lerp(tubePos, tk);
+    }
 
     // --- look ahead along the course ---
     const ahead = Math.min(16, 6 + speed * 0.3);
     track.frameAtS(s + ahead, this.P2, this.T2, this.U2, this.R2);
-    const desiredLook = b.p.clone().lerp(this.P2.addScaledVector(this.U2, 0.9).addScaledVector(this.R2, b.proj.x * 0.3), 0.5);
+    const aheadPt = this.P2.clone().addScaledVector(this.U2, 0.9).addScaledVector(this.R2, b.proj.x * 0.3);
+    if (tk > 0.001) {
+      const tubeAhead = this.P2.clone().addScaledVector(this.R2, b.proj.x * 0.7).addScaledVector(this.U2, Hc + (b.proj.y - Hc) * 0.7);
+      aheadPt.lerp(tubeAhead, tk);
+    }
+    const desiredLook = b.p.clone().lerp(aheadPt, 0.5);
 
     if (!this.initialised) {
       this.pos.copy(desiredPos); this.look.copy(desiredLook); this.up.copy(desiredUp);
@@ -97,10 +118,12 @@ export class ChaseCamera {
     } else {
       const kp = 1 - Math.exp(-dt * 10);
       const kl = 1 - Math.exp(-dt * 13);
-      const ku = 1 - Math.exp(-dt * (inv ? 4 : 5));
+      const ku = 1 - Math.exp(-dt * (inv ? 4 : tk > 0.5 ? 7 : 5));
       this.pos.lerp(desiredPos, kp);
       this.look.lerp(desiredLook, kl);
-      this.up.lerp(desiredUp, ku).normalize();
+      this.up.lerp(desiredUp, ku);
+      if (this.up.lengthSq() < 0.09) this.up.addScaledVector(this.R, 0.5); // never collapse when flipping over
+      this.up.normalize();
     }
     if (this.pos.distanceTo(b.p) > 14) this.pos.lerp(desiredPos, 0.5);
 

@@ -1,5 +1,5 @@
 import { Quaternion, Vector3 } from 'three';
-import { DEFAULT_PROFILE, GutterProfile, shellSDF } from './profile';
+import { DEFAULT_PROFILE, GutterProfile, shellSDF, channelDepth } from './profile';
 
 /**
  * Track construction by "turtle" integration.
@@ -27,6 +27,7 @@ export interface Segment {
   tunnel?: boolean;   // closed roof
   gap?: boolean;      // no gutter here (must be jumped)
   openSky?: boolean;  // containment walls stop above the rim (fly-off-course zone)
+  tube?: boolean;     // the walls curl over and close into a full pipe
   /**
    * Fractal motion for this section (visual only):
    *  flow  +1 = streams WITH you at your speed (feels locked to the ball),
@@ -81,7 +82,18 @@ export interface BranchSpec {
   segments: Segment[];
   obstacles?: ObstacleSpec[];
   hints?: HintSpec[];
+  /**
+   * Y-junction length (metres). At a joined end the branch and the main course
+   * share one hollow for this distance, so you can roll from one into the other
+   * (a tube that splits in two, or two tubes that merge back into one).
+   */
+  junction?: number;
+  /** Snap the branch's end onto this main-course point: the branch merges back in. */
+  rejoin?: { at: string; s: number };
 }
+
+/** A stretch where two tracks share their hollow (free space is the union of both). */
+export interface Junction { a: number; b: number; aS: [number, number]; bS: [number, number]; }
 
 export interface Obstacle extends ObstacleSpec { y: number; kind: 'block' | 'barrier' | 'gate' | 'post'; }
 
@@ -100,6 +112,8 @@ export class Track {
   readonly angles: Float64Array;
   readonly gap: Uint8Array;
   readonly openSky: Uint8Array;
+  /** 0 = open gutter .. 1 = closed tube, eased over ~24 m at each end. */
+  readonly tubeK: Float32Array;
   /** Per-sample fractal motion [flow, pulse, twist], smoothed between sections. */
   readonly fxMode: Float32Array;
   readonly obstacles: Obstacle[];
@@ -123,7 +137,19 @@ export class Track {
     this.gap = new Uint8Array(this.n);
     this.openSky = new Uint8Array(this.n);
     this.fxMode = new Float32Array(this.n * 3);
+    this.tubeK = new Float32Array(this.n);
     this.build();
+    {
+      // the walls curl closed gradually: box filter (+-12 m), then ease
+      const src = this.tubeK.slice();
+      const win = 24;
+      for (let i = 0; i < this.n; i++) {
+        let a = 0, w = 0;
+        for (let j = i - win; j <= i + win; j++) { a += src[Math.max(0, Math.min(this.n - 1, j))]; w++; }
+        const k = a / w;
+        this.tubeK[i] = k < 0.002 ? 0 : k > 0.998 ? 1 : k * k * (3 - 2 * k);
+      }
+    }
     // blend fractal motion across ~16 m so sections morph into each other
     {
       const src = this.fxMode.slice();
@@ -207,6 +233,7 @@ export class Track {
 
     frameAt(yaw, pitch, bank);
     writeSample(0, false, false);
+    this.tubeK[0] = this.layout.segments[0]?.tube ? 1 : 0;
     i = 1;
     for (const seg of this.layout.segments) {
       this.segmentStarts.push({ s: sGlobal, label: seg.label });
@@ -231,6 +258,7 @@ export class Track {
         frameAt(y0 + dy * ss(uu), p0 + (p1 - p0 + loopAdd) * ss(uu), b0 + (b1 - b0) * ss(uu));
         curOpen = !!seg.openSky || !!this.layout.openStart;
         curFx = [seg.fx?.flow ?? 0, seg.fx?.pulse ?? 0, seg.fx?.twist ?? 0];
+        this.tubeK[i] = seg.tube ? 1 : 0;
         writeSample(i, !!seg.tunnel, !!seg.gap);
         i++;
         sGlobal += this.ds;
@@ -242,6 +270,7 @@ export class Track {
     // Fill any remaining (rounding) samples
     for (; i < this.n; i++) {
       pos.addScaledVector(t, this.ds);
+      this.tubeK[i] = this.tubeK[i - 1];
       writeSample(i, false, false);
     }
   }
@@ -267,6 +296,19 @@ export class Track {
   }
 
   isTunnel(s: number) { return this.tunnel[this.idx(s)] === 1; }
+  /** Tube closure 0..1 at arc length s (interpolated). */
+  tubeAt(s: number) {
+    const f = Math.max(0, Math.min(this.n - 1.0001, s / this.ds));
+    const i = Math.floor(f), a = f - i;
+    return this.tubeK[i] + (this.tubeK[i + 1] - this.tubeK[i]) * a;
+  }
+  isTube(s: number) { return this.tubeAt(s) > 0.7; }
+  /** Depth inside the open channel (> 0 inside), or -1e6 off this track. */
+  channelDepthLocal(s: number, x: number, y: number): number {
+    const s0 = this.layout.openStart ? 0 : -2, s1 = this.layout.openEnd ? this.length : this.length + 2;
+    if (s < s0 || s > s1) return -1e6;
+    return channelDepth(x, y, this.profile, this.tubeAt(s));
+  }
   isGap(s: number) { return this.gap[this.idx(s)] === 1; }
 
   /**
@@ -276,7 +318,7 @@ export class Track {
   sdfLocal(s: number, x: number, y: number, includeObstacles = true, visibleOnly = false): number {
     let d = 1e6;
     const s0 = this.layout.openStart ? 0 : -2, s1 = this.layout.openEnd ? this.length : this.length + 2;
-    if (s >= s0 && s <= s1 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly, this.openSky[this.idx(s)] === 1);
+    if (s >= s0 && s <= s1 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly, this.openSky[this.idx(s)] === 1, this.tubeAt(s));
     else if (!visibleOnly && s >= s0 && s <= s1 && this.isGap(s)) {
       // Over a gap there is no floor, but the invisible side walls continue:
       // you can fall into a gap, never escape sideways out of the course.
@@ -389,6 +431,9 @@ export class Course {
   readonly main: Track;
   readonly branches: Track[] = [];
   readonly all: Track[];
+  readonly junctions: Junction[] = [];
+  /** Distance (m) each rejoining branch had to be nudged to meet the main course exactly. */
+  readonly rejoinError: number[] = [];
   constructor(layout: CourseLayout) {
     this.main = new Track(layout);
     for (const b of layout.branches ?? []) {
@@ -400,11 +445,36 @@ export class Course {
       const i = Math.round(s / this.main.ds) * 3;
       const ang = this.main.angles;
       const start = P.clone().addScaledVector(R, b.offset[0]).addScaledVector(U, b.offset[1]);
-      this.branches.push(new Track({
+      const br = new Track({
         id: b.id, name: b.name, segments: b.segments, obstacles: b.obstacles ?? [], hints: b.hints ?? [],
         startPos: [start.x, start.y, start.z], startAngles: [ang[i], ang[i + 1] + (b.pitchOffset ?? 0), ang[i + 2]],
         openStart: true, openEnd: true, checkpointEvery: 1e9,
-      }));
+      });
+      const bi = this.branches.length + 1;
+      let sEnd = -1;
+      if (b.rejoin) {
+        // Merge: spread a tiny correction along the branch so its end lands
+        // exactly on the main course (the layout is designed to close to within
+        // a few metres; the correction is a fraction of a degree of slope).
+        const rs = this.main.segmentStarts.find((g) => g.label === b.rejoin!.at);
+        if (!rs) throw new Error(`Unknown rejoin anchor ${b.rejoin.at}`);
+        sEnd = rs.s + b.rejoin.s;
+        this.main.frameAtS(sEnd, P, T, U, R);
+        const k = (br.n - 1) * 3;
+        const dx = P.x - br.P[k], dy = P.y - br.P[k + 1], dz = P.z - br.P[k + 2];
+        this.rejoinError.push(Math.hypot(dx, dy, dz));
+        for (let j = 0; j < br.n; j++) {
+          const u = j / (br.n - 1);
+          const w = u * u * u * (u * (u * 6 - 15) + 10);
+          br.P[j * 3] += dx * w; br.P[j * 3 + 1] += dy * w; br.P[j * 3 + 2] += dz * w;
+        }
+      }
+      if (b.junction) {
+        const J = b.junction;
+        this.junctions.push({ a: 0, b: bi, aS: [s - 2, s + J + 2], bS: [0, J] });
+        if (sEnd >= 0) this.junctions.push({ a: 0, b: bi, aS: [sEnd - J - 2, sEnd + 2], bS: [br.length - J, br.length] });
+      }
+      this.branches.push(br);
     }
     this.all = [this.main, ...this.branches];
   }

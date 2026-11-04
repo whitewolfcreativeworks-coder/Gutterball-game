@@ -66,7 +66,7 @@ export function innerSignedDistance(x: number, y: number, p: GutterProfile): num
  * Signed distance to the solid gutter shell (positive = outside material).
  * `closed` adds a roof (tunnel sections) at the wall tops.
  */
-export function shellSDF(x: number, y: number, p: GutterProfile, closed = false, visibleOnly = false, openSky = false): number {
+export function shellSDF(x: number, y: number, p: GutterProfile, closed = false, visibleOnly = false, openSky = false, curl = 0): number {
   const din = innerSignedDistance(x, y, p);
   let sdf = Math.max(din, -din - p.th);
   // Collision walls continue invisibly above the rim ("containment field"), so
@@ -76,18 +76,43 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
   // jump can fly off course there, and only the tractor beam saves you.
   if (visibleOnly) sdf = Math.max(sdf, y - p.H);
   else if (openSky) sdf = Math.max(sdf, y - (p.H + CONTAIN_ABOVE_RIM));
+  const W = p.a + p.rc;
+  const phiMax = curl * Math.PI / 2;
+  if (curl > 0) {
+    // TUBE: above the wall tops the walls curl inward along a circle of radius
+    // W centred at (0, H). At curl = 1 both sides meet overhead and the gutter
+    // becomes a closed pipe you can roll all the way around inside.
+    const ax = Math.abs(x), dy = y - p.H;
+    const r = Math.hypot(ax, dy);
+    const phi = Math.atan2(dy, ax);
+    let arcD: number;
+    if (phi >= 0 && phi <= phiMax) arcD = Math.max(W - r, r - (W + p.th));
+    else {
+      const cap = (a: number) => {
+        const c = Math.cos(a), sn = Math.sin(a);
+        const t = Math.max(W, Math.min(W + p.th, ax * c + dy * sn));
+        return Math.hypot(ax - c * t, dy - sn * t);
+      };
+      arcD = Math.min(cap(0), cap(phiMax));
+    }
+    sdf = Math.min(sdf, arcD);
+  }
+  const lipLen = p.lip * (1 - curl);
   if (p.lip > 0) {
-    // Rolled lip: a slab overhanging the channel at the top of each wall
-    const W = p.a + p.rc;
-    const cx = W - p.lip / 2 + p.th / 2;
-    const qx = Math.abs(Math.abs(x) - cx) - (p.lip / 2 + p.th / 2);
-    const qy = Math.abs(y - (p.H + p.th / 2)) - p.th / 2;
+    // Rolled lip: a flange overhanging the channel at the top of each wall
+    // (at the end of the curl when the walls are curling into a tube).
+    const ax0 = Math.abs(x), dy0 = y - p.H;
+    const c = Math.cos(phiMax), sn = Math.sin(phiMax);
+    const u = ax0 * c + dy0 * sn, v = -ax0 * sn + dy0 * c;
+    const cx = W - lipLen / 2 + p.th / 2;
+    const qx = Math.abs(u - cx) - (lipLen / 2 + p.th / 2);
+    const qy = Math.abs(v - p.th / 2) - p.th / 2;
     const lipD = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
     sdf = Math.min(sdf, lipD);
   }
   if (closed) {
-    const W = p.a + p.rc + p.th;
-    const roof = Math.max(p.H - y, Math.abs(x) - W, y - (p.H + p.th * 2.5));
+    const Wr = W + p.th;
+    const roof = Math.max(p.H - y, Math.abs(x) - Wr, y - (p.H + p.th * 2.5));
     sdf = Math.min(sdf, roof);
   }
   return sdf;
@@ -116,4 +141,52 @@ export function profilePolyline(p: GutterProfile, arcSteps = 10): Array<[number,
   pts.push([W, p.H]);
   if (p.lip > 0) pts.push([W - p.lip, p.H]);
   return pts;
+}
+
+/**
+ * How deep a point is inside the open channel (metres; > 0 = inside).
+ * For a fully curled tube "inside" is the closed pipe; otherwise it is the
+ * column between the walls (the invisible containment walls rise above them).
+ */
+export function channelDepth(x: number, y: number, p: GutterProfile, curl = 0): number {
+  const d = innerSignedDistance(x, y, p);
+  if (curl >= 0.999 && y > p.H) return Math.min(d, p.a + p.rc - Math.hypot(x, y - p.H));
+  return d;
+}
+
+/** Height of the inside of the roof of a full tube above the floor. */
+export function tubeTop(p: GutterProfile): number { return p.H + p.a + p.rc; }
+
+/**
+ * Inner surface ring for mesh generation at a given curl, with inward normals.
+ * Always returns the same number of points (left lip -> right lip), so rings
+ * at different curls can be stitched into one mesh as the gutter closes.
+ */
+export function profileRing(p: GutterProfile, curl: number, arcSteps = 12, curlSteps = 14): { pts: Array<[number, number]>; nrm: Array<[number, number]> } {
+  const W = p.a + p.rc;
+  const phiMax = curl * Math.PI / 2;
+  const lipLen = p.lip * (1 - curl);
+  const right: Array<[number, number, number, number]> = []; // x, y, nx, ny (right half, floor centre -> lip)
+  right.push([0, 0, 0, 1]);
+  right.push([p.a, 0, 0, 1]);
+  for (let i = 1; i < arcSteps; i++) {
+    const t = -Math.PI / 2 + (i / arcSteps) * (Math.PI / 2);
+    const c = Math.cos(t), s = Math.sin(t);
+    right.push([p.a + p.rc * c, p.rc + p.rc * s, -c, -s]);
+  }
+  right.push([W, p.rc, -1, 0]);
+  right.push([W, p.H, -1, 0]);
+  for (let j = 1; j <= curlSteps; j++) {
+    const f = phiMax * (j / curlSteps);
+    const c = Math.cos(f), s = Math.sin(f);
+    right.push([W * c, p.H + W * s, -c, -s]);
+  }
+  {
+    const c = Math.cos(phiMax), s = Math.sin(phiMax);
+    right.push([W * c - c * lipLen, p.H + W * s - s * lipLen, s, -c]);
+  }
+  const pts: Array<[number, number]> = [], nrm: Array<[number, number]> = [];
+  for (let i = right.length - 1; i >= 1; i--) { const q = right[i]; pts.push([-q[0], q[1]]); nrm.push([-q[2], q[3]]); }
+  for (const q of right) { pts.push([q[0], q[1]]); nrm.push([q[2], q[3]]); }
+  return { pts, nrm };
 }
