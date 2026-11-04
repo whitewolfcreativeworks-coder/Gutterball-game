@@ -23,6 +23,7 @@ export interface Segment {
   pitch?: number;     // pitch at end of segment, degrees (- = downhill)
   bank?: number;      // bank at end of segment, degrees (+ = tilt toward left)
   loop?: boolean;     // add a full 360-degree pitch rotation through the segment
+  roll?: number;      // add whole 360-degree rolls around the path (heartline/inline roll; + = to the left)
   shift?: number;     // lateral offset applied smoothly across segment (metres, + = right)
   tunnel?: boolean;   // closed roof
   gap?: boolean;      // no gutter here (must be jumped)
@@ -90,7 +91,7 @@ export interface BranchSpec {
    */
   junction?: number;
   /** Snap the branch's end onto this main-course point: the branch merges back in. */
-  rejoin?: { at: string; s: number };
+  rejoin?: { at: string; s: number } | 'auto';
 }
 
 /** A stretch where two tracks share their hollow (free space is the union of both). */
@@ -246,6 +247,7 @@ export class Track {
       const p1 = seg.pitch ?? pitch;
       const b1 = seg.bank ?? bank;
       const loopAdd = seg.loop ? 360 : 0;
+      const rollAdd = (seg.roll ?? 0) * 360;
       const shift = seg.shift ?? 0;
       shiftPrev = 0;
       const steps = Math.round(seg.len / this.ds);
@@ -253,13 +255,13 @@ export class Track {
         const uu = k / steps;
         const um = (k - 0.5) / steps;
         // midpoint orientation for integration accuracy
-        frameAt(y0 + dy * ss(um), p0 + (p1 - p0 + loopAdd) * ss(um), b0 + (b1 - b0) * ss(um));
+        frameAt(y0 + dy * ss(um), p0 + (p1 - p0 + loopAdd) * ss(um), b0 + (b1 - b0 + rollAdd) * ss(um));
         // Integrate along the un-banked forward direction (bank does not change path)
         pos.addScaledVector(t, this.ds);
         const sh = shift * ss(uu);
         pos.addScaledVector(r, sh - shiftPrev);
         shiftPrev = sh;
-        frameAt(y0 + dy * ss(uu), p0 + (p1 - p0 + loopAdd) * ss(uu), b0 + (b1 - b0) * ss(uu));
+        frameAt(y0 + dy * ss(uu), p0 + (p1 - p0 + loopAdd) * ss(uu), b0 + (b1 - b0 + rollAdd) * ss(uu));
         curOpen = !!seg.openSky || !!this.layout.openStart;
         curFx = [seg.fx?.flow ?? 0, seg.fx?.pulse ?? 0, seg.fx?.twist ?? 0];
         this.tubeK[i] = seg.tube ? 1 : 0;
@@ -461,9 +463,20 @@ export class Course {
         // Merge: spread a tiny correction along the branch so its end lands
         // exactly on the main course (the layout is designed to close to within
         // a few metres; the correction is a fraction of a degree of slope).
-        const rs = this.main.segmentStarts.find((g) => g.label === b.rejoin!.at);
-        if (!rs) throw new Error(`Unknown rejoin anchor ${b.rejoin.at}`);
-        sEnd = rs.s + b.rejoin.s;
+        if (b.rejoin === 'auto') {
+          // the main-course point nearest the branch's end (searched downstream of the fork)
+          const k0 = (br.n - 1) * 3;
+          let bestD = Infinity;
+          for (let i = Math.round(s / this.main.ds) + 20; i < this.main.n; i++) {
+            const d = (this.main.P[i * 3] - br.P[k0]) ** 2 + (this.main.P[i * 3 + 1] - br.P[k0 + 1]) ** 2 + (this.main.P[i * 3 + 2] - br.P[k0 + 2]) ** 2;
+            if (d < bestD) { bestD = d; sEnd = i * this.main.ds; }
+          }
+        } else {
+          const rj = b.rejoin;
+          const rs = this.main.segmentStarts.find((g) => g.label === rj.at);
+          if (!rs) throw new Error(`Unknown rejoin anchor ${rj.at}`);
+          sEnd = rs.s + rj.s;
+        }
         this.main.frameAtS(sEnd, P, T, U, R);
         const k = (br.n - 1) * 3;
         const dx = P.x - br.P[k], dy = P.y - br.P[k + 1], dz = P.z - br.P[k + 2];
