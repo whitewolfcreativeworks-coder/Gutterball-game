@@ -166,3 +166,28 @@ describe('runs through The Burrow never respawn by mistake', () => {
     }
   });
 });
+
+describe('Launch tube split (Timberline Run)', () => {
+  const lay = CATALOG.find((c) => c.id === 'wood')!.layout();
+  const course = new Course(lay);
+  const at = (l: string) => course.main.segmentStarts.find((g) => g.label === l)!.s;
+  const DAY = course.all.findIndex((t) => t.layout.id === 'daybreak');
+  const go = (route: 'dark' | 'day') => {
+    const b = new BallPhysics(course, MATERIALS.wood);
+    b.placeAt(6, 0);
+    b.v.addScaledVector(b.proj.T, 7);
+    let dayMax = -1;
+    for (let i = 0; i < 240 * 40; i++) {
+      const p = b.projs[DAY];
+      let steer = Math.max(-1, Math.min(1, -b.proj.x * 0.5 - b.v.dot(b.proj.R) * 0.3));
+      if (route === 'day' && p.s > -25 && p.s < 75 && Math.abs(p.along) < 3) steer = -1;
+      else if (route === 'day' && p.s >= 75 && p.s < 140 && Math.abs(p.along) < 3) steer = Math.max(-1, Math.min(1, -p.x * 0.6 - b.v.dot(p.R) * 0.35));
+      b.step(1 / 240, { steer, magnet: false, jump: false, driveLevel: 1 }); b.events.length = 0;
+      if (b.activeIndex === DAY && b.proj.s < course.all[DAY].length - 55) dayMax = Math.max(dayMax, b.proj.s);
+      if (b.activeIndex === 0 && b.mainProj.s > at('launchOut') + 20) return { done: true, dayMax };
+    }
+    return { done: false, dayMax };
+  };
+  it('staying put takes The Plunge and comes out onto the course', () => { const r = go('dark'); expect(r.done).toBe(true); expect(r.dayMax).toBeLessThan(60); });
+  it('holding left takes Daybreak, which merges back into the pipe', () => { const r = go('day'); expect(r.done).toBe(true); expect(r.dayMax).toBeGreaterThan(200); });
+});

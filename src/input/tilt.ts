@@ -42,7 +42,7 @@ export function wrap180(d: number) { return ((((d + 180) % 360) + 360) % 360) - 
  * Small dead zone, full lock at `maxTilt` scaled by sensitivity, and a mild
  * curve that makes the first few degrees precise without feeling sluggish.
  */
-export function steerFromRoll(rollDeg: number, deadzone: number, maxTilt: number, sensitivity: number, curve = 0.85) {
+export function steerFromRoll(rollDeg: number, deadzone: number, maxTilt: number, sensitivity: number, curve = 0.72) {
   const a = Math.abs(rollDeg);
   if (a <= deadzone) return 0;
   const full = Math.max(deadzone + 1, maxTilt / Math.max(0.2, sensitivity));

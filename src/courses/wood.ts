@@ -14,7 +14,18 @@ export const WOOD_COURSE: CourseLayout = {
   name: 'Timberline Run',
   checkpointEvery: 190,
   segments: [
-    { len: 24, pitch: -3, label: 'start' },
+    // LAUNCH TUBE: you start inside a pipe. It splits almost at once:
+    // stay in the dark for THE PLUNGE, or hold LEFT for DAYBREAK, which bursts
+    // out into daylight and dives back in (same solved geometry as the Burrow,
+    // mirrored). Then the pipe opens onto the first big drop.
+    { len: 24, pitch: -3, tube: true, label: 'start', fx: { flow: -0.5 } },
+    { len: 40, pitch: -12, tube: true, label: 'launchDrop', fx: { flow: -1.5, twist: 1 } },
+    { len: 30, pitch: -12, tube: true, label: 'launchSplit', fx: { pulse: 1 } },
+    { len: 153, pitch: -13.4, tube: true, label: 'plunge', fx: { flow: -2.5, twist: 1.2 } },
+    { len: 142, pitch: -6.3, tube: true, label: 'plungeRun', fx: { twist: -2, pulse: 0.5 } },
+    { len: 45, pitch: -4.04, tube: true, label: 'launchMerge', fx: { pulse: 1 } },
+    { len: 30, pitch: -7, tube: true },
+    { len: 40, pitch: -3, label: 'launchOut', fx: { flow: 1 } },
     { len: 70, pitch: -26, label: 'firstDrop', fx: { flow: -1.5 } },
     { len: 35, pitch: -3 },
     { len: 30, pitch: 12, label: 'hill1', fx: { pulse: 1 } },
@@ -40,7 +51,7 @@ export const WOOD_COURSE: CourseLayout = {
     { len: 50, yaw: 10, bank: 0, pitch: -7 },
     { len: 95, loop: true, yaw: 25, shift: -12, pitch: -6, label: 'corkscrew', fx: { twist: -2, pulse: 0.6 } },
     { len: 40, pitch: -8 },
-    { len: 230, yaw: -450, bank: -48, pitch: -11, label: 'spiral', fx: { twist: 1, flow: -1 } },
+    { len: 230, yaw: -450, bank: -48, pitch: -11, tube: true, label: 'spiral', fx: { twist: 2, flow: -1.5 } },
     { len: 45, bank: 0, yaw: 0, pitch: -8 },
     // HIGH ROAD fork: an open-sky launch ramp; the main gutter carries on below
     { len: 40, pitch: -6, openSky: true, label: 'forkRun', fx: { pulse: 1 } },
@@ -97,7 +108,10 @@ export const WOOD_COURSE: CourseLayout = {
   ],
   hints: [
     { at: 'start', s: 0, text: 'Swipe up to launch — swipe again to push' },
+    { at: 'launchDrop', s: 4, text: 'The pipe splits! Hold LEFT hard for Daybreak' },
+    { at: 'plunge', s: 20, text: 'The Plunge' },
     { at: 'firstDrop', s: 4, text: 'Hold on!' },
+    { at: 'spiral', s: 0, text: 'Spiral tube!' },
     { at: 'hill1', s: 20, text: 'Airtime!' },
     { at: 'firstTurn', s: 10, text: 'Tilt to steer through the bank' },
     { at: 'barrier', s: 0, text: 'Barrier — go around, or tilt the top toward you to JUMP' },
@@ -118,6 +132,27 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'finish', s: 15, text: 'Finish!' },
   ],
   branches: [
+    {
+      id: 'daybreak',
+      name: 'Daybreak',
+      at: 'launchSplit',
+      s: 4,
+      offset: [0, 0],
+      junction: 63,              // the launch pipe splits in two here...
+      rejoin: { at: 'launchMerge', s: 45 }, // ...and the two pipes merge back here
+      // (the Skylight's solved layout, mirrored left: lands exactly back on the main pipe)
+      segments: [
+        { len: 70, yaw: 31.3, pitch: -4.8, tube: true, label: 'dayIn', fx: { twist: 1.5 } },
+        { len: 60, yaw: -31.3, pitch: -6.1, tube: true, fx: { flow: -1.5 } },
+        { len: 29.3, pitch: -6, label: 'dayOpen', fx: { flow: 1 } },
+        { len: 16, pitch: 6, openSky: true, label: 'dayKick', fx: { pulse: 1 } },
+        { len: 20, pitch: -13.8, openSky: true, fx: { flow: -1 } },
+        { len: 65.8, yaw: -25.6, bank: -25, pitch: -10.2, label: 'daySwing', fx: { twist: -1 } },
+        { len: 89.8, yaw: 25.6, bank: 0, pitch: -21.8, tube: true, label: 'dayDive', fx: { flow: -2.5 } },
+        { len: 30, pitch: -4.04, tube: true, fx: { pulse: 1 } },
+      ],
+      hints: [],
+    },
     {
       id: 'skylight',
       name: 'Skylight',

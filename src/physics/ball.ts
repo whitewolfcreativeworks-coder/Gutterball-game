@@ -56,14 +56,16 @@ export interface BallTuning {
   magnetDrain: number;      // energy per second (energy 0..1)
   magnetRegen: number;
   magnetMinRestart: number;
+  tubeFlowAccel: number;    // pneumatic push inside tubes (m/s^2)
+  tubeFlowCap: number;      // ...fading out near this speed
 }
 
 export const DEFAULT_TUNING: BallTuning = {
   radius: 1.15,
   mass: 1,
   gravity: 9.81,
-  steerAccel: 14,
-  steerDirectFrac: 0.5,
+  steerAccel: 17,
+  steerDirectFrac: 0.6,
   airSteerAccel: 7.5,
   driveAccel: [0, 2.6, 3.6],
   driveCap: [0, 30, 38],
@@ -79,6 +81,8 @@ export const DEFAULT_TUNING: BallTuning = {
   magnetDrain: 0.1,
   magnetRegen: 0.45,
   magnetMinRestart: 0.05,
+  tubeFlowAccel: 9,
+  tubeFlowCap: 46,
 };
 
 const tmpA = new Vector3();
@@ -292,6 +296,10 @@ export class BallPhysics {
       // Steering through the gyro core (torque) + direct field component
       const st = input.steer * tu.steerAccel;
       acc.addScaledVector(Rt, st * tu.steerDirectFrac);
+      // Grip assist: sideways sliding settles quickly when you ease off the
+      // tilt, so the ball goes where you point it instead of wandering.
+      const vlat = this.v.dot(Rt);
+      acc.addScaledVector(Rt, -vlat * 1.6 * (1 - Math.min(1, Math.abs(input.steer))));
       // Δω = (n × dir)/r * Δv ; scale 3.5 so friction delivers ~the requested linear accel
       const gyro = st * (1 - tu.steerDirectFrac) * 3.5 / r * dt;
       const axis = new Vector3().copy(n).cross(Rt);
@@ -310,6 +318,16 @@ export class BallPhysics {
       // In the air you can still steer; holding the magnet gives extra authority
       // so you can line up your landing while the beam pulls you down.
       acc.addScaledVector(this.track.tubeAt(pr.s) > 0.5 ? Rt : pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel));
+    }
+
+    // ---- Pneumatic tubes: an air current carries you along inside a pipe ----
+    {
+      const tk = this.track.tubeAt(pr.s);
+      if (tk > 0.3) {
+        const vf = this.v.dot(pr.T);
+        const fade = Math.max(0, Math.min(1, (tu.tubeFlowCap - vf) / 8));
+        acc.addScaledVector(pr.T, tu.tubeFlowAccel * fade * Math.min(1, (tk - 0.3) / 0.5));
+      }
     }
 
     // ---- Swipe push: a physical shove that rolls the ball faster ----

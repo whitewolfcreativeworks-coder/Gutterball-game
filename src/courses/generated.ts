@@ -46,9 +46,10 @@ export function generateLayout(id: string, seed = 7): CourseLayout {
   let s0 = seed * 9973 + id.length * 31;
   const rnd = () => { s0 = (s0 * 1103515245 + 12345) & 0x7fffffff; return s0 / 0x7fffffff; };
   const segs: Segment[] = [
-    { len: 24, pitch: -3, label: 'start' },
-    { len: 50, pitch: st.pitch - 2 },
-    { len: 30, pitch: st.pitch },
+    // every world starts inside a pipe and bursts out onto the course
+    { len: 24, pitch: -3, label: 'start', tube: true, fx: { flow: -0.5 } },
+    { len: 50, pitch: st.pitch - 2, tube: true, fx: { flow: -2, twist: 1 } },
+    { len: 30, pitch: st.pitch, fx: { flow: 1 } },
   ];
   const obstacles: ObstacleSpec[] = [];
   const hints: HintSpec[] = [{ at: 'start', s: 0, text: 'Swipe up to launch' }];
@@ -72,13 +73,17 @@ export function generateLayout(id: string, seed = 7): CourseLayout {
     if (roll < st.turns) {
       const yaw = (40 + rnd() * (st.maxYaw - 40)) * side;
       const len = Math.abs(yaw) * 1.1 + 40;
-      segs.push({ len, yaw, bank: st.bank * Math.sign(yaw) * (0.7 + rnd() * 0.5), pitch: st.pitch, tunnel: tunnels > 0 && rnd() < 0.3, label });
+      // covered sections are full tubes: roll round the walls through the turn
+      const tube = tunnels > 0 && rnd() < 0.45;
+      if (tube) tunnels--;
+      segs.push({ len, yaw, bank: st.bank * Math.sign(yaw) * (0.7 + rnd() * 0.5), pitch: st.pitch, tube, label, fx: tube ? { twist: 1.5 * Math.sign(yaw), flow: -1 } : { flow: -0.5 } });
       segs.push({ len: 30, bank: 0, pitch: st.pitch });
       side = -side;
     } else if (roll < st.turns + st.drops * 0.4) {
       segs.push({ len: 45, pitch: st.pitch - 9, label }, { len: 30, pitch: st.pitch });
     } else {
-      segs.push({ len: 60, pitch: st.pitch, tunnel: tunnels-- > 0, label });
+      const tube = tunnels-- > 0;
+      segs.push({ len: 60, pitch: st.pitch, tube, label, fx: tube ? { flow: -2, pulse: 0.5 } : { pulse: 0.6 } });
       const count = Math.round(st.obstacles * 2);
       for (let o = 0; o < count; o++) {
         const x = (rnd() < 0.5 ? -1 : 1) * (st.narrow ? 2.4 : 3.3);

@@ -12,7 +12,7 @@ import { applyFractal, FRACTAL_THEMES, FractalUniforms } from './fractal';
  * Builds the visible gutter from the same frames and profile the physics
  * uses, so what you see is exactly what the ball rolls on.
  */
-export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, isBranch = false, junctions?: { s0: number; s1: number; other: Track }[]): Group {
+export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, isBranch = false, junctions?: { s0: number; s1: number; other: Track }[], allTracks?: Track[]): Group {
   const g = new Group();
   const vis = mat.visual;
   const maps = surfaceMaps(vis.surface, vis.tint);
@@ -200,7 +200,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   g.add(buildRibs(track, mat, theme));
 
   // ---- Supports / trestles ----
-  g.add(buildSupports(track, mat, groundHeight));
+  g.add(buildSupports(track, mat, groundHeight, allTracks ?? [track]));
 
   // ---- Tunnel roofs (covered bridges) ----
   g.add(buildRoofs(track, mat));
@@ -281,7 +281,39 @@ function buildLiquid(track: Track, mat: MaterialProfile) {
   return mesh;
 }
 
-function buildSupports(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number) {
+/**
+ * Is the vertical column at (x, z) from yLow up to yHigh free of every gutter
+ * (so a support leg there doesn't stab through a pipe or gutter below it)?
+ */
+function makeColumnTest(tracks: Track[]) {
+  const cell = 12;
+  const grid = new Map<string, Array<[Track, number]>>();
+  for (const t of tracks) for (let i = 0; i < t.n; i += 2) {
+    const k = `${Math.floor(t.P[i * 3] / cell)},${Math.floor(t.P[i * 3 + 2] / cell)}`;
+    let l = grid.get(k); if (!l) grid.set(k, (l = [])); l.push([t, i]);
+  }
+  return (self: Track, sSelf: number, x: number, z: number, yLow: number, yHigh: number) => {
+    const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const l = grid.get(`${cx + dx},${cz + dz}`);
+      if (!l) continue;
+      for (const [t, i] of l) {
+        if (t === self && Math.abs(i * t.ds - sSelf) < 25) continue;
+        // the gutter's body is centred half-way up its walls along its own "up"
+        // (off to one side of the floor line when it's banked)
+        const top = t.tubeK[i] > 0 ? t.profile.H + t.profile.a + t.profile.rc : t.profile.H;
+        const hU = top / 2;
+        const cxw = t.P[i * 3] + t.U[i * 3] * hU, cyw = t.P[i * 3 + 1] + t.U[i * 3 + 1] * hU, czw = t.P[i * 3 + 2] + t.U[i * 3 + 2] * hU;
+        const rad = Math.max(t.profile.a + t.profile.rc, hU) + 1.5;
+        if (Math.hypot(cxw - x, czw - z) < rad && cyw + rad > yLow && cyw - rad < yHigh) return false;
+      }
+    }
+    return true;
+  };
+}
+
+function buildSupports(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, allTracks: Track[]) {
+  const colFree = makeColumnTest(allTracks);
   const g = new Group();
   const legGeo = mat.visual.surface === 'wood' ? new BoxGeometry(0.35, 1, 0.35) : new CylinderGeometry(0.35, 0.45, 1, 10);
   const color = mat.visual.surface === 'wood' ? 0x6a4a2c : mat.visual.surface === 'glass' ? 0xdfe8ea : new Color(mat.visual.tint).multiplyScalar(0.55).getHex();
@@ -307,6 +339,7 @@ function buildSupports(track: Track, mat: MaterialProfile, groundHeight: (x: num
       const gy = groundHeight(top.x, top.z);
       const h = top.y - gy;
       if (h < 0.5 || h > 400) continue;
+      if (!colFree(track, s, top.x, top.z, gy, top.y - 0.5)) continue;
       pos.set(top.x, gy + h / 2, top.z);
       q.identity();
       sc.set(1, h, 1);
@@ -317,7 +350,7 @@ function buildSupports(track: Track, mat: MaterialProfile, groundHeight: (x: num
       // banked section: one central post under the keel
       const gy = groundHeight(bottom.x, bottom.z);
       const h = bottom.y - gy;
-      if (h > 0.5 && h < 400 && li < count) {
+      if (h > 0.5 && h < 400 && li < count && colFree(track, s, bottom.x, bottom.z, gy, bottom.y - 0.5)) {
         pos.set(bottom.x, gy + h / 2, bottom.z); q.identity(); sc.set(1.3, h, 1.3);
         m4.compose(pos, q, sc); legs.setMatrixAt(li++, m4);
       }
@@ -334,6 +367,7 @@ function buildSupports(track: Track, mat: MaterialProfile, groundHeight: (x: num
       const yawQ = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.atan2(-R.z, R.x));
       for (let hh = 10; hh < P.y - gyc - 4; hh += 12) {
         if (ci >= cross.count) break;
+        if (!colFree(track, s, P.x, P.z, P.y - hh - 1, P.y - hh + 1)) continue;
         m4.compose(new Vector3(P.x, P.y - hh, P.z), yawQ, sc);
         cross.setMatrixAt(ci++, m4);
       }

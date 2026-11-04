@@ -30,7 +30,7 @@ export interface InputSettings {
 }
 
 export const DEFAULT_INPUT_SETTINGS: InputSettings = {
-  sensitivity: 1.6, deadzone: 0.8, maxTilt: 16, jumpThreshold: 9, magnetThreshold: 7, invertSteer: false, keepView: true,
+  sensitivity: 1.8, deadzone: 0.6, maxTilt: 16, jumpThreshold: 8, magnetThreshold: 9, invertSteer: false, keepView: true,
 };
 
 /** Current screen rotation in window.orientation semantics (90 = device turned counter-clockwise). */
@@ -73,6 +73,8 @@ export class InputManager {
   private jumpArmed = true;
   private magnetTilt = false;
   private lastTiltAt = 0;
+  private magnetBlockUntil = 0;
+  private magnetSince = 0;
   // touch
   private touchStart: { x: number; y: number; t: number; id: number } | null = null;
   enabled = true;
@@ -171,22 +173,29 @@ export class InputManager {
     if (this.mode !== 'tilt') return;
     // Jump: backward flick (top toward player => pitch increases)
     const oldest = this.pitchHistory[0]?.[1] ?? dp;
-    // a flick: past the threshold AND moved at least half of it within 300 ms
-    if (this.jumpArmed && dp > this.settings.jumpThreshold && dp - oldest > this.settings.jumpThreshold * 0.5) {
+    // a flick: past the threshold AND moved at least 40 % of it within 300 ms
+    if (this.jumpArmed && dp > this.settings.jumpThreshold && dp - oldest > this.settings.jumpThreshold * 0.4) {
       this.jumpQueued = true;
       this.jumpArmed = false;
+      // the wrist springs back after a flick and often overshoots forward:
+      // don't let that bounce fire the magnet and yank you straight back down
+      this.magnetBlockUntil = now + 450;
+      this.magnetTilt = false;
     }
     // re-arm as soon as the device comes back most of the way, so a quick second flick double-jumps
-    if (!this.jumpArmed && dp < this.settings.jumpThreshold * 0.55) { this.jumpArmed = true; this.pitchHistory.length = 0; }
-    // Magnet: forward tilt held (hysteresis)
-    if (!this.magnetTilt && dp < -this.settings.magnetThreshold) this.magnetTilt = true;
-    else if (this.magnetTilt && dp > -this.settings.magnetThreshold * 0.45) this.magnetTilt = false;
+    if (!this.jumpArmed && dp < this.settings.jumpThreshold * 0.5) { this.jumpArmed = true; this.pitchHistory.length = 0; }
+    // Magnet: a deliberate forward tilt, held for a moment (not a passing wobble), with hysteresis
+    if (dp < -this.settings.magnetThreshold && now > this.magnetBlockUntil) {
+      if (!this.magnetSince) this.magnetSince = now;
+      if (!this.magnetTilt && now - this.magnetSince > 80) this.magnetTilt = true;
+    } else this.magnetSince = 0;
+    if (this.magnetTilt && dp > -this.settings.magnetThreshold * 0.45) this.magnetTilt = false;
     // Your grip drifts during a run: while you're not jumping or using the
     // magnet, the neutral pose slowly follows how you're holding the device
-    // (~3 s), so "forward" and "back" always mean the same small motion.
-    if (!this.magnetTilt && this.jumpArmed && Math.abs(dp) < 6) {
+    // (~4 s), so "forward" and "back" always mean the same small motion.
+    if (!this.magnetTilt && this.jumpArmed && Math.abs(dp) < 4) {
       const dtS = this.lastTiltAt ? Math.min(0.1, (now - this.lastTiltAt) / 1000) : 0;
-      this.pitch0 += wrap180(this.pitch - this.pitch0) * Math.min(1, dtS / 3);
+      this.pitch0 += wrap180(this.pitch - this.pitch0) * Math.min(1, dtS / 4);
     }
     this.lastTiltAt = now;
   }

@@ -118,7 +118,7 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
   });
   const nearest = (x: number, z: number): [number, number] => {
     const cx = Math.floor((x - gx0) / cell), cz = Math.floor((z - gz0) / cell);
-    let best = 1e12, by = minY;
+    let best = 1e12, byLow = Infinity, byNear = minY;
     for (let rad = 0; rad < 6; rad++) {
       for (let dz = -rad; dz <= rad; dz++) for (let dx = -rad; dx <= rad; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dz)) !== rad) continue;
@@ -127,12 +127,14 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
         for (const i of list) {
           const p = pts[i];
           const d = (p[0] - x) ** 2 + (p[2] - z) ** 2;
-          if (d < best) { best = d; by = p[1]; }
+          if (d < best) { best = d; byNear = p[1]; }
+          // where the course passes over itself (spirals), keep the ground under the LOWEST pass
+          if (d < 900 && p[1] < byLow) byLow = p[1];
         }
       }
       if (best < (rad * cell) ** 2) break;
     }
-    return [Math.sqrt(best), by];
+    return [Math.sqrt(best), Number.isFinite(byLow) ? byLow : byNear];
   };
   const valley = scenerySettings(vis.scenery);
   const groundHeight = (x: number, z: number) => {
@@ -204,6 +206,7 @@ function buildScenery(kind: string, gh: (x: number, z: number) => number, neares
       if (d > 260 && rnd() < 0.7 * nearBias) continue;
       const y = gh(x, z);
       if (y > ty - 3 && d < 25) continue;
+      if (d < 34 + footprint * s && y + 20 * s > ty - 10) continue; // tall trees must not grow into the gutter
       p.set(x, y + yOff * s, z);
       q.setFromAxisAngle(new Vector3(0, 1, 0), rnd() * Math.PI * 2);
       sc.set(s, s * (0.8 + rnd() * 0.5), s);
