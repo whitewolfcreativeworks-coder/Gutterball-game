@@ -219,6 +219,12 @@ export class Track {
   sdfLocal(s: number, x: number, y: number, includeObstacles = true, visibleOnly = false): number {
     let d = 1e6;
     if (s >= -2 && s <= this.length + 2 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly);
+    else if (!visibleOnly && this.isGap(s)) {
+      // Over a gap there is no floor, but the invisible side walls continue:
+      // you can fall into a gap, never escape sideways out of the course.
+      const W = this.profile.a + this.profile.rc;
+      d = Math.max(Math.abs(x) - (W + this.profile.th), W - Math.abs(x));
+    }
     // End caps: a wall at the very start so the ball cannot roll backwards off
     if (s < 0.5) d = Math.min(d, Math.max(s - 0.5, -s - 2, Math.abs(x) - 5, y - 4));
     // ...and a soft end wall after the run-out

@@ -48,6 +48,8 @@ export interface BallTuning {
   jumpCooldown: number;
   coyoteTime: number;
   magnetPressG: number;     // extra normal acceleration in contact, in g
+  magnetBoostAccel: number; // forward push while the magnet is held on the track
+  magnetBoostCap: number;   // boost fades out approaching this speed
   magnetAccel: number;      // max airborne attraction m/s^2
   magnetRange: number;      // metres
   magnetDrain: number;      // energy per second (energy 0..1)
@@ -56,7 +58,7 @@ export interface BallTuning {
 }
 
 export const DEFAULT_TUNING: BallTuning = {
-  radius: 0.75,
+  radius: 0.95,
   mass: 1,
   gravity: 9.81,
   steerAccel: 11,
@@ -69,6 +71,8 @@ export const DEFAULT_TUNING: BallTuning = {
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
   magnetPressG: 1.7,
+  magnetBoostAccel: 8,
+  magnetBoostCap: 44,
   magnetAccel: 26,
   magnetRange: 16,
   magnetDrain: 0.3,
@@ -110,6 +114,7 @@ export class BallPhysics {
   readonly magnetTarget = new Vector3();
   magnetHasTarget = false;
   magnetSuppress = 0;
+  boosting = false;
   airJumpsLeft = 0;
   private magnetRamp = 0;
   wasMagnetAirborne = false;
@@ -466,6 +471,7 @@ export class BallPhysics {
     }
     this.magnetHasTarget = false;
     this.magnetForce = 0;
+    this.boosting = false;
     if (active) {
       this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * dt);
       const nn = new Vector3();
@@ -476,8 +482,19 @@ export class BallPhysics {
         this.magnetHasTarget = true;
         const grounded = this.sinceContact <= 0.03;
         if (grounded) {
-          // press into surface: raises normal load -> more traction
+          // press into surface: raises normal load -> more traction, holds inverted
           acc.addScaledVector(nn, -tu.magnetPressG * tu.gravity);
+          // BOOSTER: on the track the field also drives the ball forward along the course
+          const fwd = new Vector3().copy(this.proj.T).addScaledVector(nn, -this.proj.T.dot(nn));
+          if (fwd.lengthSq() > 1e-6) {
+            fwd.normalize();
+            const vf = this.v.dot(fwd);
+            const fade = Math.max(0, Math.min(1, (tu.magnetBoostCap - vf) / 8));
+            acc.addScaledVector(fwd, tu.magnetBoostAccel * fade);
+            // spin the ball up to match, so it keeps rolling rather than skidding
+            this.w.addScaledVector(new Vector3().copy(nn).cross(fwd), (tu.magnetBoostAccel * fade * dt) / this.tune.radius);
+            this.boosting = fade > 0.05;
+          }
           this.magnetForce = 0.55;
         } else {
           this.wasMagnetAirborne = true;
@@ -517,6 +534,7 @@ export class BallPhysics {
       magnetActive: this.magnetActive,
       magnetForce: this.magnetForce,
       magnetEnergy: this.magnetEnergy,
+      boosting: this.boosting,
       submersion: this.submersion,
       inTunnel: this.inTunnel,
       lateral: pr.x,

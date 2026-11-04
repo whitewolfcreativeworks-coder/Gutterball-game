@@ -52,6 +52,7 @@ export interface SensoryState {
   magnetActive: boolean;
   magnetForce: number;      // 0..1 normalised
   magnetEnergy: number;     // 0..1
+  boosting: boolean;        // magnet held while on the track
   submersion: number;       // 0..1
   inTunnel: boolean;
   lateral: number;          // ball x in gutter (m)

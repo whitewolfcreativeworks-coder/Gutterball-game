@@ -235,6 +235,7 @@ export class Game {
     const b = this.run.ball;
     const events = this.run.pendingEvents.splice(0);
     if (!this.paused) this.bus.publish(b.snapshot(), events);
+    if (b.boosting && !this.paused) this.camera.punch(7 * this.speedFx); // booster widens the view
     else this.audio.quiet();
     this.showHints(b.proj.s);
     this.ballView.update(b, dt, this.time);

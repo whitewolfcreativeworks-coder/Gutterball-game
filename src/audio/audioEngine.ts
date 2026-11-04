@@ -291,10 +291,11 @@ export class AudioEngine {
     this.wind!.gain.gain.setTargetAtTime(Math.min(0.5, (sp / 30) ** 2 * (0.22 + 0.25 * air)), t, 0.08);
     this.wind!.filt.frequency.setTargetAtTime(250 + sp * 35, t, 0.08);
     // --- magnet hum ---
-    const mag = st.magnetActive ? 0.06 + 0.12 * st.magnetForce : 0;
+    // magnet hum; when boosting on the track it becomes a rising thrust tone tied to speed
+    const mag = st.magnetActive ? (st.boosting ? 0.17 : 0.06 + 0.12 * st.magnetForce) : 0;
     this.hum!.gain.gain.setTargetAtTime(mag, t, 0.04);
-    this.hum!.filt.frequency.setTargetAtTime(350 + st.magnetForce * 1200, t, 0.05);
-    this.hum!.o1.frequency.setTargetAtTime(52 + st.magnetForce * 14, t, 0.05);
+    this.hum!.filt.frequency.setTargetAtTime(st.boosting ? 900 + sp * 45 : 350 + st.magnetForce * 1200, t, 0.05);
+    this.hum!.o1.frequency.setTargetAtTime(st.boosting ? 60 + sp * 2.2 : 52 + st.magnetForce * 14, t, 0.05);
     // --- acoustic space ---
     const wetT = a.reverb + (st.inTunnel ? 0.55 : 0);
     this.wet.gain.setTargetAtTime(wetT, t, 0.25);

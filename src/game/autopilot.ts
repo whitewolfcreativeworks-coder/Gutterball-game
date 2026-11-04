@@ -25,7 +25,7 @@ export class Autopilot {
       for (const o of tr.obstacles) {
         const ds = o.s - s;
         if (ds < -1 || ds > look) continue;
-        if (Math.abs(x - o.x) < o.w / 2 + 0.9) return ds;
+        if (Math.abs(x - o.x) < o.w / 2 + ball.tune.radius + 0.45) return ds;
       }
       return -1;
     };

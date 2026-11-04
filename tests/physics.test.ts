@@ -248,3 +248,24 @@ describe('double jump', () => {
     expect(evs.filter((e) => e === 'DOUBLE_JUMP').length).toBeLessThanOrEqual(1);
   });
 });
+
+describe('magnet booster', () => {
+  it('holding the magnet on the track accelerates the ball much faster than rolling', () => {
+    const speedAfter = (magnet: boolean) => {
+      const tr = new Track(straight(-3));
+      const b = new BallPhysics(tr, MATERIALS.wood);
+      b.placeAt(25, 10);
+      sim(b, 2, { ...idle, magnet });
+      return b.v.length();
+    };
+    const rolling = speedAfter(false), boosted = speedAfter(true);
+    expect(boosted).toBeGreaterThan(rolling + 8);
+  });
+  it('the boost drains magnet energy', () => {
+    const tr = new Track(straight(-3));
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(25, 10);
+    sim(b, 1.5, { ...idle, magnet: true });
+    expect(b.magnetEnergy).toBeLessThan(0.7);
+  });
+});
