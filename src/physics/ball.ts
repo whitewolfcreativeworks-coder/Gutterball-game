@@ -67,8 +67,8 @@ export const DEFAULT_TUNING: BallTuning = {
   radius: 1.15,
   mass: 1,
   gravity: 9.81,
-  steerAccel: 17,
-  steerDirectFrac: 0.6,
+  steerAccel: 20,
+  steerDirectFrac: 0.72,
   airSteerAccel: 7.5,
   driveAccel: [0, 2.6, 3.6],
   driveCap: [0, 30, 38],
@@ -314,8 +314,14 @@ export class BallPhysics {
       // steering stops adding sideways speed past ~12 m/s, so a held tilt
       // carries you up a wall instead of spinning you round a pipe like a centrifuge
       const vlat = this.v.dot(Rt);
-      const latFade = Math.max(0, Math.min(1, 1 - (Math.sign(input.steer) * vlat - 9) / 5));
-      const st = input.steer * tu.steerAccel * latFade;
+      // Steering authority grows with speed (like a car's grip): at cruising and
+      // turbo speeds you need much more sideways force to place the ball.
+      const speedK = 1 + Math.max(0, Math.min(1.6, (sp - 18) / 28));
+      // ...and the sideways speed it can add grows too (still capped, so a held
+      // tilt carries you up a wall rather than spinning you round a pipe)
+      const latCap = 9 + Math.min(10, sp * 0.12);
+      const latFade = Math.max(0, Math.min(1, 1 - (Math.sign(input.steer) * vlat - latCap) / 5));
+      const st = input.steer * tu.steerAccel * speedK * latFade;
       acc.addScaledVector(Rt, st * tu.steerDirectFrac);
       // Grip assist: sideways sliding settles quickly when you ease off the
       // tilt, so the ball goes where you point it instead of wandering.
@@ -337,7 +343,7 @@ export class BallPhysics {
     } else {
       // In the air you can still steer; holding the magnet gives extra authority
       // so you can line up your landing while the beam pulls you down.
-      acc.addScaledVector(this.track.tubeAt(pr.s) > 0.5 ? Rt : pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel));
+      acc.addScaledVector(this.track.tubeAt(pr.s) > 0.5 ? Rt : pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel) * (1 + Math.max(0, Math.min(0.8, (sp - 18) / 40))));
     }
 
     // ---- Pneumatic tubes: an air current carries you along inside a pipe ----

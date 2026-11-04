@@ -182,7 +182,8 @@ describe('Launch tube split (Timberline Run)', () => {
     let dayMax = -1;
     for (let i = 0; i < 240 * 40; i++) {
       const p = b.projs[DAY];
-      let steer = Math.max(-1, Math.min(1, -b.proj.x * 0.5 - b.v.dot(b.proj.R) * 0.3));
+      const mp = route === 'dark' ? b.mainProj : b.proj;   // going straight = holding the main pipe's centre
+      let steer = Math.max(-1, Math.min(1, -mp.x * 0.5 - b.v.dot(mp.R) * 0.3));
       if (route === 'day' && p.s > -25 && p.s < 75 && Math.abs(p.along) < 3) steer = -1;
       else if (route === 'day' && p.s >= 75 && p.s < 140 && Math.abs(p.along) < 3) steer = Math.max(-1, Math.min(1, -p.x * 0.6 - b.v.dot(p.R) * 0.35));
       b.step(1 / 240, { steer, magnet: false, jump: false, driveLevel: 1 }); b.events.length = 0;
