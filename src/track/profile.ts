@@ -66,7 +66,9 @@ export function innerSignedDistance(x: number, y: number, p: GutterProfile): num
  * Signed distance to the solid gutter shell (positive = outside material).
  * `closed` adds a roof (tunnel sections) at the wall tops.
  */
-export function shellSDF(x: number, y: number, p: GutterProfile, closed = false, visibleOnly = false, openSky = false, curl = 0): number {
+export function shellSDF(x: number, y: number, p: GutterProfile, closed = false, visibleOnly = false, openSky = false, curl = 0, hL = p.H, hR = p.H): number {
+  // per-side wall height: the outside wall of a corner is built up so a fast ball can ride high
+  const Hs = x < 0 ? hL : hR;
   const din = innerSignedDistance(x, y, p);
   let sdf = Math.max(din, -din - p.th);
   // Collision walls continue invisibly above the rim ("containment field"), so
@@ -74,15 +76,15 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
   // into. `visibleOnly` gives the real surface (for the magnet and visuals).
   // In 'open sky' sections they stop a few metres above the rim: a big double
   // jump can fly off course there, and only the tractor beam saves you.
-  if (visibleOnly) sdf = Math.max(sdf, y - p.H);
-  else if (openSky) sdf = Math.max(sdf, y - (p.H + CONTAIN_ABOVE_RIM));
+  if (visibleOnly) sdf = Math.max(sdf, y - Hs);
+  else if (openSky) sdf = Math.max(sdf, y - (Hs + CONTAIN_ABOVE_RIM));
   const W = p.a + p.rc;
   const phiMax = curl * Math.PI / 2;
   if (curl > 0) {
     // TUBE: above the wall tops the walls curl inward along a circle of radius
     // W centred at (0, H). At curl = 1 both sides meet overhead and the gutter
     // becomes a closed pipe you can roll all the way around inside.
-    const ax = Math.abs(x), dy = y - p.H;
+    const ax = Math.abs(x), dy = y - Hs;
     const r = Math.hypot(ax, dy);
     const phi = Math.atan2(dy, ax);
     let arcD: number;
@@ -97,11 +99,31 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
     }
     sdf = Math.min(sdf, arcD);
   }
-  const lipLen = p.lip * (1 - curl);
-  if (p.lip > 0) {
+  // BUILT-UP CORNER: a raised outside wall ends in a smooth overhang (a
+  // bobsleigh lip) instead of the flat flange, so a ball riding high up the
+  // wall is curled back down rather than slamming into a ledge.
+  const ok = curl > 0 ? 0 : overhangK(Hs, p);
+  if (ok > 0) {
+    const A = OVERHANG_ANGLE * ok;
+    const ax = Math.abs(x) - (W - OVERHANG_R), dy = y - Hs;
+    const r = Math.hypot(ax, dy), phi = Math.atan2(dy, ax);
+    let d: number;
+    if (phi >= 0 && phi <= A) d = Math.max(OVERHANG_R - r, r - (OVERHANG_R + p.th));
+    else {
+      const cap = (a: number) => {
+        const c = Math.cos(a), sn = Math.sin(a);
+        const t = Math.max(OVERHANG_R, Math.min(OVERHANG_R + p.th, ax * c + dy * sn));
+        return Math.hypot(ax - c * t, dy - sn * t);
+      };
+      d = Math.min(cap(0), cap(A));
+    }
+    sdf = Math.min(sdf, d);
+  }
+  const lipLen = p.lip * (1 - curl) * (1 - ok);
+  if (p.lip > 0 && lipLen > 0.01) {
     // Rolled lip: a flange overhanging the channel at the top of each wall
     // (at the end of the curl when the walls are curling into a tube).
-    const ax0 = Math.abs(x), dy0 = y - p.H;
+    const ax0 = Math.abs(x), dy0 = y - Hs;
     const c = Math.cos(phiMax), sn = Math.sin(phiMax);
     const u = ax0 * c + dy0 * sn, v = -ax0 * sn + dy0 * c;
     const cx = W - lipLen / 2 + p.th / 2;
@@ -116,6 +138,14 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
     sdf = Math.min(sdf, roof);
   }
   return sdf;
+}
+
+/** Radius and sweep of the overhang on a built-up corner wall. */
+export const OVERHANG_R = 2.4;
+export const OVERHANG_ANGLE = (110 * Math.PI) / 180;
+/** How far a wall has turned into an overhang (0 = normal wall with flat lip, 1 = full overhang). */
+export function overhangK(Hs: number, p: GutterProfile): number {
+  return Math.max(0, Math.min(1, (Hs - p.H - 0.5) / 3));
 }
 
 /** Sample the inner profile as a polyline for mesh generation (left wall top -> right wall top). */
@@ -162,31 +192,46 @@ export function tubeTop(p: GutterProfile): number { return p.H + p.a + p.rc; }
  * Always returns the same number of points (left lip -> right lip), so rings
  * at different curls can be stitched into one mesh as the gutter closes.
  */
-export function profileRing(p: GutterProfile, curl: number, arcSteps = 12, curlSteps = 14): { pts: Array<[number, number]>; nrm: Array<[number, number]> } {
+export function profileRing(p: GutterProfile, curl: number, arcSteps = 12, curlSteps = 14, hL = p.H, hR = p.H): { pts: Array<[number, number]>; nrm: Array<[number, number]> } {
   const W = p.a + p.rc;
   const phiMax = curl * Math.PI / 2;
-  const lipLen = p.lip * (1 - curl);
-  const right: Array<[number, number, number, number]> = []; // x, y, nx, ny (right half, floor centre -> lip)
-  right.push([0, 0, 0, 1]);
-  right.push([p.a, 0, 0, 1]);
-  for (let i = 1; i < arcSteps; i++) {
-    const t = -Math.PI / 2 + (i / arcSteps) * (Math.PI / 2);
-    const c = Math.cos(t), s = Math.sin(t);
-    right.push([p.a + p.rc * c, p.rc + p.rc * s, -c, -s]);
-  }
-  right.push([W, p.rc, -1, 0]);
-  right.push([W, p.H, -1, 0]);
-  for (let j = 1; j <= curlSteps; j++) {
-    const f = phiMax * (j / curlSteps);
-    const c = Math.cos(f), s = Math.sin(f);
-    right.push([W * c, p.H + W * s, -c, -s]);
-  }
-  {
-    const c = Math.cos(phiMax), s = Math.sin(phiMax);
-    right.push([W * c - c * lipLen, p.H + W * s - s * lipLen, s, -c]);
-  }
+  const half = (Hs: number) => {
+    const ok = curl > 0 ? 0 : overhangK(Hs, p);
+    const lipLen = p.lip * (1 - curl) * (1 - ok);
+    const right: Array<[number, number, number, number]> = []; // x, y, nx, ny (right half, floor centre -> lip)
+    right.push([0, 0, 0, 1]);
+    right.push([p.a, 0, 0, 1]);
+    for (let i = 1; i < arcSteps; i++) {
+      const t = -Math.PI / 2 + (i / arcSteps) * (Math.PI / 2);
+      const c = Math.cos(t), s = Math.sin(t);
+      right.push([p.a + p.rc * c, p.rc + p.rc * s, -c, -s]);
+    }
+    right.push([W, p.rc, -1, 0]);
+    right.push([W, Hs, -1, 0]);
+    if (ok > 0) {
+      // overhang arc (built-up corner), then what is left of the flat lip
+      const A = OVERHANG_ANGLE * ok, cx = W - OVERHANG_R;
+      for (let j = 1; j <= curlSteps; j++) {
+        const f = A * (j / curlSteps);
+        const c = Math.cos(f), s = Math.sin(f);
+        right.push([cx + OVERHANG_R * c, Hs + OVERHANG_R * s, -c, -s]);
+      }
+      const e = right[right.length - 1];
+      right.push([e[0] - lipLen, e[1], 0, -1]);
+    } else {
+      for (let j = 1; j <= curlSteps; j++) {
+        const f = phiMax * (j / curlSteps);
+        const c = Math.cos(f), s = Math.sin(f);
+        right.push([W * c, Hs + W * s, -c, -s]);
+      }
+      const c = Math.cos(phiMax), s = Math.sin(phiMax);
+      right.push([W * c - c * lipLen, Hs + W * s - s * lipLen, s, -c]);
+    }
+    return right;
+  };
+  const right = half(hR), leftHalf = half(hL);
   const pts: Array<[number, number]> = [], nrm: Array<[number, number]> = [];
-  for (let i = right.length - 1; i >= 1; i--) { const q = right[i]; pts.push([-q[0], q[1]]); nrm.push([-q[2], q[3]]); }
+  for (let i = leftHalf.length - 1; i >= 1; i--) { const q = leftHalf[i]; pts.push([-q[0], q[1]]); nrm.push([-q[2], q[3]]); }
   for (const q of right) { pts.push([q[0], q[1]]); nrm.push([q[2], q[3]]); }
   return { pts, nrm };
 }

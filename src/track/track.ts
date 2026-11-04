@@ -118,6 +118,9 @@ export class Track {
   readonly tubeK: Float32Array;
   /** Per-sample tube current top speed (0 = default warp). */
   readonly warpCap: Float32Array;
+  /** Wall height (m above the floor) on the left and right, per sample: raised on the outside of corners. */
+  readonly wallL: Float32Array;
+  readonly wallR: Float32Array;
   /** Per-sample fractal motion [flow, pulse, twist], smoothed between sections. */
   readonly fxMode: Float32Array;
   readonly obstacles: Obstacle[];
@@ -155,6 +158,9 @@ export class Track {
         this.tubeK[i] = k < 0.002 ? 0 : k > 0.998 ? 1 : k * k * (3 - 2 * k);
       }
     }
+    this.wallL = new Float32Array(this.n).fill(this.profile.H);
+    this.wallR = new Float32Array(this.n).fill(this.profile.H);
+    this.raiseCornerWalls();
     // blend fractal motion across ~16 m so sections morph into each other
     {
       const src = this.fxMode.slice();
@@ -182,6 +188,44 @@ export class Track {
       if (c < this.length - 40) this.checkpoints.push(c);
     }
   }
+
+  /**
+   * Bank the corners like a racing line: in a turn of radius R a ball at
+   * cruising speed v rides up the wall to the angle where tan(theta) = v^2 / (gR).
+   * Where that is steep, the OUTSIDE wall (and its lip) is built up so you
+   * can carry your speed high round the corner instead of hitting the rim.
+   */
+  private raiseCornerWalls() {
+    const n = this.n, ds = this.ds, v = 55, g = 9.81, maxExtra = 8;
+    const extraL = new Float32Array(n), extraR = new Float32Array(n);
+    for (let i = 2; i < n - 2; i++) {
+      if (this.tubeK[i] > 0.02 || this.tunnel[i] || this.gap[i]) continue;
+      const dyaw = (this.angles[(i + 2) * 3] - this.angles[(i - 2) * 3]) / (4 * ds);   // deg per metre (+ = left)
+      if (Math.abs(dyaw) < 0.05) continue;
+      const kappa = Math.abs(dyaw) * Math.PI / 180;
+      const theta = Math.atan(v * v * kappa / g) * 180 / Math.PI;
+      const bankHelp = this.angles[i * 3 + 2] * Math.sign(dyaw);                          // bank tilted toward the inside helps
+      const e = Math.max(0, Math.min(1, (theta - bankHelp - 45) / 32)) * maxExtra;
+      if (dyaw > 0) extraR[i] = e; else extraL[i] = e;                                     // left turn: ball is flung right
+    }
+    // build up ahead of and after each corner (max over +-14 m), then taper smoothly (box +-10 m)
+    const spread = (src: Float32Array) => {
+      const m = new Float32Array(n), out = new Float32Array(n), w1 = 28, w2 = 20;
+      for (let i = 0; i < n; i++) { let mx = 0; for (let j = Math.max(0, i - w1); j <= Math.min(n - 1, i + w1); j++) mx = Math.max(mx, src[j]); m[i] = mx; }
+      for (let i = 0; i < n; i++) { let a = 0, c = 0; for (let j = Math.max(0, i - w2); j <= Math.min(n - 1, i + w2); j++) { a += m[j]; c++; } out[i] = a / c; }
+      return out;
+    };
+    const sl = spread(extraL), sr = spread(extraR);
+    for (let i = 0; i < n; i++) {
+      const open = 1 - Math.min(1, this.tubeK[i] * 20);                                   // never inside or entering tubes
+      if (this.tunnel[i]) continue;
+      this.wallL[i] = this.profile.H + sl[i] * open;
+      this.wallR[i] = this.profile.H + sr[i] * open;
+    }
+  }
+
+  /** Visible wall heights [left, right] at arc length s. */
+  wallsAt(s: number): [number, number] { const i = this.idx(s); return [this.wallL[i], this.wallR[i]]; }
 
   private idx(s: number): number {
     return Math.max(0, Math.min(this.n - 1, Math.round(s / this.ds)));
@@ -325,7 +369,7 @@ export class Track {
   sdfLocal(s: number, x: number, y: number, includeObstacles = true, visibleOnly = false): number {
     let d = 1e6;
     const s0 = this.layout.openStart ? 0 : -2, s1 = this.layout.openEnd ? this.length : this.length + 2;
-    if (s >= s0 && s <= s1 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly, this.openSky[this.idx(s)] === 1, this.tubeAt(s));
+    if (s >= s0 && s <= s1 && !this.isGap(s)) { const ii = this.idx(s); d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly, this.openSky[ii] === 1, this.tubeAt(s), this.wallL[ii], this.wallR[ii]); }
     else if (!visibleOnly && s >= s0 && s <= s1 && this.isGap(s)) {
       // Over a gap there is no floor, but the invisible side walls continue:
       // you can fall into a gap, never escape sideways out of the course.

@@ -137,6 +137,8 @@ export class BallPhysics {
   airborneTime = 0;
   normalAccel = 0;
   slipSpeed = 0;
+  private spinPrevN = new Vector3();
+  private spinPrevValid = false;
   rollingState: RollingState = 'airborne';
   jumpTimer = 0;
   // Magnet
@@ -325,7 +327,9 @@ export class BallPhysics {
       acc.addScaledVector(Rt, st * tu.steerDirectFrac);
       // Grip assist: sideways sliding settles quickly when you ease off the
       // tilt, so the ball goes where you point it instead of wandering.
-      acc.addScaledVector(Rt, -vlat * 1.6 * (1 - Math.min(1, Math.abs(input.steer))));
+      // (only on the flat floor: on a wall, sideways motion IS the ride up the corner and must keep its energy)
+      const onFloor = 1 - Math.max(0, Math.min(1, (Math.abs(pr.x) - this.track.profile.a * 0.6) / (this.track.profile.a * 0.5)));
+      acc.addScaledVector(Rt, -vlat * 1.2 * onFloor * (1 - Math.min(1, Math.abs(input.steer))));
       // Δω = (n × dir)/r * Δv ; scale 3.5 so friction delivers ~the requested linear accel
       const gyro = st * (1 - tu.steerDirectFrac) * 3.5 / r * dt;
       const axis = new Vector3().copy(n).cross(Rt);
@@ -478,6 +482,15 @@ export class BallPhysics {
     this.normalAccel += (instN - this.normalAccel) * Math.min(1, dt * 30);
 
     if (touched) {
+      // Spin follows the surface: when the contact normal turns (floor -> wall
+      // on a banked corner), carry the spin round with it, as a ball rolling
+      // smoothly over a curve does. Without this, the coarse 240 Hz normal
+      // changes made the ball skid and lose ~2/7 of its energy on every wall ride.
+      if (this.spinPrevValid) {
+        const dotN = this.spinPrevN.dot(this.n);
+        if (dotN > 0.5 && dotN < 0.999999) { tmpQ.setFromUnitVectors(this.spinPrevN, this.n); this.w.applyQuaternion(tmpQ); }
+      }
+      this.spinPrevN.copy(this.n); this.spinPrevValid = true;
       this.sinceContact = 0;
       // Rolling resistance (opposes tangential velocity, scales with normal load)
       this.rollingResistance(dt);
@@ -485,6 +498,7 @@ export class BallPhysics {
       const wn = this.w.dot(this.n);
       this.w.addScaledVector(this.n, -wn * Math.min(1, mat.spinDamping * dt));
     } else {
+      this.spinPrevValid = false;
       this.sinceContact += dt;
     }
 
@@ -682,7 +696,8 @@ export class BallPhysics {
       const prj = this.proj, prof = this.track.profile;
       const Wc = halfWidth(prof);
       const inTube = this.track.tubeAt(prj.s) > 0.85;
-      const outside = !inTube && (Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > prof.H);
+      const [wl, wr] = this.track.wallsAt(prj.s);
+      const outside = !inTube && (Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > (prj.x < 0 ? wl : wr));
       const grounded0 = this.sinceContact <= 0.03;
       if (!inTube && !outside && !grounded0 && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
         // In the air inside the channel: aim at the gutter surface directly
@@ -700,8 +715,8 @@ export class BallPhysics {
         // INTO the channel (towards the floor), never onto the outside of a wall.
         const tx = Math.max(-(Wc - 1.6), Math.min(Wc - 1.6, prj.x));
         // beside and below the rim: first lift over the rim, then into the channel
-        const besideLow = Math.abs(prj.x) > Wc && prj.y < prof.H + 1.5;
-        this.magnetTarget.copy(prj.P).addScaledVector(prj.R, besideLow ? Math.sign(prj.x) * (Wc - 1) : tx).addScaledVector(prj.U, besideLow ? prof.H + 3 : 0.05);
+        const besideLow = Math.abs(prj.x) > Wc && prj.y < Math.max(wl, wr) + 1.5;
+        this.magnetTarget.copy(prj.P).addScaledVector(prj.R, besideLow ? Math.sign(prj.x) * (Wc - 1) : tx).addScaledVector(prj.U, besideLow ? Math.max(wl, wr) + 3 : 0.05);
         nn.copy(this.p).sub(this.magnetTarget);
         d = nn.length();
         if (d > 1e-4) nn.multiplyScalar(1 / d); else nn.copy(prj.U);

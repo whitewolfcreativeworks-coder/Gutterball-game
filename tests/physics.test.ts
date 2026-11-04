@@ -364,3 +364,18 @@ describe('turbo combo', () => {
     expect(b.pushCombo).toBeLessThan(3);
   });
 });
+
+describe('built-up corners', () => {
+  it('a fast ball rides high round an unbanked corner, past the old lip height, keeping its speed', () => {
+    const tr = new Track({ id: 't', name: 't', segments: [{ len: 20, pitch: -2 }, { len: 60, pitch: -4 }, { len: 90, yaw: 120, pitch: -4 }, { len: 60, pitch: -4 }], obstacles: [], hints: [] });
+    const extra = Math.max(...Array.from(tr.wallR)) - tr.profile.H;
+    expect(extra).toBeGreaterThan(4);                           // outside (right) wall is built up
+    expect(Math.max(...Array.from(tr.wallL))).toBeCloseTo(tr.profile.H, 3);   // inside stays normal
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(50, 42);
+    let maxY = 0;
+    sim(b, 3, idle, () => { maxY = Math.max(maxY, b.proj.y); });
+    expect(maxY).toBeGreaterThan(tr.profile.H);                // rode above where the old lip was
+    expect(b.v.length()).toBeGreaterThan(30);                  // and carried its speed through
+  });
+});

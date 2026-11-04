@@ -31,12 +31,13 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   // then the rim, outer shell and other rim (part 1). Every curl gives the same
   // vertex count, so rows of an open gutter and a closed pipe stitch together.
   type RingPt = { x: number; y: number; nx: number; ny: number; u: number; part: 0 | 1 };
-  const ringCache = new Map<number, RingPt[]>();
-  const ringFor = (curl: number): RingPt[] => {
-    const key = Math.round(curl * 200);
-    const hit = ringCache.get(key);
+  const ringCache2 = new Map<string, RingPt[]>();
+  const ringFor = (curl: number, hL = prof.H, hR = prof.H): RingPt[] => {
+    const kc = Math.round(curl * 200), kl = Math.round(hL * 4), kr = Math.round(hR * 4);
+    const key = `${kc}|${kl}|${kr}`;
+    const hit = ringCache2.get(key);
     if (hit) return hit;
-    const { pts: inner, nrm: nIn } = profileRing(prof, key / 200, 12, 14);
+    const { pts: inner, nrm: nIn } = profileRing(prof, kc / 200, 12, 14, kl / 4, kr / 4);
     const outer = inner.map((p, i) => [p[0] - nIn[i][0] * prof.th, p[1] - nIn[i][1] * prof.th] as [number, number]);
     const ring: RingPt[] = [];
     let u = 0;
@@ -59,7 +60,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
     }
     ring.push({ x: outer[0][0], y: outer[0][1], nx: 0, ny: 1, u, part: 1 });
     ring.push({ x: inner[0][0], y: inner[0][1], nx: 0, ny: 1, u: u + prof.th, part: 1 });
-    ringCache.set(key, ring);
+    ringCache2.set(key, ring);
     return ring;
   };
   const nInner = profileRing(prof, 0, 12, 14).pts.length;
@@ -91,7 +92,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
     for (let i = from; i <= to; i += step) {
       track.sample(i, P, T, U, R);
       const s = i * track.ds;
-      const ring = ringFor(track.tubeK[i]);
+      const ring = ringFor(track.tubeK[i], track.wallL[i], track.wallR[i]);
       rowS.push(s);
       for (let k = 0; k < M; k++) {
         const r = ring[k];
@@ -236,6 +237,7 @@ function buildRibs(track: Track, mat: MaterialProfile, theme: { a: number }) {
   for (let s = 20; s < track.length - 70; s += RIB_SPACING) {
     const i = Math.round(s / track.ds);
     if (track.gap[i] || track.tunnel[i] || track.openSky[i] || track.tubeK[i] > 0) continue; // keep fork zones and tubes clear
+    if (Math.max(track.wallL[i], track.wallR[i]) > prof.H + 0.4) continue;                 // no arches over built-up corners
     track.sample(i, P, T, U, R);
     if (U.y < 0.45) continue; // keep loops open
     // torus lies in its XY plane: x across (R), y up (U), scaled into a flat arch
