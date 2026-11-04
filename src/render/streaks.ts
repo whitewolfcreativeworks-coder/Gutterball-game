@@ -15,6 +15,9 @@ export class TubeStreaks {
   private P = new Vector3(); private T = new Vector3(); private U = new Vector3(); private R = new Vector3();
   private level = 0;
   private hue = 0;
+  private colA = new Color(0xffffff); private colB = new Color(0xffffff); private psy = 1;
+  /** The world's palette: streaks glow in its colours, cycling only as far as the world's psy. */
+  setPalette(a: number, b: number, psy: number) { this.colA.set(a); this.colB.set(b); this.psy = psy; }
 
   constructor() {
     this.sRel = new Float32Array(this.n); this.ang = new Float32Array(this.n); this.rad = new Float32Array(this.n);
@@ -58,7 +61,9 @@ export class TubeStreaks {
       this.pos[k + 3] = ax + this.T.x * len; this.pos[k + 4] = ay + this.T.y * len; this.pos[k + 5] = az + this.T.z * len;
       // fade in from the far end, out right next to the camera
       const fade = Math.max(0, Math.min(1, (90 - this.sRel[i]) / 30)) * Math.max(0, Math.min(1, (this.sRel[i] + 8) / 6));
-      c.setHSL((this.hue + i * 0.013) % 1, 0.9, 0.62).multiplyScalar(fade);
+      c.copy(this.colA).lerp(this.colB, (i % 7) / 6);
+      if (this.psy > 0) { const hsl = { h: 0, s: 0, l: 0 }; c.getHSL(hsl); c.setHSL((hsl.h + (this.hue + i * 0.013) * this.psy) % 1, Math.max(0.6, hsl.s), Math.min(0.7, Math.max(0.5, hsl.l))); }
+      c.multiplyScalar(fade);
       this.col[k] = c.r; this.col[k + 1] = c.g; this.col[k + 2] = c.b;
       this.col[k + 3] = c.r * 0.15; this.col[k + 4] = c.g * 0.15; this.col[k + 5] = c.b * 0.15;
     }

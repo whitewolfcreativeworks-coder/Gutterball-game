@@ -255,6 +255,12 @@
 | **Offline bake pipeline:** flames and frost to texture loops, with provenance logged | Snow, Ice |
 | **Wrapped along-course coordinate** (CPU `s mod P`) | all |
 
+## Status
+
+- **Step 1 done (wall patterns):** all twelve wall patterns are implemented, each with its own colour discipline. The `psy` setting controls how far colours cycle: Rubber and Glass go full spectrum; Ice, Stone, Concrete and Sand keep their palettes. Patterns were tuned apart so no two worlds share the same visual complexity and density.
+- **Glass still needs its own design pass:** see-through tubes wash out the pattern.
+- **Rubber:** uses the band-passed-noise labyrinth for now. The live reaction-diffusion simulation is still to come.
+
 ## Build order (proposal)
 
 1. **The pattern library and all twelve wall shaders.** Fast to see, and lets you compare the worlds side by side early.

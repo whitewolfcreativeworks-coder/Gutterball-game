@@ -6,6 +6,7 @@ import { Autopilot } from './autopilot';
 import { buildWorld, World } from '../render/world';
 import { buildTrackGroup } from '../render/trackMesh';
 import { TubeStreaks } from '../render/streaks';
+import { FRACTAL_THEMES } from '../render/fractal';
 import { BallView } from '../render/ballView';
 import { ChaseCamera } from '../render/chaseCamera';
 import { SpeedEffects } from '../render/speedFx';
@@ -149,6 +150,7 @@ export class Game {
     this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
     this.ballView = new BallView(this.run.ball.tune.radius);
     this.streaks = new TubeStreaks();
+    { const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood; this.streaks.setPalette(th.a, th.b, th.psy); }
     this.scene.add(this.streaks.mesh);
     this.applyCosmetics();
     this.scene.add(this.ballView.group);

@@ -30,3 +30,10 @@ Bricolage Grotesque and IBM Plex Mono are loaded from Google Fonts (SIL Open Fon
 ## Candidate future sources (not yet used)
 
 Poly Haven (CC0 HDRIs/textures/models), ambientCG (CC0 PBR materials), Kenney and Quaternius (CC0 models), freesound.org (check each sound's licence individually). Record each addition here with URL, author and licence.
+
+## Shader code
+
+All twelve world wall patterns (`src/render/fractal.ts`) are original code written from public mathematics: the Kali set, Sierpinski carpet, Mandelbox, hexagonal branch IFS, flow warp, Apollonian inversion, band-passed noise, girih star polygons, Voronoi (Worley) F2−F1, Julia distance estimate, Hilbert curve and Koch fold. No Shadertoy or GPL code was used.
+
+- **"lowbias32" integer hash** by Chris Wellons, used for noise and Voronoi seeds. Public domain (Unlicense).
+- **Hilbert curve xy↔d conversion:** the standard published bit-manipulation algorithm, reimplemented.

@@ -17,7 +17,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   const vis = mat.visual;
   const maps = surfaceMaps(vis.surface, vis.tint);
   const surfaceMat = vis.transparent && vis.surface === 'glass'
-    ? new MeshPhysicalMaterial({ color: vis.tint, roughness: vis.roughness, metalness: 0, transmission: 0.0, transparent: true, opacity: vis.opacity ?? 0.4, side: DoubleSide, normalMap: maps.normalMap, depthWrite: false })
+    ? new MeshPhysicalMaterial({ color: vis.tint, roughness: vis.roughness, metalness: 0, transmission: 0.0, transparent: true, opacity: vis.opacity ?? 0.4, side: DoubleSide, normalMap: maps.normalMap, depthWrite: false, envMapIntensity: 0.35 })
     : new MeshStandardMaterial({
       map: maps.map, normalMap: maps.normalMap, roughnessMap: maps.roughnessMap, roughness: 1, metalness: vis.metalness,
       transparent: !!vis.transparent && vis.surface !== 'grating', opacity: vis.opacity ?? 1,
