@@ -70,7 +70,7 @@ export class SpeedEffects {
           if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
           gl_FragColor = vec4(clamp(c.rgb, 0.0, 48.0), 1.0); }`,
     }));
-    this.bloom = new UnrealBloomPass(new Vector2(256, 256), 0.5, 0.3, 0.9);
+    this.bloom = new UnrealBloomPass(new Vector2(256, 256), 0.32, 0.25, 0.96);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.pass);
     this.composer.addPass(new OutputPass());

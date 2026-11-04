@@ -1,5 +1,5 @@
 import {
-  BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
+  BoxGeometry, BackSide, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
   Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry,
 } from 'three';
 import { TrackProjector, type Track } from '../track/track';
@@ -466,22 +466,36 @@ function stripeTexture() {
   return t;
 }
 
+/**
+ * Obstacles must read instantly against walls that are full of motion, so
+ * they are the opposite of everything around them: STATIC (never animated),
+ * one flat saturated colour chosen opposite the world's palette on the
+ * colour wheel, a thick black outline that separates them from bright and
+ * dark backgrounds alike, and no fog, so they stay crisp at the far end of a tube.
+ */
 function buildObstacles(track: Track, mat: MaterialProfile) {
   const g = new Group();
-  const stripes = stripeTexture();
+  const theme = FRACTAL_THEMES[mat.id] ?? FRACTAL_THEMES.wood;
+  const hsl = { h: 0, s: 0, l: 0 };
+  new Color(theme.a).getHSL(hsl);
+  const hazard = new Color().setHSL((hsl.h + 0.5) % 1, 1.0, 0.52);
+  const face = new MeshBasicMaterial({ color: hazard, fog: false });
+  const top = new MeshBasicMaterial({ color: hazard.clone().lerp(new Color(0xffffff), 0.35), fog: false });
+  const outline = new MeshBasicMaterial({ color: 0x000000, side: BackSide, fog: false });
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
   for (const o of track.obstacles) {
     track.frameAtS(o.s, P, T, U, R);
     const geo = new BoxGeometry(o.w, o.h, o.ls);
-    const m = new MeshStandardMaterial({ map: stripes, roughness: 0.6, color: 0xffffff });
-    const side = new MeshStandardMaterial({ color: mat.visual.surface === 'wood' ? 0x7a5230 : 0x555555, roughness: 0.7 });
-    // stripes on front/back faces (+z/-z in box space), plain elsewhere
-    const mesh = new Mesh(geo, [side, side, side, side, m, m]);
+    // box face order: +x, -x, +y (top), -y, +z, -z
+    const mesh = new Mesh(geo, [face, face, top, face, face, face]);
     const basis = new Matrix4().makeBasis(R, U, T.clone().negate());
     mesh.quaternion.setFromRotationMatrix(basis);
     mesh.position.copy(P).addScaledVector(R, o.x).addScaledVector(U, o.y + o.h / 2);
     mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.name = 'obstacle';
+    // thick black outline (inverted hull)
+    const hull = new Mesh(new BoxGeometry(o.w + 0.36, o.h + 0.36, o.ls + 0.36), outline);
+    mesh.add(hull);
     g.add(mesh);
   }
   return g;

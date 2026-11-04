@@ -29,7 +29,7 @@ export const FRACTAL_THEMES: Record<string, FractalTheme> = {
   wood:     { kind: 0,  a: 0xffc060, b: 0xff5a10, scale: 0.12,  flow: 0.55, strength: 0.55, c: [0.52, 0.62], psy: 0.55 },   // Kali set
   concrete: { kind: 1,  a: 0x7ff3ff, b: 0x2a5cff, scale: 0.10,  flow: 0.5,  strength: 1.1, c: [0, 0], psy: 0.12 },         // Menger / Sierpinski carpet
   metal:    { kind: 2,  a: 0x9fdcff, b: 0xb04cff, scale: 0.13,  flow: 0.8,  strength: 0.8,  c: [0.12, -0.08], psy: 0.35 },  // Mandelbox
-  ice:      { kind: 3,  a: 0x9ff6ff, b: 0x5a6dff, scale: 0.14,  flow: 0.45, strength: 0.45,  c: [0, 0], psy: 0.1 },         // hexagonal frost
+  ice:      { kind: 3,  a: 0x3fc8ff, b: 0x3a3dff, scale: 0.14,  flow: 0.45, strength: 0.45,  c: [0, 0], psy: 0.1 },         // hexagonal frost
   water:    { kind: 4,  a: 0x9ffcff, b: 0x1a6dff, scale: 0.11,  flow: 0.9,  strength: 0.6,  c: [0, 0], psy: 0.25 },         // caustic flow
   glass:    { kind: 5,  a: 0xff5cc8, b: 0x2affc4, scale: 0.12,  flow: 0.6,  strength: 1.0, c: [0, 0], psy: 0.85 },         // Apollonian gasket
   rubber:   { kind: 6,  a: 0xff2bd6, b: 0x2bf0ff, scale: 0.12,  flow: 0.8,  strength: 0.5,  c: [0, 0], psy: 1.0 },         // Turing labyrinth
@@ -37,7 +37,7 @@ export const FRACTAL_THEMES: Record<string, FractalTheme> = {
   mud:      { kind: 8,  a: 0x8dff5a, b: 0x1d8f6a, scale: 0.12,  flow: 0.5,  strength: 0.75, c: [0, 0], psy: 0.15 },         // Voronoi cracks
   stone:    { kind: 9,  a: 0xffe7a8, b: 0xb8862a, scale: 0.11,  flow: 0.4,  strength: 1.05,  c: [-0.745, 0.113], psy: 0.08 },// Julia marble
   grating:  { kind: 10, a: 0xffb03a, b: 0xff4a1a, scale: 0.10,  flow: 0.9,  strength: 0.85, c: [0, 0], psy: 0.12 },         // Hilbert circuits
-  snow:     { kind: 11, a: 0xbfe6ff, b: 0x7f6cff, scale: 0.12,  flow: 0.5,  strength: 0.55,  c: [0, 0], psy: 0.2 },         // Koch snowflake
+  snow:     { kind: 11, a: 0x7fb4ff, b: 0x6a4cff, scale: 0.12,  flow: 0.5,  strength: 0.55,  c: [0, 0], psy: 0.2 },         // Koch snowflake
 };
 
 export interface FractalUniforms {
@@ -351,7 +351,10 @@ vec3 fxColor() {
 
   float pulse = (0.85 + 0.15 * sin(uFxTime * 2.0 + vFxUv.y * 0.6)) * (1.0 + push * 0.45 * breathe);
   float k = (0.04 + 0.96 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 0.9 * tube);
-  return (col * k + ringCol * ring * (0.4 + 0.6 * uFxSpeed) * (0.3 + 0.7 * wall)) * uFxIntensity * 2.2;
+  vec3 em = (col * k + ringCol * ring * (0.4 + 0.6 * uFxSpeed) * (0.3 + 0.7 * wall)) * uFxIntensity * 2.2;
+  // soft ceiling: bright features stay saturated colour instead of blowing out to white
+  float pk = max(em.r, max(em.g, em.b));
+  return em / (1.0 + pk * 0.8);
 }
 `;
 

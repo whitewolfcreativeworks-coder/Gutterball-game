@@ -91,7 +91,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.95;
+    this.renderer.toneMappingExposure = 0.88;
     this.renderer.shadowMap.enabled = this.quality === 'high';
     this.renderer.shadowMap.type = PCFSoftShadowMap;
     this.camera = new ChaseCamera(innerWidth / innerHeight);
