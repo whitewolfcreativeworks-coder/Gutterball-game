@@ -136,10 +136,10 @@ float fxPattern(vec2 p) {
     float lod = clamp(1.6 - fw * sc * 7.0, 0.0, 1.0);       // fade levels finer than ~2 px
     float lvl = 1.0 / (1.0 + float(i) * 0.5);
     glow += alive * hole * lod * lvl * (fxLine(e, 0.035, fw * sc * 1.5) + 0.35 * exp(-e * 10.0));
-    inside = max(inside, alive * hole * lod * 0.18);
+    inside = max(inside, alive * hole * lod * 0.07);
     alive *= 1.0 - hole;
   }
-  return clamp(glow + inside + alive * 0.1, 0.0, 1.2);
+  return clamp(glow + inside + alive * 0.03, 0.0, 1.2);
 #elif FX_KIND == 2
   // SHEET METAL — 2-D Mandelbox: box fold, sphere fold, scale and translate;
   // orbit traps banded into brushed, riveted chrome.
@@ -240,10 +240,10 @@ float fxPattern(vec2 p) {
     float dd = length(o + fxHash2(ip2 + o + 91.0) - fp2);
     if (dd < h1) { h2 = h1; h1 = dd; } else if (dd < h2) h2 = dd;
   }
-  float wd = 0.05 + 0.025 * sin(t * 0.45);
+  float wd = 0.035 + 0.02 * sin(t * 0.45);
   float big = fxLine(f2 - f1, wd, fw * 3.0 * 1.5);
   float small = fxLine(h2 - h1, wd * 0.6, fw * 8.3 * 1.5) * 0.5;
-  return clamp(big + small + (1.0 - f1) * 0.12, 0.0, 1.2);
+  return clamp(big + small * 0.8, 0.0, 1.2);
 #elif FX_KIND == 9
   // POLISHED STONE — Julia set marble: distance estimate 0.5|z|log|z|/|z'|
   // draws thin veins; turbulence in c makes it flow like polished stone.
@@ -257,12 +257,12 @@ float fxPattern(vec2 p) {
     m2 = dot(zz, zz);
     if (m2 > 1e4) break;
   }
-  if (m2 <= 1e4) return 0.12;                                // inside the set: deep stone
+  if (m2 <= 1e4) return 0.04;                                // inside the set: deep stone
   float d = 0.25 * sqrt(m2 / max(dot(dz, dz), 1e-12)) * log(m2);
   // veins: the set's edge plus nested equidistant veins around it (bands of log-distance)
   float lv = log(d + 1e-5) * 2.2;
   float bands = abs(fract(lv) - 0.5) * 2.0;
-  return clamp(exp(-d * 40.0) * 1.1 + fxLine(d, 0.002, fw) * 0.6 + (1.0 - smoothstep(0.0, 0.18, bands)) * 0.45 * exp(-d * 2.0), 0.0, 1.2);
+  return clamp(exp(-d * 40.0) * 0.9 + fxLine(d, 0.002, fw) * 0.6 + (1.0 - smoothstep(0.0, 0.12, bands)) * 0.3 * exp(-d * 3.0), 0.0, 1.2);
 #elif FX_KIND == 10
   // STEEL GRATING — Hilbert space-filling curve drawn as circuit traces, with
   // pulses of light running along the curve like data.
@@ -328,7 +328,12 @@ vec3 fxColor() {
   // the stacked projection layers of a dome show)
   vec2 p2 = vec2((across - uFxTime * twist * 1.6) * kx * 0.5, (vFxUv.y * 0.55 - uFxTravel * flowK * 0.4 + uFxTime * 0.5) * uFxScale) / zoom;
   float f2 = fxPattern(fxMirror(p2 + 0.37));
-  float f = clamp(f1 + f2 * mix(0.35, 0.7, tube), 0.0, 1.4);
+  // contrast: crush the gaps between features to black, keep the features bright
+  f1 = pow(clamp(f1, 0.0, 1.4), 2.0);
+  float f = clamp(f1 + f2 * f2 * mix(0.18, 0.3, tube), 0.0, 1.4);   // the deep layer sits dim, behind
+  // relief: shade the pattern from its own slope so features look raised (3-D emboss)
+  vec2 gr = vec2(dFdx(f1), dFdy(f1));
+  float relief = clamp(0.5 + dot(gr, vec2(0.7, -0.7)) * 5.0, 0.0, 1.0);
 
   // psychedelic colour: hue cycles in time, along the course and through the
   // pattern itself (full spectrum in tubes, a gentle shimmer in the open)
@@ -336,14 +341,14 @@ vec3 fxColor() {
   col = mix(col, mix(uFxA, uFxB, 0.5) * 1.2, clamp(f2, 0.0, 1.0) * 0.4);
   float psy = uFxPsy * mix(0.6, 1.0, tube);
   col = fxHue(col, psy * (uFxTime * 0.9 + vFxUv.y * 0.025 - uFxTravel * 0.01 + f1 * 2.5 + cos(across * 6.2832 / uFxRing) * 1.5));
-  col = max(col, 0.0);
+  col = max(col, 0.0) * (0.45 + 1.1 * relief);
 
   // WARP RINGS: bright bands around the pipe rushing at you with your speed
   float ring = pow(0.5 + 0.5 * sin((vFxUv.y + uFxTravel * 1.0) * 0.45 + uFxTime * 3.0), 10.0) * (0.25 + tube * 1.1);
   vec3 ringCol = fxHue(mix(uFxA, uFxB, 0.3), (uFxTime * 1.3 + vFxUv.y * 0.05) * uFxPsy);
 
   float pulse = (0.85 + 0.15 * sin(uFxTime * 2.0 + vFxUv.y * 0.6)) * (1.0 + push * 0.45 * breathe);
-  float k = (0.07 + 0.93 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 1.3 * tube);
+  float k = (0.04 + 0.96 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 0.9 * tube);
   return (col * k + ringCol * ring * (0.4 + 0.6 * uFxSpeed) * (0.3 + 0.7 * wall)) * uFxIntensity * 2.2;
 }
 `;
@@ -363,7 +368,7 @@ export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: n
     sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec4 fxmode;\nvarying vec2 vFxUv;\nvarying vec4 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
     // inside a tube the wood itself goes dark so the projection owns the walls (dome-screen look)
     sh.fragmentShader = GLSL + sh.fragmentShader
-      .replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb *= 1.0 - (0.72 + 0.2 * (1.0 - diffuseColor.a)) * vFxMode.w;\n diffuseColor.a = max(diffuseColor.a, 0.8 * vFxMode.w); // see-through gutters become projection screens inside tubes')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb *= 1.0 - (0.86 + 0.1 * (1.0 - diffuseColor.a)) * vFxMode.w;\n diffuseColor.a = max(diffuseColor.a, 0.8 * vFxMode.w); // see-through gutters become projection screens inside tubes')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();');
   };
   mat.customProgramCacheKey = () => `fx${theme.kind}`;

@@ -6,6 +6,7 @@ import { Autopilot } from './autopilot';
 import { buildWorld, World } from '../render/world';
 import { buildTrackGroup } from '../render/trackMesh';
 import { TubeStreaks } from '../render/streaks';
+import { FogExp2, Color } from 'three';
 import { FRACTAL_THEMES } from '../render/fractal';
 import { BallView } from '../render/ballView';
 import { ChaseCamera } from '../render/chaseCamera';
@@ -57,6 +58,9 @@ export class Game {
   courseGeo?: Course;
   private branchGroups: Group[] = [];
   private streaks?: TubeStreaks;
+  private fogBase?: { color: Color; density: number };
+  private fogDark = new Color(0x000000);
+  private fogMix = 0;
   material?: MaterialProfile;
   course?: CourseEntry;
   mode: GameMode = 'attract';
@@ -149,6 +153,8 @@ export class Game {
     this.run = new Run(this.courseGeo, this.material);
     this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
     this.ballView = new BallView(this.run.ball.tune.radius);
+    if (this.scene.fog instanceof FogExp2) { this.fogBase = { color: this.scene.fog.color.clone(), density: this.scene.fog.density }; }
+    { const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood; this.fogDark = new Color(th.b).multiplyScalar(0.035); }
     this.streaks = new TubeStreaks();
     { const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood; this.streaks.setPalette(th.a, th.b, th.psy); }
     this.scene.add(this.streaks.mesh);
@@ -267,6 +273,13 @@ export class Game {
     this.camera.fx = this.speedFx;
     this.camera.update(b, b.track, dt);
     this.streaks?.update(b.track, b.proj.s, b.v.length(), dt, this.time, 0.5 + 0.5 * this.speedFx);
+    // depth: inside a tube the far end falls away into darkness (fog to near-black in the world's colour)
+    if (this.fogBase && this.scene.fog instanceof FogExp2) {
+      const tkF = Math.max(b.track.tubeAt(b.proj.s), b.track.tubeAt(b.proj.s + 10));
+      this.fogMix += (tkF - this.fogMix) * Math.min(1, dt * 3);
+      this.scene.fog.color.copy(this.fogBase.color).lerp(this.fogDark, this.fogMix);
+      this.scene.fog.density = this.fogBase.density + (0.011 - this.fogBase.density) * this.fogMix * (this.fogBase.density < 0.011 ? 1 : 0);
+    }
     // ribs overhead: whoosh as each one passes
     const rib = Math.floor(b.proj.s / RIB_SPACING);
     if (rib !== this.lastRib) {
