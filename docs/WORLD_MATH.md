@@ -332,3 +332,24 @@ The detailed ride-order sequences for each world come from the research report. 
 - Yale circle-inversion fractals; the Apollonian gasket construction (blancosilva.github.io).
 
 **To verify before relying on them:** Shadertoy's exact default-licence wording; half-float render-target support across iOS devices; meander ratios; the T-to-Y crack-junction paper.
+
+## Second acts (v2)
+
+Every course gained a second act built from the new elements in `src/courses/elements.ts`: vortex (a tightening helix), sweeper (a fast bend that uses the built-up wall), wave turn, pretzel, terraces, covered tunnel run, plus obstacle fields (zigzag, post slalom, gates, colonnade).
+
+| World | Act II | New length |
+|---|---|---|
+| Wood | The Sawmill | 4.8 km |
+| Concrete | Treatment Works | 3.0 km |
+| Metal | Rolling Mill | 3.6 km |
+| Ice | The Crevasse | 4.0 km |
+| Water | Delta & Caves | 3.7 km |
+| Glass | Prism Heights | 3.5 km |
+| Rubber | Bounce House | 2.8 km |
+| Sand | Sandstorm Canyon | 3.3 km |
+| Mud | Landslide | 2.6 km |
+| Stone | The Colonnade | 3.0 km |
+| Grating | Catwalks | 3.0 km |
+| Snow | Backcountry | 3.4 km |
+
+Every course is checked so that no two passes of the gutter come within each other's walls.

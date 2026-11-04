@@ -3,7 +3,7 @@ import {
   IcosahedronGeometry, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PlaneGeometry, PMREMGenerator, Quaternion,
   Scene, Vector3, WebGLRenderer, BoxGeometry, Texture, MathUtils, ShaderMaterial, BackSide, SphereGeometry,
 } from 'three';
-import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { SkyDome, SKY_THEMES } from './sky';
 import type { Track } from '../track/track';
 import type { MaterialProfile } from '../physics/materials';
 
@@ -17,6 +17,8 @@ export interface World {
   envMap: Texture;
   groundHeight: (x: number, z: number) => number;
   sunDir: Vector3;
+  sky: SkyDome;
+  hemi: HemisphereLight;
 }
 
 function hash(x: number, z: number) {
@@ -42,24 +44,21 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
   const vis = mat.visual;
 
   // ---- Sky + sun ----
-  const sky = new Sky();
-  sky.scale.setScalar(4500);
-  const u = sky.material.uniforms;
-  u['turbidity'].value = vis.sky.turbidity;
-  u['rayleigh'].value = vis.sky.rayleigh;
-  u['mieCoefficient'].value = 0.005;
-  u['mieDirectionalG'].value = 0.8;
+  const theme = SKY_THEMES[mat.id] ?? SKY_THEMES.wood;
   const phi = MathUtils.degToRad(90 - vis.sky.elevation);
   const theta = MathUtils.degToRad(vis.sky.azimuth);
   const sunDir = new Vector3().setFromSphericalCoords(1, phi, theta);
-  u['sunPosition'].value.copy(sunDir);
+  // the visible sun/moon disc sits at least ~14 degrees up so it clears the painted skyline
+  const discDir = sunDir.clone();
+  if (discDir.y < 0.24) { discDir.y = 0.24; discDir.normalize(); }
+  const sky = new SkyDome(theme, vis.fog, discDir, quality);
 
   // Environment map for reflections: a controlled gradient sky (zenith, horizon,
   // ground) plus a sun disc. The physical Sky shader is HDR-bright and would
   // blow out image-based lighting, so it is used for the visible dome only.
   const pmrem = new PMREMGenerator(renderer);
   const envScene = new Scene();
-  const zenith = new Color(vis.fog).lerp(new Color(0x3a6ea8), vis.sky.elevation < 2 ? 0.2 : 0.6);
+  const zenith = new Color(vis.fog).lerp(new Color(theme.zenith), 0.6);
   const horizon = new Color(vis.fog);
   const groundC = new Color(vis.ground).multiplyScalar(0.6);
   const envMat = new ShaderMaterial({
@@ -78,9 +77,10 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
   pmrem.dispose();
   scene.environment = envMap;
   scene.environmentIntensity = 1.0;
-  group.add(sky);
+  group.add(sky.mesh);
 
-  scene.fog = new FogExp2(vis.fog, vis.fogDensity);
+  // lighter than before: the painted horizon now carries the distance
+  scene.fog = new FogExp2(vis.fog, vis.fogDensity * 0.55);
   scene.background = new Color(vis.fog);
 
   const night = vis.sky.elevation < 2;
@@ -95,7 +95,8 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
     sun.shadow.normalBias = 0.03;
   }
   group.add(sun, sun.target);
-  group.add(new HemisphereLight(night ? 0x3040a0 : 0xdbeaff, new Color(vis.ground).lerp(new Color(vis.tint), 0.5), night ? 0.5 : 0.8));
+  const hemi = new HemisphereLight(night ? 0x3040a0 : 0xdbeaff, new Color(vis.ground).lerp(new Color(vis.tint), 0.5), night ? 0.5 : 0.8);
+  group.add(hemi);
 
   // ---- Terrain built around the track ----
   // Coarse list of track points for distance queries
@@ -134,20 +135,26 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
       }
       if (best < (rad * cell) ** 2) break;
     }
+    if (best >= 1e12) {
+      // beyond the lookup grid: estimate from the course's bounding box
+      const dx = Math.max(minX - x, 0, x - maxX), dz = Math.max(minZ - z, 0, z - maxZ);
+      return [Math.max(240, Math.hypot(dx, dz)), minY];
+    }
     return [Math.sqrt(best), Number.isFinite(byLow) ? byLow : byNear];
   };
   const valley = scenerySettings(vis.scenery);
   const groundHeight = (x: number, z: number) => {
     const [d, ty] = nearest(x, z);
     const n = fbm2(x * 0.004, z * 0.004);
-    const far = minY - 30 + n * valley.mountain + Math.max(0, d - 120) * valley.rise;
+    const far = minY - 30 + n * valley.mountain + Math.min(Math.max(0, d - 120), 1100) * valley.rise;
     const near = ty - valley.clearance - n * 10;
     const t = MathUtils.smoothstep(d, 30, 220);
     return near * (1 - t) + Math.max(near, far) * t;
   };
 
-  const size = Math.max(maxX - minX, maxZ - minZ) + 1400;
-  const res = quality === 'high' ? 220 : 140;
+  // reaches well past the fog so the land runs on to meet the painted ridges
+  const size = Math.max(maxX - minX, maxZ - minZ) + 3600;
+  const res = quality === 'high' ? 260 : 170;
   const tgeo = new PlaneGeometry(size, size, res, res);
   tgeo.rotateX(-Math.PI / 2);
   const cxm = (minX + maxX) / 2, czm = (minZ + maxZ) / 2;
@@ -164,6 +171,20 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
   tgeo.setAttribute('color', new BufferAttribute(colors, 3));
+  // lakes: flood the lowest valleys (forest, tropical, jungle; frozen on the glacier)
+  const lake = LAKES[vis.scenery];
+  if (lake) {
+    const hs: number[] = [];
+    for (let i = 0; i < tp.count; i += 7) hs.push(tp.getY(i));
+    hs.sort((p, q) => p - q);
+    const level = hs[Math.floor(hs.length * lake.fill)];
+    const wgeo = new PlaneGeometry(size, size, 1, 1);
+    wgeo.rotateX(-Math.PI / 2);
+    const water = new Mesh(wgeo, new MeshStandardMaterial({ color: lake.color, roughness: lake.rough, metalness: 0.35, envMapIntensity: 1.2 }));
+    water.position.set(cxm, level, czm);
+    water.name = 'lake';
+    group.add(water);
+  }
   tgeo.computeVertexNormals();
   const terrain = new Mesh(tgeo, new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
   terrain.receiveShadow = true;
@@ -174,8 +195,15 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
   group.add(buildScenery(vis.scenery, groundHeight, nearest, [minX - 500, maxX + 500, minZ - 500, maxZ + 500], quality));
 
   scene.add(group);
-  return { group, sun, envMap, groundHeight, sunDir };
+  return { group, sun, envMap, groundHeight, sunDir, sky, hemi };
 }
+
+const LAKES: Record<string, { color: number; rough: number; fill: number }> = {
+  forest: { color: 0x2c5a72, rough: 0.08, fill: 0.16 },
+  tropical: { color: 0x1aa0b8, rough: 0.05, fill: 0.3 },
+  jungle: { color: 0x4a4a2c, rough: 0.12, fill: 0.22 },
+  glacier: { color: 0xbcd6ea, rough: 0.25, fill: 0.14 },
+};
 
 function scenerySettings(s: string) {
   switch (s) {

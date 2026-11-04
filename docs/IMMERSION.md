@@ -43,3 +43,17 @@ Modelled on immersive dome theatres and flight rides (the Sphere in Las Vegas, t
 | "4D" body cues | Wind roar rises in tubes (the fans), and the device trembles at warp speed (rate-limited rumble) |
 
 Splits stay fair: the current calms to ~100 km/h approaching and through a split, so there's time to pick a side, and branch tubes that lead into jumps have a lower warp cap.
+
+## The outside world (sky dome)
+
+`src/render/sky.ts` is a single shader that follows the camera. It paints, per world (`SKY_THEMES`):
+- the gradient sky, sun or moon, and drifting fBm clouds;
+- three distant ridgelines in the world's style: forest hills, jagged snow peaks, mesas, a city skyline with lit windows, smokestacks, stepped pyramids, cranes with blinking warning lights, or dune crests;
+- extras: aurora (Ice), stars, moon and a synthwave glow (Rubber), lightning that flashes the clouds and the scene light (Mud).
+
+The ridge bases melt into the fog colour, so the real terrain fades into the painted horizon. Supporting changes:
+- Fog is lighter.
+- The terrain extends ~1.8 km past the course.
+- Lakes flood the lowest valleys in the forest, tropical, jungle and glacier worlds.
+
+On low quality the noise drops from 5 octaves to 3.

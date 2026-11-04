@@ -79,8 +79,8 @@ export const DEFAULT_TUNING: BallTuning = {
   magnetPressG: 4.2,
   magnetBoostAccel: 14,
   magnetBoostCap: 62,
-  magnetAccel: 62,
-  magnetRange: 26,
+  magnetAccel: 115,
+  magnetRange: 60,
   magnetDrain: 0.1,
   magnetRegen: 0.45,
   magnetMinRestart: 0.05,
@@ -100,6 +100,8 @@ const tmpQv2 = new Vector3();
 const jA = new Vector3();
 const jB = new Vector3();
 const tmpQ = new Quaternion();
+/** Airborne tractor beam aims at this fraction of your sideways offset (0 = dead centre of the gutter). */
+const AIR_BEAM_CENTRE = 0.2;
 const WORLD_UP = new Vector3(0, 1, 0);
 
 export class BallPhysics {
@@ -702,9 +704,12 @@ export class BallPhysics {
       if (!inTube && !outside && !grounded0 && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
         // In the air inside the channel: aim at the gutter surface directly
         // beneath the ball (keeps your lateral line; never a far wall or the rim).
-        const ax = Math.abs(prj.x);
+        // ...pulled in toward the CENTRE of the gutter, so a big toss always comes
+        // home to the middle of the floor.
+        const tx0 = prj.x * AIR_BEAM_CENTRE;
+        const ax = Math.abs(tx0);
         const ys = ax <= prof.a ? 0 : prof.rc - Math.sqrt(Math.max(0, prof.rc * prof.rc - (Math.min(ax, Wc) - prof.a) ** 2));
-        this.magnetTarget.copy(prj.P).addScaledVector(prj.R, prj.x).addScaledVector(prj.U, ys);
+        this.magnetTarget.copy(prj.P).addScaledVector(prj.R, tx0).addScaledVector(prj.U, ys);
         nn.copy(this.p).sub(this.magnetTarget);
         const dl = nn.length();
         if (dl > 1e-4) nn.multiplyScalar(1 / dl); else nn.copy(prj.U);
@@ -713,7 +718,7 @@ export class BallPhysics {
       if (outside && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
         // Rescue: above the rim or beside the gutter, the beam pulls you back
         // INTO the channel (towards the floor), never onto the outside of a wall.
-        const tx = Math.max(-(Wc - 1.6), Math.min(Wc - 1.6, prj.x));
+        const tx = Math.max(-(Wc - 1.6), Math.min(Wc - 1.6, prj.x * AIR_BEAM_CENTRE));
         // beside and below the rim: first lift over the rim, then into the channel
         const besideLow = Math.abs(prj.x) > Wc && prj.y < Math.max(wl, wr) + 1.5;
         this.magnetTarget.copy(prj.P).addScaledVector(prj.R, besideLow ? Math.sign(prj.x) * (Wc - 1) : tx).addScaledVector(prj.U, besideLow ? Math.max(wl, wr) + 3 : 0.05);
@@ -765,17 +770,25 @@ export class BallPhysics {
           this.wasMagnetAirborne = true;
           const fall = 1 - smoothstep(tu.magnetRange * 0.55, tu.magnetRange, d);
           // LUNGE: the instant the beam locks on you get yanked toward the surface
-          if (engagedNow) this.v.addScaledVector(nn, -Math.min(5, 2 + d * 0.25));
-          this.magnetRamp = Math.min(1, this.magnetRamp + dt / 0.1);
-          const a = tu.magnetAccel * fall * (0.5 + 0.5 * this.magnetRamp) * (0.65 + 0.35 * Math.min(1, this.magnetEnergy * 4));
-          acc.addScaledVector(nn, -a);
-          // damp velocity directed away from the surface (prevents orbiting)
+          if (engagedNow) this.v.addScaledVector(nn, -Math.min(9, 3 + d * 0.3));
+          this.magnetRamp = Math.min(1, this.magnetRamp + dt / 0.05);
+          // full strength in the air whatever the energy: you can always bring it home
+          const a = tu.magnetAccel * fall * (0.6 + 0.4 * this.magnetRamp);
+          // damp velocity directed away from the surface (kills the climb at once)
           const away = this.v.dot(nn);
-          if (away > 0) acc.addScaledVector(nn, -away * 4 * fall);
-          // approach limiter: a hard, fast pull that still lands cleanly
+          // approach limiter: a hard, fast pull that still lands cleanly. Close to
+          // the surface the allowed closing speed falls, and once you are coming in
+          // faster than that the beam stops pulling and brakes instead.
           const closing = -away;
-          const vmax = 9 + 4 * Math.max(0, d - this.tune.radius);
-          if (closing > vmax) acc.addScaledVector(nn, Math.min(140, (closing - vmax) * 14));
+          const vmax = 8 + 4.5 * Math.max(0, d);
+          if (closing > vmax) acc.addScaledVector(nn, Math.min(320, (closing - vmax) * 22));
+          else acc.addScaledVector(nn, -a);
+          if (away > 0) acc.addScaledVector(nn, -away * 7 * fall);
+          // home in: damp sideways drift across the gutter (not the forward run)
+          {
+            const side = tmpQv.copy(this.proj.R).addScaledVector(nn, -this.proj.R.dot(nn));
+            if (side.lengthSq() > 1e-6) { side.normalize(); acc.addScaledVector(side, -this.v.dot(side) * 3.5 * fall); }
+          }
           this.magnetForce = Math.min(1, a / tu.magnetAccel);
         }
       }

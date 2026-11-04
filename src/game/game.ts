@@ -61,6 +61,7 @@ export class Game {
   private fogBase?: { color: Color; density: number };
   private fogDark = new Color(0x000000);
   private fogMix = 0;
+  private hemiBase = -1;
   material?: MaterialProfile;
   course?: CourseEntry;
   mode: GameMode = 'attract';
@@ -143,6 +144,7 @@ export class Game {
     this.track = this.courseGeo.main;
     this.lastRib = -1;
     this.world = buildWorld(this.scene, this.renderer, this.courseGeo.all, this.material, this.quality);
+    this.hemiBase = -1;
     const cg = this.courseGeo;
     const carveFor = (idx: number) => cg.junctions.flatMap((j) =>
       j.a === idx ? [{ s0: j.aS[0], s1: j.aS[1], other: cg.all[j.b] }] : j.b === idx ? [{ s0: j.bS[0], s1: j.bS[1], other: cg.all[j.a] }] : []);
@@ -299,6 +301,10 @@ export class Game {
       const sun = this.world.sun;
       sun.target.position.copy(b.p);
       sun.position.copy(b.p).addScaledVector(this.world.sunDir, 90);
+      // sky dome follows the camera; storms flash the whole scene
+      const flash = this.world.sky.update(dt, performance.now() / 1000, this.camera.cam.position);
+      if (this.hemiBase < 0) this.hemiBase = this.world.hemi.intensity;
+      this.world.hemi.intensity = this.hemiBase * (1 + flash * 2.2);
     }
     const spd = b.v.length();
     this.blur += (Math.max(0, Math.min(1, (spd - 12) / 22)) - this.blur) * Math.min(1, dt * 3);

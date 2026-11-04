@@ -169,7 +169,7 @@ describe('ball physics', () => {
     expect(captured).toBe(true);
     expect(ev.some((e) => e.type === 'MAGNET_ENGAGED')).toBe(true);
     // a force, not a snap: per-step velocity change while flying is small (accel * dt)
-    expect(maxDvAir).toBeLessThan(0.5);
+    expect(maxDvAir).toBeLessThan(0.8); // stronger beam (v2), still a force over many steps, not a jump
     // the approach limiter keeps the capture impact moderate
     expect(landing).toBeLessThan(12);
   });
@@ -377,5 +377,19 @@ describe('built-up corners', () => {
     sim(b, 3, idle, () => { maxY = Math.max(maxY, b.proj.y); });
     expect(maxY).toBeGreaterThan(tr.profile.H);                // rode above where the old lip was
     expect(b.v.length()).toBeGreaterThan(30);                  // and carried its speed through
+  });
+  it('tractor beam brings a very high toss home to the centre of the gutter', () => {
+    const tr = new Track(straight(-4));
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(40, 30);
+    b.p.addScaledVector(b.proj.U, 40).addScaledVector(b.proj.R, -3); // 40 m up, off to one side
+    b.v.addScaledVector(b.proj.U, 15).addScaledVector(b.proj.R, 3);   // still climbing, drifting sideways
+    b.proj.project(b.p.x, b.p.y, b.p.z);
+    let landedAt = -1, x = 99, t = 0;
+    sim(b, 3, { ...idle, magnet: true }, () => { t += 1 / 240; if (b.contact && landedAt < 0) { landedAt = t; x = b.proj.x; } });
+    expect(landedAt).toBeGreaterThan(0);
+    expect(landedAt).toBeLessThan(1.6);
+    expect(Math.abs(x)).toBeLessThan(1.5);
+    expect(b.v.length()).toBeGreaterThan(24); // forward momentum kept
   });
 });

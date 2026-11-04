@@ -139,3 +139,68 @@ export const branch = (id: string, name: string, at: string, segments: Seg[], s 
 
 /** Length of the main-course straight a side arm needs (with margin for the merge). */
 export const armSpan = (legLen: number, midLen: number) => legLen * 4 + midLen + 30;
+
+// ---------------------------------------------------------------------------
+// Second-act elements (v2): more variety per course.
+// ---------------------------------------------------------------------------
+
+/** Vortex / funnel: a helix that tightens as it falls, like water down a drain. */
+export const vortex = (turns: number, r0: number, r1: number, bank: number, pitch: number, dir = 1, extra: Partial<Seg> = {}): Seg[] => {
+  const out: Seg[] = [];
+  const steps = Math.max(2, Math.round(turns * 4));
+  for (let i = 0; i < steps; i++) {
+    const r = r0 + (r1 - r0) * (i / (steps - 1));
+    const t = turns / steps;
+    out.push({ len: 2 * Math.PI * r * t, yaw: 360 * t * dir, bank: bank * dir * (0.8 + 0.2 * i / (steps - 1)), pitch: pitch - i * 0.6, fx: { twist: (1.5 + i * 0.3) * dir, flow: -1 - i * 0.2 }, ...extra });
+  }
+  out.push({ len: 30, bank: 0, pitch });
+  return out;
+};
+
+/** Sweeper: a fast, lightly banked bend. The built-up outer wall carries you round at speed. */
+export const sweeper = (len: number, yaw: number, pitch: number, bank = 12): Seg[] => [
+  { len, yaw, bank: Math.sign(yaw) * bank, pitch, fx: { twist: Math.sign(yaw) * 0.8, flow: -0.5 } }, { len: 20, bank: 0, pitch },
+];
+
+/** Wave turn: climb steeply into a high-banked turn, stall, and fall out of it. */
+export const wave = (dir: number, len = 80, bank = 70): Seg[] => [
+  { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: 10, fx: { twist: dir, pulse: 0.8 } },
+  { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: -24, fx: { flow: -1.5 } },
+  { len: 26, bank: 0, pitch: -6 },
+];
+
+/** Pretzel: two linked helices turning opposite ways. */
+export const pretzel = (radius: number, bank: number, pitch: number, extra: Partial<Seg> = {}): Seg[] => [
+  { len: 2 * Math.PI * radius * 0.75, yaw: 270, bank, pitch, fx: { twist: 1.5, flow: -1 }, ...extra },
+  { len: 28, bank: 0, pitch, ...extra },
+  { len: 2 * Math.PI * radius * 0.75, yaw: -270, bank: -bank, pitch, fx: { twist: -1.5, flow: -1 }, ...extra },
+  { len: 30, bank: 0, pitch },
+];
+
+/** Terraces: a staircase of short steep drops and flats. */
+export const terraces = (n: number, dropLen = 16, dropPitch = -28, flat = 18): Seg[] => {
+  const out: Seg[] = [];
+  for (let i = 0; i < n; i++) out.push({ len: dropLen, pitch: dropPitch, fx: { flow: -1 } }, { len: flat, pitch: -3, fx: { pulse: 1 } });
+  return out;
+};
+
+/** A covered tunnel run with an optional curve (dark section, open floor). */
+export const tunnelRun = (len: number, yaw: number, pitch: number, bank = 20): Seg[] => [
+  { len: len * 0.5, yaw: yaw / 2, bank: Math.sign(yaw) * bank, pitch, tunnel: true, fx: { flow: -2 } },
+  { len: len * 0.5, yaw: yaw / 2, bank: Math.sign(yaw) * bank, pitch, tunnel: true, fx: { flow: -2 } },
+  { len: 20, bank: 0, pitch, tunnel: true },
+];
+
+type Ob = { at: string; s: number; x: number; ls: number; w: number; h: number; kind?: 'block' | 'barrier' | 'post' | 'gate' };
+/** Obstacle fields for a labelled straight: zigzag blocks, post slalom, gate pairs. */
+export const field = (at: string, pattern: 'zigzag' | 'posts' | 'gates' | 'colonnade', n: number, start = 14, gap = 22): Ob[] => {
+  const out: Ob[] = [];
+  for (let i = 0; i < n; i++) {
+    const s = start + i * gap, side = i % 2 ? 1 : -1;
+    if (pattern === 'zigzag') out.push({ at, s, x: 3.5 * side, ls: 2.1, w: 5.2, h: 1.7 });
+    else if (pattern === 'posts') out.push({ at, s, x: 2.4 * side, ls: 1.3, w: 2.0, h: 2.3, kind: 'post' });
+    else if (pattern === 'gates') out.push({ at, s, x: -4.2, ls: 2, w: 4.4, h: 2.0, kind: 'gate' }, { at, s, x: 4.2, ls: 2, w: 4.4, h: 2.0, kind: 'gate' });
+    else out.push({ at, s, x: -4.6, ls: 1.4, w: 1.8, h: 2.6, kind: 'post' }, { at, s, x: 4.6, ls: 1.4, w: 1.8, h: 2.6, kind: 'post' });
+  }
+  return out;
+};
