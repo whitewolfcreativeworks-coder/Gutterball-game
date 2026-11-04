@@ -32,6 +32,7 @@ export interface BallInput {
   magnet: boolean;
   jump: boolean;        // edge-triggered request
   driveLevel: number;   // 0 coast, 1 cruise, 2 push
+  push?: number;        // 0..1 strength of a swipe-up push this frame (edge)
 }
 
 export interface BallTuning {
@@ -58,23 +59,23 @@ export interface BallTuning {
 }
 
 export const DEFAULT_TUNING: BallTuning = {
-  radius: 0.95,
+  radius: 1.15,
   mass: 1,
   gravity: 9.81,
   steerAccel: 11,
   steerDirectFrac: 0.5,
   airSteerAccel: 4,
-  driveAccel: [0, 1.6, 3.6],
-  driveCap: [0, 22, 31],
-  airDrag: 0.0011,
+  driveAccel: [0, 2.6, 3.6],
+  driveCap: [0, 30, 38],
+  airDrag: 0.0006,
   jumpSpeed: 7.2,
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
   magnetPressG: 1.7,
-  magnetBoostAccel: 8,
-  magnetBoostCap: 44,
+  magnetBoostAccel: 14,
+  magnetBoostCap: 62,
   magnetAccel: 26,
-  magnetRange: 16,
+  magnetRange: 20,
   magnetDrain: 0.3,
   magnetRegen: 0.16,
   magnetMinRestart: 0.15,
@@ -92,7 +93,15 @@ export class BallPhysics {
   readonly w = new Vector3();
   readonly q = new Quaternion();
   readonly tune: BallTuning;
-  readonly proj: TrackProjector;
+  /** Projector for the gutter the ball is currently on (main course or a branch). */
+  proj: TrackProjector;
+  /** The gutter the ball is currently on. */
+  track: Track;
+  readonly tracks: Track[];
+  readonly projs: TrackProjector[];
+  /** Projection onto the main course (progress, checkpoints, finish). */
+  get mainProj() { return this.projs[0]; }
+  activeIndex = 0;
   material: MaterialProfile;
 
   // Contact state
@@ -115,6 +124,7 @@ export class BallPhysics {
   magnetHasTarget = false;
   magnetSuppress = 0;
   boosting = false;
+  pushTimer = 0;
   airJumpsLeft = 0;
   private magnetRamp = 0;
   wasMagnetAirborne = false;
@@ -127,16 +137,21 @@ export class BallPhysics {
   events: SensoryEvent[] = [];
   readonly I: number;
 
-  constructor(private track: Track, material: MaterialProfile, tune: Partial<BallTuning> = {}) {
+  constructor(tracks: Track | Track[], material: MaterialProfile, tune: Partial<BallTuning> = {}) {
     this.tune = { ...DEFAULT_TUNING, ...tune };
     this.material = material;
-    this.proj = new TrackProjector(track);
+    this.tracks = Array.isArray(tracks) ? tracks : [tracks];
+    this.projs = this.tracks.map((t) => new TrackProjector(t));
+    this.track = this.tracks[0];
+    this.proj = this.projs[0];
     this.I = 0.4 * this.tune.mass * this.tune.radius * this.tune.radius;
   }
 
   /** Place the ball at rest (or with a speed) on the floor at arc length s. */
-  placeAt(s: number, speed = 0, x = 0) {
+  placeAt(s: number, speed = 0, x = 0, trackIndex = 0) {
     const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+    this.activeIndex = Math.min(trackIndex, this.tracks.length - 1);
+    this.track = this.tracks[this.activeIndex]; this.proj = this.projs[this.activeIndex];
     this.track.frameAtS(s, P, T, U, R);
     this.p.copy(P).addScaledVector(U, this.tune.radius + 0.002).addScaledVector(R, x);
     this.v.copy(T).multiplyScalar(speed);
@@ -145,6 +160,7 @@ export class BallPhysics {
     this.n.copy(U);
     this.proj.reset(s);
     this.proj.project(this.p.x, this.p.y, this.p.z);
+    for (let i = 0; i < this.projs.length; i++) { if (i === this.activeIndex) continue; this.projs[i].relocate(this.p.x, this.p.y, this.p.z); this.projs[i].project(this.p.x, this.p.y, this.p.z); }
     this.contact = true;
     this.airborne = false;
     this.sinceContact = 0;
@@ -186,7 +202,7 @@ export class BallPhysics {
     const mat = this.material;
     this.t += dt;
     this.driveLevel = input.driveLevel;
-    this.proj.project(this.p.x, this.p.y, this.p.z);
+    this.selectTrack();
     const pr = this.proj;
     const grounded = this.sinceContact <= tu.coyoteTime;
 
@@ -236,6 +252,17 @@ export class BallPhysics {
       acc.addScaledVector(pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel));
     }
 
+    // ---- Swipe push: a physical shove that rolls the ball faster ----
+    this.pushTimer -= dt;
+    if (input.push && input.push > 0 && grounded && this.pushTimer <= 0) {
+      const dv = 3 + 5 * Math.min(1, input.push);
+      const fwd = tmpA.copy(Tt);
+      this.v.addScaledVector(fwd, dv);
+      this.w.addScaledVector(new Vector3().copy(n).cross(fwd), dv / r);
+      this.pushTimer = 0.3;
+      this.emit('PUSH', Math.min(1, input.push), dv);
+    }
+
     // ---- Jump ----
     this.jumpTimer -= dt;
     if (input.jump && grounded && this.jumpTimer <= 0) {
@@ -267,7 +294,7 @@ export class BallPhysics {
     this.p.addScaledVector(this.v, dt);
 
     // ---- Collision resolution ----
-    this.proj.project(this.p.x, this.p.y, this.p.z);
+    this.selectTrack();
     let touched = false;
     let impactSpeed = 0;
     let impactSource: 'track' | 'obstacle' = 'track';
@@ -365,6 +392,31 @@ export class BallPhysics {
     if (wl > 1e-6) {
       tmpQ.setFromAxisAngle(tmpA.copy(this.w).multiplyScalar(1 / wl), wl * dt);
       this.q.premultiply(tmpQ).normalize();
+    }
+  }
+
+  /**
+   * Choose which gutter the ball is on: the one whose surface is nearest
+   * (with a little hysteresis so it doesn't flicker at junctions).
+   */
+  private selectTrack() {
+    const x = this.p.x, y = this.p.y, z = this.p.z;
+    if (this.tracks.length === 1) { this.proj.project(x, y, z); return; }
+    let best = this.activeIndex, bestD = Infinity;
+    for (let i = 0; i < this.tracks.length; i++) {
+      const pr = this.projs[i];
+      pr.project(x, y, z);
+      // a branch far away (or beyond its ends) can't be the one we're on
+      if (Math.abs(pr.along) > 3 || Math.abs(pr.x) > 30 || Math.abs(pr.y) > 40) continue;
+      let d = this.tracks[i].sdfLocal(pr.s, pr.x, pr.y, false, true);
+      if (i === this.activeIndex) d -= 0.3;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (best !== this.activeIndex) {
+      this.activeIndex = best;
+      this.track = this.tracks[best];
+      this.proj = this.projs[best];
+      this.lastSeamIndex = -1;
     }
   }
 
@@ -475,10 +527,25 @@ export class BallPhysics {
     if (active) {
       this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * dt);
       const nn = new Vector3();
-      const d = this.sdfAndNormal(nn, false, true);
+      let d = this.sdfAndNormal(nn, false, true);
+      const prj = this.proj, prof = this.track.profile;
+      const Wc = halfWidth(prof);
+      const outside = Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > prof.H;
+      if (outside && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
+        // Rescue: above the rim or beside the gutter, the beam pulls you back
+        // INTO the channel (towards the floor), never onto the outside of a wall.
+        const tx = Math.max(-(Wc - 1.6), Math.min(Wc - 1.6, prj.x));
+        // beside and below the rim: first lift over the rim, then into the channel
+        const besideLow = Math.abs(prj.x) > Wc && prj.y < prof.H + 1.5;
+        this.magnetTarget.copy(prj.P).addScaledVector(prj.R, besideLow ? Math.sign(prj.x) * (Wc - 1) : tx).addScaledVector(prj.U, besideLow ? prof.H + 3 : 0.05);
+        nn.copy(this.p).sub(this.magnetTarget);
+        d = nn.length();
+        if (d > 1e-4) nn.multiplyScalar(1 / d); else nn.copy(prj.U);
+        d = Math.max(0, d - this.tune.radius);
+      }
       if (d < tu.magnetRange) {
-        // Closest point on the track shell
-        this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
+        // Closest point on the track shell (or the rescue point)
+        if (!outside) this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
         this.magnetHasTarget = true;
         const grounded = this.sinceContact <= 0.03;
         if (grounded) {

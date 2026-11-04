@@ -330,6 +330,7 @@ export class AudioEngine {
       case 'MAGNET_RELEASED': this.sweep(520, 160, 0.12, 0.08, 'triangle'); break;
       case 'MAGNETIC_CAPTURE': this.sweep(1400, 260, 0.16, 0.14, 'square'); break;
       case 'JUMP': this.sweep(260, 520, 0.1, 0.06, 'sine'); break;
+      case 'PUSH': this.impact(0.25 + 0.3 * e.intensity, 0.6); this.whoosh(0.5 + 0.5 * e.intensity); break;
       case 'DOUBLE_JUMP': this.sweep(420, 1100, 0.16, 0.08, 'triangle'); this.sweep(840, 2200, 0.12, 0.03, 'sine'); break;
       case 'WATER_ENTRY': this.splash(e.intensity); break;
       case 'WATER_EXIT': this.splash(0.3); break;

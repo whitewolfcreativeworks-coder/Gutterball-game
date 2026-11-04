@@ -26,6 +26,7 @@ export interface Segment {
   shift?: number;     // lateral offset applied smoothly across segment (metres, + = right)
   tunnel?: boolean;   // closed roof
   gap?: boolean;      // no gutter here (must be jumped)
+  openSky?: boolean;  // containment walls stop above the rim (fly-off-course zone)
   label?: string;
 }
 
@@ -51,6 +52,27 @@ export interface CourseLayout {
   checkpointEvery?: number;
   profile?: GutterProfile;
   startPos?: [number, number, number];
+  /** Starting heading/pitch/bank in degrees (branches inherit these from their fork). */
+  startAngles?: [number, number, number];
+  /** Open ends have no end wall (branches you jump into / drop out of). */
+  openStart?: boolean;
+  openEnd?: boolean;
+  /** Alternative routes that leave this course and rejoin it. */
+  branches?: BranchSpec[];
+}
+
+/** A branch gutter that starts near a point on the main course, offset in that point's frame. */
+export interface BranchSpec {
+  id: string;
+  name: string;
+  at: string;               // main segment label
+  s: number;                // offset from that segment's start
+  offset: [number, number]; // [right, up] metres from the main floor centre
+  /** Extra pitch (degrees) at the branch start relative to the main course. */
+  pitchOffset?: number;
+  segments: Segment[];
+  obstacles?: ObstacleSpec[];
+  hints?: HintSpec[];
 }
 
 export interface Obstacle extends ObstacleSpec { y: number; kind: 'block' | 'barrier' | 'gate' | 'post'; }
@@ -66,7 +88,10 @@ export class Track {
   readonly U: Float64Array; // up
   readonly R: Float64Array; // right
   readonly tunnel: Uint8Array;
+  /** yaw, pitch, bank in degrees per sample (lets branches inherit orientation). */
+  readonly angles: Float64Array;
   readonly gap: Uint8Array;
+  readonly openSky: Uint8Array;
   readonly obstacles: Obstacle[];
   readonly hints: HintSpec[];
   readonly checkpoints: number[];
@@ -84,7 +109,9 @@ export class Track {
     this.U = new Float64Array(this.n * 3);
     this.R = new Float64Array(this.n * 3);
     this.tunnel = new Uint8Array(this.n);
+    this.angles = new Float64Array(this.n * 3);
     this.gap = new Uint8Array(this.n);
+    this.openSky = new Uint8Array(this.n);
     this.build();
     const base = (label?: string) => {
       if (!label) return 0;
@@ -125,13 +152,16 @@ export class Track {
     const u = new Vector3();
     const r = new Vector3();
     const pos = new Vector3(...(this.layout.startPos ?? [0, 0, 0]));
-    let yaw = 0, pitch = 0, bank = 0;
+    let [yaw, pitch, bank] = this.layout.startAngles ?? [0, 0, 0];
     let shiftPrev = 0;
     let sGlobal = 0;
     let i = 0;
     const ss = (x: number) => x * x * x * (x * (x * 6 - 15) + 10); // smootherstep
 
+    let curOpen = false;
     const writeSample = (k: number, tunnel: boolean, gap: boolean) => {
+      this.openSky[k] = curOpen ? 1 : 0;
+      this.angles[k * 3] = curYaw; this.angles[k * 3 + 1] = curPitch; this.angles[k * 3 + 2] = curBank;
       this.P[k * 3] = pos.x; this.P[k * 3 + 1] = pos.y; this.P[k * 3 + 2] = pos.z;
       this.T[k * 3] = t.x; this.T[k * 3 + 1] = t.y; this.T[k * 3 + 2] = t.z;
       this.U[k * 3] = u.x; this.U[k * 3 + 1] = u.y; this.U[k * 3 + 2] = u.z;
@@ -139,7 +169,9 @@ export class Track {
       this.tunnel[k] = tunnel ? 1 : 0;
       this.gap[k] = gap ? 1 : 0;
     };
+    let curYaw = yaw, curPitch = pitch, curBank = bank;
     const frameAt = (yw: number, pt: number, bk: number) => {
+      curYaw = yw; curPitch = pt; curBank = bk;
       const d = Math.PI / 180;
       qYaw.setFromAxisAngle(Y, yw * d);
       qPitch.setFromAxisAngle(X, pt * d);
@@ -174,6 +206,7 @@ export class Track {
         pos.addScaledVector(r, sh - shiftPrev);
         shiftPrev = sh;
         frameAt(y0 + dy * ss(uu), p0 + (p1 - p0 + loopAdd) * ss(uu), b0 + (b1 - b0) * ss(uu));
+        curOpen = !!seg.openSky || !!this.layout.openStart;
         writeSample(i, !!seg.tunnel, !!seg.gap);
         i++;
         sGlobal += this.ds;
@@ -218,17 +251,19 @@ export class Track {
    */
   sdfLocal(s: number, x: number, y: number, includeObstacles = true, visibleOnly = false): number {
     let d = 1e6;
-    if (s >= -2 && s <= this.length + 2 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly);
-    else if (!visibleOnly && this.isGap(s)) {
+    const s0 = this.layout.openStart ? 0 : -2, s1 = this.layout.openEnd ? this.length : this.length + 2;
+    if (s >= s0 && s <= s1 && !this.isGap(s)) d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly, this.openSky[this.idx(s)] === 1);
+    else if (!visibleOnly && s >= s0 && s <= s1 && this.isGap(s)) {
       // Over a gap there is no floor, but the invisible side walls continue:
       // you can fall into a gap, never escape sideways out of the course.
       const W = this.profile.a + this.profile.rc;
       d = Math.max(Math.abs(x) - (W + this.profile.th), W - Math.abs(x));
     }
     // End caps: a wall at the very start so the ball cannot roll backwards off
-    if (s < 0.5) d = Math.min(d, Math.max(s - 0.5, -s - 2, Math.abs(x) - 5, y - 4));
+    const W0 = this.profile.a + this.profile.rc + 0.8;
+    if (!this.layout.openStart && s < 0.5) d = Math.min(d, Math.max(s - 0.5, -s - 2, Math.abs(x) - W0, y - 4));
     // ...and a soft end wall after the run-out
-    if (s > this.length - 0.5) d = Math.min(d, Math.max(this.length - 0.5 - s, s - this.length - 2, Math.abs(x) - 5, y - 4));
+    if (!this.layout.openEnd && s > this.length - 0.5) d = Math.min(d, Math.max(this.length - 0.5 - s, s - this.length - 2, Math.abs(x) - W0, y - 4));
     if (includeObstacles) {
       for (let o = 0; o < this.obstacles.length; o++) {
         const ob = this.obstacles[o];
@@ -279,6 +314,18 @@ export class TrackProjector {
 
   reset(s: number) { this.hint = Math.round(s / this.track.ds); }
 
+  /** Global (coarse) search for the nearest sample — used when the ball teleports. */
+  relocate(px: number, py: number, pz: number) {
+    const tr = this.track;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < tr.n; i += 4) {
+      const k = i * 3;
+      const d = (px - tr.P[k]) ** 2 + (py - tr.P[k + 1]) ** 2 + (pz - tr.P[k + 2]) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    this.hint = best;
+  }
+
   /** Project world point p; fills s, x, y and the interpolated frame. */
   project(px: number, py: number, pz: number) {
     const tr = this.track;
@@ -310,5 +357,31 @@ export class TrackProjector {
   /** World point from local (s,x,y) using the current frame (valid near current s). */
   toWorld(dsAlong: number, x: number, y: number, out: Vector3) {
     return out.copy(this.P).addScaledVector(this.T, dsAlong).addScaledVector(this.R, x).addScaledVector(this.U, y);
+  }
+}
+
+/** A course = the main gutter plus any branch gutters. */
+export class Course {
+  readonly main: Track;
+  readonly branches: Track[] = [];
+  readonly all: Track[];
+  constructor(layout: CourseLayout) {
+    this.main = new Track(layout);
+    for (const b of layout.branches ?? []) {
+      const seg = this.main.segmentStarts.find((g) => g.label === b.at);
+      if (!seg) throw new Error(`Unknown branch anchor ${b.at}`);
+      const s = seg.s + b.s;
+      const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+      this.main.frameAtS(s, P, T, U, R);
+      const i = Math.round(s / this.main.ds) * 3;
+      const ang = this.main.angles;
+      const start = P.clone().addScaledVector(R, b.offset[0]).addScaledVector(U, b.offset[1]);
+      this.branches.push(new Track({
+        id: b.id, name: b.name, segments: b.segments, obstacles: b.obstacles ?? [], hints: b.hints ?? [],
+        startPos: [start.x, start.y, start.z], startAngles: [ang[i], ang[i + 1] + (b.pitchOffset ?? 0), ang[i + 2]],
+        openStart: true, openEnd: true, checkpointEvery: 1e9,
+      }));
+    }
+    this.all = [this.main, ...this.branches];
   }
 }

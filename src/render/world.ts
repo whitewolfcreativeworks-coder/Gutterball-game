@@ -36,7 +36,8 @@ function fbm2(x: number, z: number) {
   return s;
 }
 
-export function buildWorld(scene: Scene, renderer: WebGLRenderer, track: Track, mat: MaterialProfile, quality: 'low' | 'high'): World {
+export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Track | Track[], mat: MaterialProfile, quality: 'low' | 'high'): World {
+  const tracks = Array.isArray(tracksIn) ? tracksIn : [tracksIn];
   const group = new Group();
   const vis = mat.visual;
 
@@ -100,7 +101,7 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, track: Track, 
   // Coarse list of track points for distance queries
   const pts: Array<[number, number, number]> = [];
   let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9, minY = 1e9;
-  for (let i = 0; i < track.n; i += 8) {
+  for (const track of tracks) for (let i = 0; i < track.n; i += 8) {
     const k = i * 3;
     const x = track.P[k], y = track.P[k + 1], z = track.P[k + 2];
     pts.push([x, y, z]);

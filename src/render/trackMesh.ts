@@ -12,7 +12,7 @@ import { applyFractal, FRACTAL_THEMES, FractalUniforms } from './fractal';
  * Builds the visible gutter from the same frames and profile the physics
  * uses, so what you see is exactly what the ball rolls on.
  */
-export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number): Group {
+export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, isBranch = false): Group {
   const g = new Group();
   const vis = mat.visual;
   const maps = surfaceMaps(vis.surface, vis.tint);
@@ -161,9 +161,13 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   g.add(buildObstacles(track, mat));
 
   // ---- Start & finish arches ----
-  g.add(buildArch(track, 3, 'START', mat));
-  g.add(buildArch(track, track.length - 62, 'FINISH', mat));
-  for (let c = 1; c < track.checkpoints.length; c++) g.add(buildCheckpointPosts(track, track.checkpoints[c]));
+  if (!isBranch) {
+    g.add(buildArch(track, 3, 'START', mat));
+    g.add(buildArch(track, track.length - 62, 'FINISH', mat));
+    for (let c = 1; c < track.checkpoints.length; c++) g.add(buildCheckpointPosts(track, track.checkpoints[c]));
+  } else {
+    g.add(buildArch(track, 2, track.layout.name.toUpperCase(), mat));
+  }
   return g;
 }
 
@@ -182,7 +186,7 @@ function buildRibs(track: Track, mat: MaterialProfile, theme: { a: number }) {
   const archH = 2.6;
   for (let s = 20; s < track.length - 70; s += RIB_SPACING) {
     const i = Math.round(s / track.ds);
-    if (track.gap[i] || track.tunnel[i]) continue;
+    if (track.gap[i] || track.tunnel[i] || track.openSky[i]) continue; // keep fork zones clear
     track.sample(i, P, T, U, R);
     if (U.y < 0.45) continue; // keep loops open
     // torus lies in its XY plane: x across (R), y up (U), scaled into a flat arch
@@ -295,46 +299,74 @@ function buildSupports(track: Track, mat: MaterialProfile, groundHeight: (x: num
 }
 
 function buildRoofs(track: Track, mat: MaterialProfile) {
+  // Covered-bridge roof as a flat, rideable deck: its top is exactly where the
+  // physics roof is (H + 2.5 * th), so a ball that double-jumps up rolls on it.
   const g = new Group();
   const prof = track.profile;
   const W = halfWidth(prof) + prof.th;
-  const roofMat = new MeshStandardMaterial({ color: mat.visual.surface === 'wood' ? 0x5b3b22 : 0x666666, roughness: 0.9, side: DoubleSide });
+  const top = prof.H + prof.th * 2.5;
+  const maps = surfaceMaps(mat.visual.surface, mat.visual.tint);
+  const deckMat = new MeshStandardMaterial({ map: maps.map, normalMap: maps.normalMap, roughnessMap: maps.roughnessMap, roughness: 1, color: 0xd8c0a0, side: DoubleSide });
+  const underMat = new MeshStandardMaterial({ color: mat.visual.surface === 'wood' ? 0x4a3018 : 0x555555, roughness: 0.95, side: DoubleSide });
   const postMat = new MeshStandardMaterial({ color: 0x4a3018, roughness: 0.9 });
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
-  const pos: number[] = [], idx: number[] = [];
+  const dPos: number[] = [], dUv: number[] = [], dIdx: number[] = [];
+  const uPos: number[] = [], uIdx: number[] = [];
   const postGeo = new BoxGeometry(0.3, 1, 0.3);
-  const posts: Matrix4[] = [];
-  let prevRow = -1;
+  const railGeo = new BoxGeometry(0.18, 0.5, 1);
+  const posts: Matrix4[] = [], rails: Matrix4[] = [];
+  let prev = -1, prevU = -1;
+  const xs = [-W, -W * 0.5, 0, W * 0.5, W];
   for (let i = 0; i < track.n; i += 2) {
-    if (!track.tunnel[i]) { prevRow = -1; continue; }
+    if (!track.tunnel[i]) { prev = -1; prevU = -1; continue; }
     track.sample(i, P, T, U, R);
-    const ridge = prof.H + 1.9;
-    const pts = [[-W - 0.4, prof.H + 0.1], [0, ridge], [W + 0.4, prof.H + 0.1]];
-    for (const [x, y] of pts) pos.push(P.x + R.x * x + U.x * y, P.y + R.y * x + U.y * y, P.z + R.z * x + U.z * y);
-    const base = pos.length / 3 - 3;
-    if (prevRow >= 0) idx.push(prevRow, base, prevRow + 1, prevRow + 1, base, base + 1, prevRow + 1, base + 1, prevRow + 2, prevRow + 2, base + 1, base + 2);
-    prevRow = base;
+    const s = i * track.ds;
+    const base = dPos.length / 3;
+    for (const x of xs) {
+      dPos.push(P.x + R.x * x + U.x * top, P.y + R.y * x + U.y * top, P.z + R.z * x + U.z * top);
+      dUv.push((x + W) / TILE, s / TILE);
+    }
+    if (prev >= 0) for (let k = 0; k < xs.length - 1; k++) { const a0 = prev + k, b0 = base + k; dIdx.push(a0, a0 + 1, b0, a0 + 1, b0 + 1, b0); }
+    prev = base;
+    const ub = uPos.length / 3;
+    for (const x of [-W, W]) uPos.push(P.x + R.x * x + U.x * prof.H, P.y + R.y * x + U.y * prof.H, P.z + R.z * x + U.z * prof.H);
+    if (prevU >= 0) uIdx.push(prevU, prevU + 1, ub, prevU + 1, ub + 1, ub);
+    prevU = ub;
+    const basis = new Matrix4().makeBasis(R, U, T.clone().negate());
     if ((i / 2) % 4 === 0) {
       for (const side of [-1, 1]) {
-        const c = P.clone().addScaledVector(R, side * (W + 0.1)).addScaledVector(U, prof.H * 0.5 + 0.05);
-        const m = new Matrix4().makeBasis(R, U, T.clone().negate());
-        m.scale(new Vector3(1, prof.H + 0.1, 1));
-        m.setPosition(c);
+        const m = basis.clone().scale(new Vector3(1, top - prof.H * 0.5, 1));
+        m.setPosition(P.clone().addScaledVector(R, side * (W + 0.1)).addScaledVector(U, (top + prof.H * 0.5) * 0.5));
         posts.push(m);
       }
     }
+    // low edge rails on the deck so it reads as a path
+    for (const side of [-1, 1]) {
+      const m = basis.clone().scale(new Vector3(1, 1, track.ds * 2.05));
+      m.setPosition(P.clone().addScaledVector(R, side * (W - 0.1)).addScaledVector(U, top + 0.25));
+      rails.push(m);
+    }
   }
-  if (pos.length) {
+  if (dPos.length) {
     const geo = new BufferGeometry();
-    geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
-    geo.setIndex(idx);
+    geo.setAttribute('position', new BufferAttribute(new Float32Array(dPos), 3));
+    geo.setAttribute('uv', new BufferAttribute(new Float32Array(dUv), 2));
+    geo.setIndex(dIdx);
     geo.computeVertexNormals();
-    const roof = new Mesh(geo, roofMat);
-    roof.castShadow = true;
-    g.add(roof);
+    const deck = new Mesh(geo, deckMat);
+    deck.castShadow = true; deck.receiveShadow = true;
+    g.add(deck);
+    const ug = new BufferGeometry();
+    ug.setAttribute('position', new BufferAttribute(new Float32Array(uPos), 3));
+    ug.setIndex(uIdx);
+    ug.computeVertexNormals();
+    g.add(new Mesh(ug, underMat));
     const im = new InstancedMesh(postGeo, postMat, posts.length);
     posts.forEach((m, k) => im.setMatrixAt(k, m));
     g.add(im);
+    const rm = new InstancedMesh(railGeo, postMat, rails.length);
+    rails.forEach((m, k) => rm.setMatrixAt(k, m));
+    g.add(rm);
   }
   return g;
 }

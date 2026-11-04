@@ -29,7 +29,8 @@ export class Autopilot {
       }
       return -1;
     };
-    const candidates = [0, -2.2, 2.2, -3.2, 3.2, -1.2, 1.2];
+    const k = (tr.profile.a + tr.profile.rc) / 4.2;
+    const candidates = [0, -2.2, 2.2, -3.2, 3.2, -1.2, 1.2].map((c) => c * k);
     let best = 0, bestScore = -1e9;
     for (const c of candidates) {
       const b = blocked(c);

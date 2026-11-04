@@ -199,15 +199,16 @@ export class InputManager {
     if (down && this.mode !== 'tilt') this.mode = 'keyboard';
   }
 
-  private swipe(dir: number) {
+  /** Swipe up launches, then each swipe up shoves the ball (faster swipe = harder). Swipe down does nothing: you can't brake. */
+  private swipe(dir: number, strength = 0.6) {
     if (dir > 0 && this.onLaunch) {
       // launch takes precedence (game decides if it's in ready state)
       const consumed = (this.onLaunch as any)() === true;
       if (consumed) return;
     }
-    const lvl = Math.max(0, Math.min(2, this.driveLevel + dir));
-    if (lvl !== this.driveLevel) { this.driveLevel = lvl; this.onDriveChange?.(lvl); }
+    if (dir > 0) this.pushQueued = Math.max(this.pushQueued, strength);
   }
+  private pushQueued = 0;
 
   // Touch is used only for swipe gestures (launch / propulsion). Taps do nothing.
   private onTouchStart(e: TouchEvent) {
@@ -225,7 +226,10 @@ export class InputManager {
       if (t) {
         const [dx, dy] = this.rot(t.clientX - st.x, t.clientY - st.y);
         const dtm = performance.now() - st.t;
-        if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < 600) this.swipe(dy < 0 ? 1 : -1);
+        if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < 600) {
+          const speed = Math.abs(dy) / Math.max(1, dtm); // px per ms
+          this.swipe(dy < 0 ? 1 : -1, Math.max(0.15, Math.min(1, (speed - 0.25) / 1.6)));
+        }
       }
     }
     if (e.touches.length === 0) this.touchStart = null;
@@ -267,7 +271,9 @@ export class InputManager {
     this.steerSmooth += (steer - this.steerSmooth) * Math.min(1, dt * k);
     const jump = this.jumpQueued;
     this.jumpQueued = false;
-    return { steer: this.steerSmooth, magnet, jump, driveLevel: this.driveLevel };
+    const push = this.pushQueued;
+    this.pushQueued = 0;
+    return { steer: this.steerSmooth, magnet, jump, driveLevel: this.driveLevel, push };
   }
 
   /** Debug readout for the calibration screen. */

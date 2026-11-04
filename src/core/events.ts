@@ -21,6 +21,7 @@ export type SensoryEventType =
   | 'SURFACE_MATERIAL_CHANGE'
   | 'JUMP'
   | 'DOUBLE_JUMP'
+  | 'PUSH'
   | 'TUNNEL_ENTER'
   | 'TUNNEL_EXIT';
 

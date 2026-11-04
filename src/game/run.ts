@@ -1,6 +1,6 @@
 import { BallInput, BallPhysics, BallTuning } from '../physics/ball';
 import type { MaterialProfile } from '../physics/materials';
-import { Track } from '../track/track';
+import { Course, Track } from '../track/track';
 import type { SensoryEvent } from '../core/events';
 import { halfWidth } from '../track/profile';
 
@@ -25,8 +25,12 @@ export class Run {
   pendingEvents: SensoryEvent[] = [];
   onPhase?: (p: RunPhase) => void;
 
-  constructor(readonly track: Track, material: MaterialProfile, tuning: Partial<BallTuning> = {}) {
-    this.ball = new BallPhysics(track, material, tuning);
+  readonly track: Track;   // the main course (checkpoints, finish)
+  readonly course: Course;
+  constructor(course: Course | Track, material: MaterialProfile, tuning: Partial<BallTuning> = {}) {
+    this.course = course instanceof Course ? course : ({ main: course, branches: [], all: [course] } as unknown as Course);
+    this.track = this.course.main;
+    this.ball = new BallPhysics(this.course.all, material, tuning);
     this.reset();
   }
 
@@ -71,7 +75,7 @@ export class Run {
     const jumpEdge = input.jump;
     while (this.acc >= this.fixedDt) {
       this.acc -= this.fixedDt;
-      const inp = steps === 0 ? input : { ...input, jump: false };
+      const inp = steps === 0 ? input : { ...input, jump: false, push: 0 };
       this.ball.step(this.fixedDt, inp);
       steps++;
       if (this.phase === 'running') this.time += this.fixedDt;
@@ -88,13 +92,15 @@ export class Run {
 
   private rules() {
     const b = this.ball;
-    const pr = b.proj;
+    const pr = b.proj;          // the gutter the ball is on now
+    const mp = b.mainProj;      // progress along the main course
+    const onMain = b.activeIndex === 0;
     const tr = this.track;
-    // checkpoints
-    while (this.checkpointIndex + 1 < tr.checkpoints.length && pr.s > tr.checkpoints[this.checkpointIndex + 1] + 3) this.checkpointIndex++;
+    // checkpoints (main course only)
+    while (onMain && this.checkpointIndex + 1 < tr.checkpoints.length && mp.s > tr.checkpoints[this.checkpointIndex + 1] + 3) this.checkpointIndex++;
     // finish
     const finishS = tr.length - 62;
-    if (this.phase === 'running' && pr.s > finishS) {
+    if (this.phase === 'running' && onMain && mp.s > finishS) {
       this.finishTime = this.time;
       this.setPhase('finished');
     }
@@ -106,7 +112,7 @@ export class Run {
     }
     // failure: left the gutter and fell, or far away from the track
     const W = halfWidth(tr.profile);
-    const off = Math.abs(pr.x) > W + 1.5 && pr.y < tr.profile.H - 1;
+    const off = Math.abs(pr.x) > W + 1.5 && pr.y < b.track.profile.H - 1;
     const fell = pr.y < -14 || Math.abs(pr.x) > 40 || Math.abs(pr.along) > 30;
     if ((off && b.airborneTime > 0.9 && !b.magnetActive) || fell || (b.airborneTime > 6)) {
       this.fail();
@@ -123,5 +129,5 @@ export class Run {
     this.setPhase('respawning');
   }
 
-  get progress() { return Math.max(0, Math.min(1, this.ball.proj.s / (this.track.length - 62))); }
+  get progress() { return Math.max(0, Math.min(1, this.ball.mainProj.s / (this.track.length - 62))); }
 }

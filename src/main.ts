@@ -476,7 +476,7 @@ function applySettings() {
 // ---------------------------------------------------------------------------
 input.onLaunch = () => { const ok = game.launch(); if (ok) { viewLockAngle = screenAngle(); applyViewLock(); } return ok; };
 input.onRestart = () => { if (screen === 'hud' || screen === 'results') { game.restart(); show('hud'); } };
-input.onDriveChange = (l) => game.cb.onHint?.(['Propulsion: coast', 'Propulsion: cruise', 'Propulsion: push'][l]);
+
 
 ui.addEventListener('click', async (e) => {
   const t = (e.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
@@ -618,7 +618,7 @@ entitlements.onChange(() => { if (screen === 'menu') renderMenu(); });
     startPlay(courseById(q.get('play')!));
     if (q.get('launch')) setTimeout(() => game.launch(), 600);
     const at = Number(q.get('at'));
-    if (at > 0) setTimeout(() => { game.launch(); game.run?.ball.placeAt(at, Number(q.get('v') ?? 18)); game.camera.snap(); }, 700);
+    if (at > 0) setTimeout(() => { game.launch(); game.run?.ball.placeAt(at, Number(q.get('v') ?? 18), 0, Number(q.get('branch') ?? 0)); game.camera.snap(); }, 700);
   }
   else if (q.get('preview')) openDetail(courseById(q.get('preview')!));
   else if (q.get('screen') === 'adroom') { renderAdRoom(); show('adroom'); adLoop(); }

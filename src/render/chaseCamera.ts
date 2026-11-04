@@ -75,11 +75,11 @@ export class ChaseCamera {
     desiredUp.applyQuaternion(new Quaternion().setFromAxisAngle(this.T, lean));
 
     // --- position: low and close behind along the track ---
-    const back = 5.6 + Math.min(3, speed * 0.08);
+    const back = 6.6 + Math.min(3.5, speed * 0.07);
     this.airPull += ((b.airborne ? 1 : 0) - this.airPull) * Math.min(1, dt * 2.5);
     const targetDip = (-this.vertG * 0.45 + this.airPull * 1.2) * fx;
     this.dip += (targetDip - this.dip) * Math.min(1, dt * 6);
-    const height = 2.5 + this.dip;
+    const height = 3.0 + this.dip;
     track.frameAtS(Math.max(0, s - back), this.P2, this.T2, this.U2, this.R2);
     const lat0 = b.proj.x * 0.6;
     const vert = Math.max(0, b.proj.y - 0.75) * 0.55;

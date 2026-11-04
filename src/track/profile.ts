@@ -20,7 +20,9 @@ export interface GutterProfile {
   lip: number; // inward-curling rim at the wall tops (keeps the ball in the gutter)
 }
 
-export const DEFAULT_PROFILE: GutterProfile = { a: 1.7, rc: 2.5, H: 4.3, th: 0.28, lip: 1.0 };
+export const DEFAULT_PROFILE: GutterProfile = { a: 2.0, rc: 3.0, H: 5.2, th: 0.3, lip: 1.2 };
+
+export const CONTAIN_ABOVE_RIM = 2.6;
 
 export function halfWidth(p: GutterProfile): number {
   return p.a + p.rc;
@@ -64,13 +66,16 @@ export function innerSignedDistance(x: number, y: number, p: GutterProfile): num
  * Signed distance to the solid gutter shell (positive = outside material).
  * `closed` adds a roof (tunnel sections) at the wall tops.
  */
-export function shellSDF(x: number, y: number, p: GutterProfile, closed = false, visibleOnly = false): number {
+export function shellSDF(x: number, y: number, p: GutterProfile, closed = false, visibleOnly = false, openSky = false): number {
   const din = innerSignedDistance(x, y, p);
   let sdf = Math.max(din, -din - p.th);
   // Collision walls continue invisibly above the rim ("containment field"), so
   // the ball can never be thrown out of the gutter; only gaps can be fallen
   // into. `visibleOnly` gives the real surface (for the magnet and visuals).
+  // In 'open sky' sections they stop a few metres above the rim: a big double
+  // jump can fly off course there, and only the tractor beam saves you.
   if (visibleOnly) sdf = Math.max(sdf, y - p.H);
+  else if (openSky) sdf = Math.max(sdf, y - (p.H + CONTAIN_ABOVE_RIM));
   if (p.lip > 0) {
     // Rolled lip: a slab overhanging the channel at the top of each wall
     const W = p.a + p.rc;

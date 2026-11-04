@@ -17,11 +17,11 @@ npm run dev        # http://localhost:5173  (add --host to open it from your pho
 
 | Action | Phone / tablet (tilt only) | Keyboard (desktop testing) |
 |---|---|---|
-| Launch / propulsion up | swipe up | ↑ / W |
-| Propulsion down (never brakes) | swipe down | ↓ / S |
+| Launch, then push the ball faster | swipe up (faster swipe = harder push) | ↑ / W |
 | Steer | tilt left / right | ← → / A D |
 | Jump | tilt the top toward you | Space |
-| Magnet (hold) | tilt the top away from you | Shift / M |
+| Magnet (hold): tractor beam in the air, booster on the track | tilt the top away from you | Shift / M |
+| Double jump | a second quick flick in the air | Space twice |
 | Pause / restart | ❚❚ button | Esc / R |
 
 Debug URL parameters: `?play=wood`, `?preview=ice`, `?screen=adroom`, `?quality=low`, `?at=900` (teleport along the course), `?fixed=1` (fixed 60 Hz frame step).

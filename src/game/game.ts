@@ -1,5 +1,5 @@
 import { ACESFilmicToneMapping, PCFSoftShadowMap, Scene, SRGBColorSpace, Vector3, WebGLRenderer, Group, Mesh, Material, Texture } from 'three';
-import { Track } from '../track/track';
+import { Course, Track } from '../track/track';
 import { MATERIALS, MaterialProfile } from '../physics/materials';
 import { Run, RunPhase } from './run';
 import { Autopilot } from './autopilot';
@@ -52,6 +52,8 @@ export class Game {
   private blur = 0;
   run?: Run;
   track?: Track;
+  courseGeo?: Course;
+  private branchGroups: Group[] = [];
   material?: MaterialProfile;
   course?: CourseEntry;
   mode: GameMode = 'attract';
@@ -130,13 +132,15 @@ export class Game {
     this.course = course;
     this.mode = mode;
     this.material = MATERIALS[course.materialId];
-    this.track = new Track(course.layout());
+    this.courseGeo = new Course(course.layout());
+    this.track = this.courseGeo.main;
     this.lastRib = -1;
-    this.world = buildWorld(this.scene, this.renderer, this.track, this.material, this.quality);
+    this.world = buildWorld(this.scene, this.renderer, this.courseGeo.all, this.material, this.quality);
     this.trackGroup = buildTrackGroup(this.track, this.material, this.world.groundHeight);
     this.scene.add(this.trackGroup);
+    this.branchGroups = this.courseGeo.branches.map((t) => { const g = buildTrackGroup(t, this.material!, this.world!.groundHeight, true); this.scene.add(g); return g; });
     this.post.setScene(this.scene, this.camera.cam);
-    this.run = new Run(this.track, this.material);
+    this.run = new Run(this.courseGeo, this.material);
     this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
     this.ballView = new BallView(this.run.ball.tune.radius);
     this.applyCosmetics();
@@ -237,20 +241,24 @@ export class Game {
     if (!this.paused) this.bus.publish(b.snapshot(), events);
     if (b.boosting && !this.paused) this.camera.punch(7 * this.speedFx); // booster widens the view
     else this.audio.quiet();
-    this.showHints(b.proj.s);
+    if (b.activeIndex === 0) this.showHints(b.mainProj.s);
     this.ballView.update(b, dt, this.time);
     const fx = this.trackGroup?.userData.fx;
     if (fx) {
       fx.uFxTime.value = this.time;
       fx.uFxIntensity.value = this.fractalLevel * (this.trackGroup!.userData.fxStrength ?? 0.6);
       fx.uFxSpeed.value += (Math.min(1, b.v.length() / 30) - fx.uFxSpeed.value) * Math.min(1, dt * 3);
+      for (const bg of this.branchGroups) {
+        const f2 = bg.userData.fx;
+        if (f2) { f2.uFxTime.value = fx.uFxTime.value; f2.uFxIntensity.value = fx.uFxIntensity.value; f2.uFxSpeed.value = fx.uFxSpeed.value; }
+      }
     }
     this.camera.fx = this.speedFx;
-    this.camera.update(b, this.track, dt);
+    this.camera.update(b, b.track, dt);
     // ribs overhead: whoosh as each one passes
     const rib = Math.floor(b.proj.s / RIB_SPACING);
     if (rib !== this.lastRib) {
-      if (this.lastRib >= 0 && this.mode !== 'attract' && !this.paused && !this.track.isTunnel(b.proj.s)) this.audio.whoosh(Math.min(1, b.v.length() / 30));
+      if (this.lastRib >= 0 && this.mode !== 'attract' && !this.paused && !b.track.isTunnel(b.proj.s)) this.audio.whoosh(Math.min(1, b.v.length() / 30));
       this.lastRib = rib;
     }
     // Shadow camera follows the ball
