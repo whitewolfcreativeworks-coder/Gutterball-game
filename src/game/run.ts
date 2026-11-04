@@ -19,6 +19,8 @@ export class Run {
   checkpointIndex = 0;
   respawnTimer = 0;
   stuckTimer = 0;
+  outsideTimer = 0;
+  underTimer = 0;
   finishTime = 0;
   readonly fixedDt = 1 / 240;
   private acc = 0;
@@ -114,7 +116,18 @@ export class Run {
     const W = halfWidth(tr.profile);
     const off = Math.abs(pr.x) > W + 1.5 && pr.y < b.track.profile.H - 1;
     const fell = pr.y < -14 || Math.abs(pr.x) > 40 || Math.abs(pr.along) > 30;
-    if ((off && b.airborneTime > 0.9 && !b.magnetActive) || fell || (b.airborneTime > 6)) {
+    // outside the gutter (beside it, or underneath after dropping through a gap):
+    // the tractor beam gets a few seconds to haul you back in, then you respawn
+    const outside = Math.abs(pr.x) > W + 0.6 && pr.y < b.track.profile.H;
+    this.outsideTimer = outside ? this.outsideTimer + this.fixedDt : 0;
+    // dropped into a gap: once you're below the floor you've fallen (no hovering under the gutter)
+    let insideAny = false; // (at a tube junction the ball can be below one pipe's floor yet inside the other)
+    for (let k = 0; k < b.tracks.length && !insideAny; k++) { const p = b.projs[k]; if (Math.abs(p.along) < 3 && b.tracks[k].channelDepthLocal(p.s, p.x, p.y) > -0.3) insideAny = true; }
+    const under = !insideAny && (pr.y < -2.5 || (pr.y < -0.8 && !b.track.isGap(pr.s)));
+    this.underTimer = under ? this.underTimer + this.fixedDt : 0;
+    if (this.underTimer > 0.25) { this.underTimer = 0; this.fail(); return; }
+    if ((off && b.airborneTime > 0.9 && !b.magnetActive) || fell || (b.airborneTime > 6) || this.outsideTimer > 2.5) {
+      this.outsideTimer = 0;
       this.fail();
       return;
     }

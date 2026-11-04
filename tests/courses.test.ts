@@ -46,7 +46,7 @@ describe('the ball cannot leave the gutter (except by falling into a gap)', () =
         const pr = run.ball.proj;
         // escaping = beside the gutter at or above floor level (a ball that fell through a gap is below it)
         // (flying above the containment ceiling after a big jump is allowed: that's the beam-rescue mechanic)
-        if (run.phase === 'running' && !nearGap(pr.s) && pr.y > 0 && pr.y < tr.profile.H + 2.6 && Math.abs(pr.x) > W + 0.05) escapes++;
+        if (run.phase === "running" && !nearGap(pr.s) && pr.y > 0 && pr.y < tr.profile.H + 2.6 && Math.abs(pr.x) > W + 0.05) escapes++;
       }
       expect(escapes).toBe(0);
     });
@@ -140,5 +140,29 @@ describe('The Burrow: full tube with a split (Timberline Run)', () => {
     expect(r.skyMax).toBeGreaterThan(200);     // rode the Skylight's separate middle section
     expect(r.done).toBe(true);
     expect(r.minDepth).toBeGreaterThan(0.5);
+  });
+});
+
+describe('runs through The Burrow never respawn by mistake', () => {
+  it('Run rules accept both routes through the split', () => {
+    const lay = CATALOG.find((c) => c.id === 'wood')!.layout();
+    for (const route of ['dark', 'sky']) {
+      const course = new Course(lay);
+      const run = new Run(course, MATERIALS.wood);
+      const SKY = course.all.findIndex((t) => t.layout.id === 'skylight');
+      const at = (l: string) => course.main.segmentStarts.find((g) => g.label === l)!.s;
+      run.launch();
+      run.ball.placeAt(at('burrowSplit') - 25, 24);
+      for (let f = 0; f < 60 * 25 && run.ball.mainProj.s < at('burrowOut') + 30; f++) {
+        const b = run.ball, p = b.projs[SKY];
+        let steer = Math.max(-1, Math.min(1, (route === 'dark' ? -2.5 - b.proj.x : -b.proj.x) * 0.5 - b.v.dot(b.proj.R) * 0.3));
+        if (route === 'sky' && p.s > -25 && p.s < 75 && Math.abs(p.along) < 3) steer = 1;
+        else if (route === 'sky' && p.s >= 75 && p.s < 140 && Math.abs(p.along) < 3) steer = Math.max(-1, Math.min(1, -p.x * 0.6 - b.v.dot(p.R) * 0.35));
+        run.update(1 / 60, { steer, magnet: false, jump: false, driveLevel: 1 });
+        run.pendingEvents.length = 0;
+      }
+      expect(run.falls).toBe(0);
+      expect(run.ball.mainProj.s).toBeGreaterThan(at('burrowOut') + 30);
+    }
   });
 });

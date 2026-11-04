@@ -62,9 +62,9 @@ export const DEFAULT_TUNING: BallTuning = {
   radius: 1.15,
   mass: 1,
   gravity: 9.81,
-  steerAccel: 11,
+  steerAccel: 14,
   steerDirectFrac: 0.5,
-  airSteerAccel: 4,
+  airSteerAccel: 7.5,
   driveAccel: [0, 2.6, 3.6],
   driveCap: [0, 30, 38],
   airDrag: 0.0006,
@@ -76,9 +76,9 @@ export const DEFAULT_TUNING: BallTuning = {
   magnetBoostCap: 62,
   magnetAccel: 62,
   magnetRange: 26,
-  magnetDrain: 0.26,
-  magnetRegen: 0.16,
-  magnetMinRestart: 0.15,
+  magnetDrain: 0.1,
+  magnetRegen: 0.45,
+  magnetMinRestart: 0.05,
 };
 
 const tmpA = new Vector3();
@@ -574,10 +574,13 @@ export class BallPhysics {
   private updateMagnet(acc: Vector3, input: BallInput, dt: number) {
     const tu = this.tune;
     const want = input.magnet && this.magnetSuppress <= 0;
-    // energy gate with hysteresis
-    if (want && !this.magnetEngaged && this.magnetEnergy > tu.magnetMinRestart) this.magnetEngaged = true;
+    // Energy limits the ON-TRACK booster/clamp. The tractor beam in the air
+    // always answers (it is how you save yourself); at low energy it still
+    // pulls at 65 % strength.
+    const inAir = this.sinceContact > 0.03;
+    if (want && !this.magnetEngaged && (inAir || this.magnetEnergy > tu.magnetMinRestart)) this.magnetEngaged = true;
     if (!want) this.magnetEngaged = false;
-    if (this.magnetEngaged && this.magnetEnergy <= 0) this.magnetEngaged = false;
+    if (this.magnetEngaged && !inAir && this.magnetEnergy <= 0) this.magnetEngaged = false;
     const active = this.magnetEngaged;
     if (!active) this.magnetRamp = 0;
     const engagedNow = active && !this.magnetActive;
@@ -589,7 +592,7 @@ export class BallPhysics {
     this.magnetForce = 0;
     this.boosting = false;
     if (active) {
-      this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * dt);
+      this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * (inAir ? 1.6 : 1) * dt);
       const nn = new Vector3();
       let d = this.sdfAndNormal(nn, false, true);
       const prj = this.proj, prof = this.track.profile;
@@ -659,7 +662,7 @@ export class BallPhysics {
           // LUNGE: the instant the beam locks on you get yanked toward the surface
           if (engagedNow) this.v.addScaledVector(nn, -Math.min(5, 2 + d * 0.25));
           this.magnetRamp = Math.min(1, this.magnetRamp + dt / 0.1);
-          const a = tu.magnetAccel * fall * (0.5 + 0.5 * this.magnetRamp);
+          const a = tu.magnetAccel * fall * (0.5 + 0.5 * this.magnetRamp) * (0.65 + 0.35 * Math.min(1, this.magnetEnergy * 4));
           acc.addScaledVector(nn, -a);
           // damp velocity directed away from the surface (prevents orbiting)
           const away = this.v.dot(nn);

@@ -30,7 +30,7 @@ export interface InputSettings {
 }
 
 export const DEFAULT_INPUT_SETTINGS: InputSettings = {
-  sensitivity: 1.3, deadzone: 1, maxTilt: 16, jumpThreshold: 10, magnetThreshold: 11, invertSteer: false, keepView: true,
+  sensitivity: 1.6, deadzone: 0.8, maxTilt: 16, jumpThreshold: 9, magnetThreshold: 7, invertSteer: false, keepView: true,
 };
 
 /** Current screen rotation in window.orientation semantics (90 = device turned counter-clockwise). */
@@ -72,6 +72,7 @@ export class InputManager {
   private pitchHistory: Array<[number, number]> = [];
   private jumpArmed = true;
   private magnetTilt = false;
+  private lastTiltAt = 0;
   // touch
   private touchStart: { x: number; y: number; t: number; id: number } | null = null;
   enabled = true;
@@ -179,7 +180,15 @@ export class InputManager {
     if (!this.jumpArmed && dp < this.settings.jumpThreshold * 0.55) { this.jumpArmed = true; this.pitchHistory.length = 0; }
     // Magnet: forward tilt held (hysteresis)
     if (!this.magnetTilt && dp < -this.settings.magnetThreshold) this.magnetTilt = true;
-    else if (this.magnetTilt && dp > -this.settings.magnetThreshold * 0.55) this.magnetTilt = false;
+    else if (this.magnetTilt && dp > -this.settings.magnetThreshold * 0.45) this.magnetTilt = false;
+    // Your grip drifts during a run: while you're not jumping or using the
+    // magnet, the neutral pose slowly follows how you're holding the device
+    // (~3 s), so "forward" and "back" always mean the same small motion.
+    if (!this.magnetTilt && this.jumpArmed && Math.abs(dp) < 6) {
+      const dtS = this.lastTiltAt ? Math.min(0.1, (now - this.lastTiltAt) / 1000) : 0;
+      this.pitch0 += wrap180(this.pitch - this.pitch0) * Math.min(1, dtS / 3);
+    }
+    this.lastTiltAt = now;
   }
 
   private onKey(e: KeyboardEvent, down: boolean) {

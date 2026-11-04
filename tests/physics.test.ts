@@ -265,8 +265,8 @@ describe('magnet booster', () => {
     const tr = new Track(straight(-3));
     const b = new BallPhysics(tr, MATERIALS.wood);
     b.placeAt(25, 10);
-    sim(b, 1.5, { ...idle, magnet: true });
-    expect(b.magnetEnergy).toBeLessThan(0.7);
+    sim(b, 3, { ...idle, magnet: true });
+    expect(b.magnetEnergy).toBeLessThan(0.8);
   });
 });
 
