@@ -29,15 +29,15 @@ export const FRACTAL_THEMES: Record<string, FractalTheme> = {
   wood:     { kind: 0,  a: 0xffc060, b: 0xff5a10, scale: 0.12,  flow: 0.55, strength: 0.55, c: [0.52, 0.62], psy: 0.55 },   // Kali set
   concrete: { kind: 1,  a: 0x7ff3ff, b: 0x2a5cff, scale: 0.10,  flow: 0.5,  strength: 1.1, c: [0, 0], psy: 0.12 },         // Menger / Sierpinski carpet
   metal:    { kind: 2,  a: 0x9fdcff, b: 0xb04cff, scale: 0.13,  flow: 0.8,  strength: 0.8,  c: [0.12, -0.08], psy: 0.35 },  // Mandelbox
-  ice:      { kind: 3,  a: 0x9ff6ff, b: 0x5a6dff, scale: 0.14,  flow: 0.45, strength: 0.75,  c: [0, 0], psy: 0.1 },         // hexagonal frost
+  ice:      { kind: 3,  a: 0x9ff6ff, b: 0x5a6dff, scale: 0.14,  flow: 0.45, strength: 0.45,  c: [0, 0], psy: 0.1 },         // hexagonal frost
   water:    { kind: 4,  a: 0x9ffcff, b: 0x1a6dff, scale: 0.11,  flow: 0.9,  strength: 0.6,  c: [0, 0], psy: 0.25 },         // caustic flow
-  glass:    { kind: 5,  a: 0xff5cc8, b: 0x2affc4, scale: 0.12,  flow: 0.6,  strength: 1.8, c: [0, 0], psy: 0.85 },         // Apollonian gasket
-  rubber:   { kind: 6,  a: 0xff2bd6, b: 0x2bf0ff, scale: 0.12,  flow: 0.8,  strength: 0.9,  c: [0, 0], psy: 1.0 },         // Turing labyrinth
+  glass:    { kind: 5,  a: 0xff5cc8, b: 0x2affc4, scale: 0.12,  flow: 0.6,  strength: 1.0, c: [0, 0], psy: 0.85 },         // Apollonian gasket
+  rubber:   { kind: 6,  a: 0xff2bd6, b: 0x2bf0ff, scale: 0.12,  flow: 0.8,  strength: 0.5,  c: [0, 0], psy: 1.0 },         // Turing labyrinth
   sand:     { kind: 7,  a: 0xffd36b, b: 0xff6a1b, scale: 0.11,  flow: 0.4,  strength: 0.65, c: [0, 0], psy: 0.12 },         // girih + dunes
   mud:      { kind: 8,  a: 0x8dff5a, b: 0x1d8f6a, scale: 0.12,  flow: 0.5,  strength: 0.75, c: [0, 0], psy: 0.15 },         // Voronoi cracks
   stone:    { kind: 9,  a: 0xffe7a8, b: 0xb8862a, scale: 0.11,  flow: 0.4,  strength: 1.05,  c: [-0.745, 0.113], psy: 0.08 },// Julia marble
   grating:  { kind: 10, a: 0xffb03a, b: 0xff4a1a, scale: 0.10,  flow: 0.9,  strength: 0.85, c: [0, 0], psy: 0.12 },         // Hilbert circuits
-  snow:     { kind: 11, a: 0xbfe6ff, b: 0x7f6cff, scale: 0.12,  flow: 0.5,  strength: 0.95,  c: [0, 0], psy: 0.2 },         // Koch snowflake
+  snow:     { kind: 11, a: 0xbfe6ff, b: 0x7f6cff, scale: 0.12,  flow: 0.5,  strength: 0.55,  c: [0, 0], psy: 0.2 },         // Koch snowflake
 };
 
 export interface FractalUniforms {
@@ -198,14 +198,16 @@ float fxPattern(vec2 p) {
     zz *= k; sc *= k;
   }
   float d = 0.25 * abs(zz.y) / sc;
-  return clamp(fxLine(d, 0.003, fw * 1.2) + exp(-d * 60.0) * 0.5, 0.0, 1.2);
+  // where circles shrink below a pixel (the gasket's dense dust) fade to a dim average, not solid white
+  float dens = clamp(log(sc * fw * 6.0 + 1.0) * 0.7, 0.0, 1.0);
+  return clamp((fxLine(d, 0.003, fw * 1.2) + exp(-d * 90.0) * 0.35) * mix(1.0, 0.35, dens), 0.0, 1.2);
 #elif FX_KIND == 6
   // RUBBER — Turing (reaction-diffusion-like) labyrinth: a band-passed noise
   // field cut into stripes of near-constant width that slowly crawl.
   float v = fxFbm(p * 2.6 + vec2(t * 0.05, 0.0)) - 0.62 * fxFbm(p * 5.3 + 3.7 - vec2(0.0, t * 0.04));
   float st = sin(v * 30.0 + t * 0.3);
   float fwS = fwidth(st) + 1e-3;
-  return smoothstep(-fwS, fwS, st) * 0.85 + 0.15 * exp(-abs(st) * 3.0);
+  return smoothstep(0.35 - fwS, 0.35 + fwS, st) * 0.8 + 0.12 * exp(-abs(st - 0.35) * 4.0);   // thinner bright stripes on dark
 #elif FX_KIND == 7
   // SAND — ten-fold girih star (all angles multiples of 36 deg, Hankin rays)
   // over wind ripples with a gentle windward and steep lee slope.
@@ -368,7 +370,8 @@ export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: n
     sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec4 fxmode;\nvarying vec2 vFxUv;\nvarying vec4 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
     // inside a tube the wood itself goes dark so the projection owns the walls (dome-screen look)
     sh.fragmentShader = GLSL + sh.fragmentShader
-      .replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb *= 1.0 - (0.86 + 0.1 * (1.0 - diffuseColor.a)) * vFxMode.w;\n diffuseColor.a = max(diffuseColor.a, 0.8 * vFxMode.w); // see-through gutters become projection screens inside tubes')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n float fxLum = max(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)), 1e-3); diffuseColor.rgb *= mix(1.0, min(1.0, 0.045 / fxLum), vFxMode.w);\n diffuseColor.a = mix(diffuseColor.a, 1.0, vFxMode.w); // see-through gutters become projection screens inside tubes')
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n reflectedLight.indirectSpecular *= 1.0 - 0.9 * vFxMode.w; reflectedLight.directSpecular *= 1.0 - 0.7 * vFxMode.w;')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();');
   };
   mat.customProgramCacheKey = () => `fx${theme.kind}`;
