@@ -30,7 +30,7 @@ export interface InputSettings {
 }
 
 export const DEFAULT_INPUT_SETTINGS: InputSettings = {
-  sensitivity: 1.8, deadzone: 0.6, maxTilt: 16, jumpThreshold: 8, magnetThreshold: 9, invertSteer: false, keepView: true,
+  sensitivity: 1.8, deadzone: 0.6, maxTilt: 16, jumpThreshold: 7, magnetThreshold: 9, invertSteer: false, keepView: true,
 };
 
 /** Current screen rotation in window.orientation semantics (90 = device turned counter-clockwise). */
@@ -76,7 +76,6 @@ export class InputManager {
   private magnetBlockUntil = 0;
   private magnetSince = 0;
   // touch
-  private touchStart: { x: number; y: number; t: number; id: number } | null = null;
   enabled = true;
 
   constructor(private el: HTMLElement) {
@@ -169,12 +168,12 @@ export class InputManager {
     const now = performance.now();
     const dp = wrap180(this.pitch - this.pitch0);
     this.pitchHistory.push([now, dp]);
-    while (this.pitchHistory.length && now - this.pitchHistory[0][0] > 300) this.pitchHistory.shift();
+    while (this.pitchHistory.length && now - this.pitchHistory[0][0] > 380) this.pitchHistory.shift();
     if (this.mode !== 'tilt') return;
     // Jump: backward flick (top toward player => pitch increases)
     const oldest = this.pitchHistory[0]?.[1] ?? dp;
     // a flick: past the threshold AND moved at least 40 % of it within 300 ms
-    if (this.jumpArmed && dp > this.settings.jumpThreshold && dp - oldest > this.settings.jumpThreshold * 0.4) {
+    if (this.jumpArmed && dp > this.settings.jumpThreshold && dp - oldest > this.settings.jumpThreshold * 0.35) {
       this.jumpQueued = true;
       this.jumpArmed = false;
       // the wrist springs back after a flick and often overshoots forward:
@@ -183,7 +182,7 @@ export class InputManager {
       this.magnetTilt = false;
     }
     // re-arm as soon as the device comes back most of the way, so a quick second flick double-jumps
-    if (!this.jumpArmed && dp < this.settings.jumpThreshold * 0.5) { this.jumpArmed = true; this.pitchHistory.length = 0; }
+    if (!this.jumpArmed && dp < this.settings.jumpThreshold * 0.65) { this.jumpArmed = true; this.pitchHistory.length = 0; }
     // Magnet: a deliberate forward tilt, held for a moment (not a passing wobble), with hysteresis
     if (dp < -this.settings.magnetThreshold && now > this.magnetBlockUntil) {
       if (!this.magnetSince) this.magnetSince = now;
@@ -228,29 +227,43 @@ export class InputManager {
   }
   private pushQueued = 0;
 
-  // Touch is used only for swipe gestures (launch / propulsion). Taps do nothing.
+  // Touch: swipe up anywhere launches / pushes. A quick THUMB TAP near the left
+  // or right edge does the same (so you can push without letting go of the
+  // device while you steer). Taps in the middle do nothing.
+  private touches = new Map<number, { x: number; y: number; t: number }>();
   private onTouchStart(e: TouchEvent) {
     if (!this.enabled) return;
     e.preventDefault();
-    const t = e.changedTouches[0];
-    this.touchStart = { x: t.clientX, y: t.clientY, t: performance.now(), id: t.identifier };
+    for (const t of Array.from(e.changedTouches)) this.touches.set(t.identifier, { x: t.clientX, y: t.clientY, t: performance.now() });
   }
   private onTouchMove(e: TouchEvent) { e.preventDefault(); }
   private onTouchEnd(e: TouchEvent) {
     e.preventDefault();
-    const st = this.touchStart;
-    if (st) {
-      const t = Array.from(e.changedTouches).find((x) => x.identifier === st.id);
-      if (t) {
-        const [dx, dy] = this.rot(t.clientX - st.x, t.clientY - st.y);
-        const dtm = performance.now() - st.t;
-        if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < 600) {
-          const speed = Math.abs(dy) / Math.max(1, dtm); // px per ms
-          this.swipe(dy < 0 ? 1 : -1, Math.max(0.15, Math.min(1, (speed - 0.25) / 1.6)));
-        }
+    for (const t of Array.from(e.changedTouches)) {
+      const st = this.touches.get(t.identifier);
+      this.touches.delete(t.identifier);
+      if (!st || !this.enabled) continue;
+      const [dx, dy] = this.rot(t.clientX - st.x, t.clientY - st.y);
+      const dtm = performance.now() - st.t;
+      if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < 600) {
+        const speed = Math.abs(dy) / Math.max(1, dtm); // px per ms
+        this.swipe(dy < 0 ? 1 : -1, Math.max(0.15, Math.min(1, (speed - 0.25) / 1.6)));
+      } else if (dtm < 300 && Math.hypot(dx, dy) < 24 && this.isEdgeTap(st.x, st.y)) {
+        this.swipe(1, 0.75);
+        this.onThumbTap?.();
       }
     }
-    if (e.touches.length === 0) this.touchStart = null;
+  }
+  /** Called on each thumb-tap push (for feedback). */
+  onThumbTap?: () => void;
+  /** Is a screen point in the left/right thumb zones of the (possibly counter-rotated) game view? */
+  private isEdgeTap(x: number, y: number) {
+    const W = window.innerWidth, H = window.innerHeight;
+    const [vx, vy] = this.rot(x - W / 2, y - H / 2);
+    const sideways = Math.abs(this.displayRotation) % 180 === 90;
+    const vw = sideways ? H : W, vh = sideways ? W : H;
+    if (vy < -vh * 0.36) return false;            // not up by the pause button / clock
+    return Math.abs(vx) > vw * 0.27;              // the outer ~23 % on each side
   }
 
   /** Screen-space delta -> game-view delta when the view is counter-rotated. */

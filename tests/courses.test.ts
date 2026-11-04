@@ -75,9 +75,12 @@ describe('High Road branch (Timberline Run)', () => {
     return { rode, backOnMain, brS: +b.projs[HR].s.toFixed(0), act: b.activeIndex, mainS: +b.mainProj.s.toFixed(0), mainY: +b.mainProj.y.toFixed(1) };
   };
   it('without a jump you stay on the main gutter', () => { expect(attempt(26, 0).rode).toBe(false); });
-  it('a single jump is not enough', () => { expect(attempt(26, 1).rode).toBe(false); });
-  it('a double jump off the ramp reaches the High Road, which drops you back into the main gutter', () => {
-    for (const v0 of [22, 32]) { const r = attempt(v0, 2); expect(r.rode).toBe(true); expect(r.backOnMain).toBe(true); }
+  it('at moderate speed a single jump is not enough', () => { expect(attempt(22, 1).rode).toBe(false); });
+  it('at moderate speed a double jump reaches the High Road, which drops you back into the main gutter', () => {
+    const r = attempt(22, 2); expect(r.rode).toBe(true); expect(r.backOnMain).toBe(true);
+  });
+  it('at high speed one jump off the ramp is enough (speed is rewarded)', () => {
+    const r = attempt(32, 1); expect(r.rode).toBe(true); expect(r.backOnMain).toBe(true);
   });
 });
 

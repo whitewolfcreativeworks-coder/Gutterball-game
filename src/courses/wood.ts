@@ -121,7 +121,7 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'steepDrop', s: 2, text: 'Big drop — hold the MAGNET to boost' },
     { at: 'wallRide', s: 0, text: 'Near-vertical bank — MAGNET grip' },
     { at: 'corkscrew', s: 0, text: 'Corkscrew!' },
-    { at: 'forkRun', s: 0, text: 'HIGH ROAD ahead: jump off the ramp, then flick again (double jump) to reach it' },
+    { at: 'forkRun', s: 0, text: 'HIGH ROAD ahead: jump off the ramp (double-jump if you are slow)' },
     { at: 'preLoop', s: 10, text: 'Loop — hold MAGNET at the top' },
     { at: 'kicker2', s: -20, text: 'Big jump: JUMP, then MAGNET to pull back in' },
     { at: 'burrowIn', s: 0, text: 'The Burrow — the walls close over you' },
@@ -178,8 +178,8 @@ export const WOOD_COURSE: CourseLayout = {
       id: 'highroad',
       name: 'High Road',
       at: 'highKicker',
-      s: 40,                     // where a jump + double jump off the ramp peaks
-      offset: [0, 5.5],          // above the main gutter, which drops away beneath it
+      s: 62,                     // where a jump off the ramp peaks
+      offset: [0, 10.5],         // high above the main gutter, which drops away beneath it
       pitchOffset: -3.5,
       segments: [
         { len: 20, pitch: -3, label: 'catch', fx: { pulse: 1 } },

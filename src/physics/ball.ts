@@ -73,7 +73,7 @@ export const DEFAULT_TUNING: BallTuning = {
   driveAccel: [0, 2.6, 3.6],
   driveCap: [0, 30, 38],
   airDrag: 0.0006,
-  jumpSpeed: 7.2,
+  jumpSpeed: 8.6,
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
   magnetPressG: 4.2,
@@ -403,23 +403,25 @@ export class BallPhysics {
     this.jumpTimer -= dt;
     if (input.jump && grounded && this.jumpTimer <= 0) {
       // impulse away from the local surface; existing momentum preserved
-      this.v.addScaledVector(n, tu.jumpSpeed);
+      // bigger jumps at speed, so they still read as big against the rushing world
+      const jv = tu.jumpSpeed + Math.min(3.5, Math.max(0, sp - 20) * 0.06);
+      this.v.addScaledVector(n, jv);
       this.jumpTimer = tu.jumpCooldown;
       this.sinceContact = tu.coyoteTime + 0.01;
       this.magnetSuppress = 0.22;
       this.airJumpsLeft = 1;
-      this.emit('JUMP', 1, tu.jumpSpeed);
-    } else if (input.jump && !grounded && this.airJumpsLeft > 0 && this.jumpTimer <= tu.jumpCooldown - 0.18) {
+      this.emit('JUMP', 1, jv);
+    } else if (input.jump && !grounded && this.airJumpsLeft > 0 && this.jumpTimer <= tu.jumpCooldown - 0.12) {
       // Double jump: a second flick in the air pushes the ball higher (away from
       // the gutter floor below), cancelling some of the fall, and adds a forward flip.
       this.airJumpsLeft--;
       const up = tmpA.copy(pr.U).multiplyScalar(0.6).addScaledVector(WORLD_UP, 0.4).normalize();
       const vUp = this.v.dot(up);
-      this.v.addScaledVector(up, Math.max(0, -vUp) * 0.6 + tu.jumpSpeed * 0.85);
+      this.v.addScaledVector(up, Math.max(0, -vUp) * 0.9 + tu.jumpSpeed * 1.05);   // cancels most of the fall, then lifts
       this.w.addScaledVector(pr.R, 18); // forward flip
       this.magnetSuppress = 0.18;
       this.jumpTimer = tu.jumpCooldown;
-      this.emit('DOUBLE_JUMP', 1, tu.jumpSpeed * 0.85);
+      this.emit('DOUBLE_JUMP', 1, tu.jumpSpeed * 1.05);
     }
 
     // ---- Magnet ----

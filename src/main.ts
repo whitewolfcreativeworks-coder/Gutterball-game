@@ -464,8 +464,8 @@ function saveSettings() {
 }
 function applySettings() {
   // Settings saved by the first build used much less sensitive tilt defaults; drop them
-  if (settings.input && (settings.input.keepView === undefined || (settings.inputVersion ?? 0) < 5)) settings.input = undefined;
-  settings.inputVersion = 5;
+  if (settings.input && (settings.input.keepView === undefined || (settings.inputVersion ?? 0) < 6)) settings.input = undefined;
+  settings.inputVersion = 6;
   if (settings.input) input.settings = { ...input.settings, ...settings.input };
   if (settings.mode === 'keyboard' && !matchMedia('(pointer: coarse)').matches) input.mode = 'keyboard';
   haptics.enabled = settings.haptics;

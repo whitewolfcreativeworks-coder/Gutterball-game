@@ -17,7 +17,8 @@ npm run dev        # http://localhost:5173  (add --host to open it from your pho
 
 | Action | Phone / tablet (tilt only) | Keyboard (desktop testing) |
 |---|---|---|
-| Launch, then push the ball faster | swipe up (faster swipe = harder push) | ↑ / W |
+| Launch, then push the ball faster | swipe up (faster swipe = harder push), or **tap with a thumb near the left/right edge** | ↑ / W |
+| Turbo | 3 pushes, hold the magnet booster ~1 s, then push again: double top speed for 7 s | ↑×3, hold Shift, ↑ |
 | Steer | tilt left / right | ← → / A D |
 | Jump | tilt the top toward you | Space |
 | Magnet (hold): tractor beam in the air, booster on the track | tilt the top away from you | Shift / M |
