@@ -45,6 +45,7 @@ export interface FractalUniforms {
   uFxIntensity: { value: number };
   uFxSpeed: { value: number };
   uFxTravel: { value: number }; // distance the ball has travelled (metres)
+  uFxBallDark: { value: number }; // 0 = bright steel ball, 1 = dark chrome ball (contrast pairing)
 }
 
 const GLSL = /* glsl */ `
@@ -60,6 +61,7 @@ uniform float uFxCenter;
 uniform float uFxTravel;
 uniform float uFxRing; // distance all the way round the closed pipe
 uniform float uFxPsy;
+uniform float uFxBallDark;
 varying vec2 vFxUv;
 varying vec4 vFxMode;
 
@@ -312,7 +314,7 @@ vec3 fxColor() {
   // metres from the floor centre (walls are far from it)
   float across = (vFxUv.x - uFxCenter);
   float tube = vFxMode.w;
-  float wall = max(smoothstep(1.4, 3.8, abs(across)), tube * 0.5);
+  float wall = max(smoothstep(1.4, 3.8, abs(across)), tube * mix(0.35, 0.6, uFxBallDark));   // calmer floor under a bright ball
   // every section moves: a baseline rush toward you, much stronger in tubes
   float flowK = vFxMode.x - mix(0.7, 1.6, tube);
   float push = max(vFxMode.y, tube * 0.6);
@@ -331,7 +333,9 @@ vec3 fxColor() {
   vec2 p2 = vec2((across - uFxTime * twist * 1.6) * kx * 0.5, (vFxUv.y * 0.55 - uFxTravel * flowK * 0.4 + uFxTime * 0.5) * uFxScale) / zoom;
   float f2 = fxPattern(fxMirror(p2 + 0.37));
   // contrast: crush the gaps between features to black, keep the features bright
-  f1 = pow(clamp(f1, 0.0, 1.4), 2.0);
+  // contrast pairing with the ball: a BRIGHT ball needs dark, high-contrast walls;
+  // a DARK ball can sit against lighter, softer patterns
+  f1 = pow(clamp(f1, 0.0, 1.4), mix(2.2, 1.3, uFxBallDark));
   float f = clamp(f1 + f2 * f2 * mix(0.18, 0.3, tube), 0.0, 1.4);   // the deep layer sits dim, behind
   // relief: shade the pattern from its own slope so features look raised (3-D emboss)
   vec2 gr = vec2(dFdx(f1), dFdy(f1));
@@ -344,6 +348,7 @@ vec3 fxColor() {
   float psy = uFxPsy * mix(0.6, 1.0, tube);
   col = fxHue(col, psy * (uFxTime * 0.9 + vFxUv.y * 0.025 - uFxTravel * 0.01 + f1 * 2.5 + cos(across * 6.2832 / uFxRing) * 1.5));
   col = max(col, 0.0) * (0.45 + 1.1 * relief);
+  col = mix(col, vec3(1.0), 0.22 * uFxBallDark);   // pastel lift: lighter designs only when the ball is dark
 
   // WARP RINGS: bright bands around the pipe rushing at you with your speed
   float ring = pow(0.5 + 0.5 * sin((vFxUv.y + uFxTravel * 1.0) * 0.45 + uFxTime * 3.0), 10.0) * (0.25 + tube * 1.1);

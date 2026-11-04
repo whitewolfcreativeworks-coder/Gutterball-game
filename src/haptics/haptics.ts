@@ -121,6 +121,8 @@ export class HapticEngine {
           if (e.intensity > 0.1) this.fire(10 + 24 * e.intensity * h.impactScale, e.intensity, 3);
           break;
         case 'MAGNETIC_CAPTURE': this.fire(40, 1, 3); break;
+        case 'TURBO_ARMED': this.fire(20, 0.7, 2); break;
+        case 'TURBO_START': this.fire(70, 1, 3); break;
         case 'MAGNET_ENGAGED': this.fire(22, 0.8, 2); break;
         case 'JUMP': this.fire(10, 0.5, 2); break;
         case 'PUSH': this.fire(12 + 10 * e.intensity, 0.6, 2); break;

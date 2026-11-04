@@ -38,11 +38,17 @@
    - Ball and obstacles always contrast with the pattern.
    - No flashing faster than 3 Hz and no large saturated-red flashes (photosensitivity guidance).
    - Intensity sliders already exist. Add a photosensitivity note in Settings.
-7. **Budget.**
+7. **Ball contrast pairing (always).** The ball must stand out from every medium.
+   - **Bright worlds** (Stone, Snow, Ice, Glass, Sand, Water, Concrete, Metal): in the open gutter the ball turns dark gunmetal chrome, and the walls may use lighter, pastel patterns.
+   - **Dark worlds, and every tube:** the ball is bright polished steel, so the walls must be dark and high-contrast, with a calmer floor around the ball.
+   - The ball always has a thin black silhouette outline.
+   - The shaders read the ball's current finish (`uFxBallDark`) and pair their contrast with it automatically.
+   - **Obstacles** are the one thing that never moves: one flat colour opposite the world's palette, with a thick black outline and no fog.
+8. **Budget.**
    - About 10–30 loop iterations per pixel.
    - Evaluate the fractal once per pixel, plus one cheap parallax layer.
    - The hardest pieces are baked to textures: reaction-diffusion (or a small live simulation), fractal flames, DLA frost.
-8. **Same frame for everyone.** Every world keeps the shared systems:
+9. **Same frame for everyone.** Every world keeps the shared systems:
    - layered parallax, warp rings in tubes, mist streaks;
    - pneumatic tubes, calm currents at splits, Y-junctions, the rolling tube camera.
 

@@ -22,6 +22,9 @@ export type SensoryEventType =
   | 'JUMP'
   | 'DOUBLE_JUMP'
   | 'PUSH'
+  | 'TURBO_ARMED'
+  | 'TURBO_START'
+  | 'TURBO_END'
   | 'TUNNEL_ENTER'
   | 'TUNNEL_EXIT';
 
@@ -54,6 +57,9 @@ export interface SensoryState {
   magnetForce: number;      // 0..1 normalised
   magnetEnergy: number;     // 0..1
   boosting: boolean;        // magnet held while on the track
+  pushCombo?: number;       // swipes in the current combo (0..3)
+  turboArmed?: boolean;     // combo + magnet hold done: the next flick fires turbo
+  turboActive?: boolean;
   submersion: number;       // 0..1
   inTunnel: boolean;
   lateral: number;          // ball x in gutter (m)

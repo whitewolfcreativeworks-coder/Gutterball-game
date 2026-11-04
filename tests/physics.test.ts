@@ -324,3 +324,43 @@ describe('magnet clamp', () => {
     expect(bounced).toBe(false);
   });
 });
+
+describe('turbo combo', () => {
+  it('3 swipes + holding the booster arms turbo; the next flick doubles top speed', () => {
+    const tr = new Track(straight(-4, 3000));
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(25, 20);
+    const events: string[] = [];
+    const step = (inp: Partial<BallInput>, secs: number) => {
+      for (let i = 0; i < Math.round(secs * 240); i++) { b.step(1 / 240, { ...idle, ...inp }); for (const e of b.events) events.push(e.type); b.events.length = 0; inp = { ...inp, push: 0 }; }
+    };
+    // three swipes, a moment apart
+    for (let k = 0; k < 3; k++) step({ push: 1 }, 0.4);
+    expect(b.pushCombo).toBe(3);
+    // hold the magnet booster on the track
+    step({ magnet: true }, 1.3);
+    expect(b.turboArmed).toBe(true);
+    expect(events).toContain('TURBO_ARMED');
+    // let it settle to normal max speed with the booster for comparison
+    const before = b.v.length();
+    step({ push: 1 }, 0.1);
+    expect(b.turboTime).toBeGreaterThan(0);
+    expect(events).toContain('TURBO_START');
+    let peak = 0;
+    step({ magnet: true }, 6);
+    peak = b.v.length();
+    expect(peak).toBeGreaterThan(Math.max(before, 62) * 1.35);   // well past the normal booster cap
+    // turbo ends and you ease back down
+    step({}, 6);
+    expect(b.turboTime).toBe(0);
+    expect(events).toContain('TURBO_END');
+    expect(b.v.length()).toBeLessThan(peak * 0.8);
+  });
+  it('a broken combo (too slow between swipes) does not arm turbo', () => {
+    const tr = new Track(straight(-4, 3000));
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(25, 20);
+    for (let k = 0; k < 3; k++) { b.step(1 / 240, { ...idle, push: 1 }); for (let i = 0; i < 240 * 7; i++) b.step(1 / 240, idle); }
+    expect(b.pushCombo).toBeLessThan(3);
+  });
+});

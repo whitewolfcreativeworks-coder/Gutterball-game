@@ -33,7 +33,7 @@ export interface GameCallbacks {
 }
 
 export interface HudState {
-  speedKmh: number; progress: number; time: number; magnetEnergy: number; magnetActive: boolean;
+  speedKmh: number; progress: number; time: number; magnetEnergy: number; magnetActive: boolean; pushCombo: number; turboArmed: boolean; turboActive: boolean;
   driveLevel: number; falls: number; phase: RunPhase; airborne: boolean; mode: GameMode;
 }
 
@@ -153,6 +153,11 @@ export class Game {
     this.run = new Run(this.courseGeo, this.material);
     this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
     this.ballView = new BallView(this.run.ball.tune.radius);
+    {
+      // how bright this world's gutter reads: the surface tint (and fog for see-through worlds)
+      const vis = this.material.visual, lum = (c: number) => { const k = new Color(c); return 0.3 * k.r + 0.59 * k.g + 0.11 * k.b; };
+      this.ballView.setWorldBrightness(Math.max(lum(vis.tint), vis.transparent ? lum(vis.fog) : 0));
+    }
     if (this.scene.fog instanceof FogExp2) { this.fogBase = { color: this.scene.fog.color.clone(), density: this.scene.fog.density }; }
     { const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood; this.fogDark = new Color(th.b).multiplyScalar(0.035); }
     this.streaks = new TubeStreaks();
@@ -220,6 +225,8 @@ export class Game {
       if ((e.type === 'COLLISION_IMPACT' || e.type === 'AIRBORNE_END') && e.intensity > 0.3) { this.camera.shake = Math.max(this.camera.shake, e.intensity * 0.7 * this.speedFx); this.camera.punch(e.intensity * 6); }
       if (e.type === 'JUMP') this.camera.punch(4);
       if (e.type === 'DOUBLE_JUMP') this.camera.punch(8);
+      if (e.type === 'TURBO_ARMED') { this.camera.punch(6); if (this.mode === 'play') this.cb.onHint?.('TURBO READY — FLICK!'); }
+      if (e.type === 'TURBO_START') { this.camera.punch(16); this.camera.shake = Math.max(this.camera.shake, 0.6 * this.speedFx); }
     }
   }
   private dtLast = 1 / 60;
@@ -263,11 +270,12 @@ export class Game {
     if (fx) {
       fx.uFxTime.value = this.time;
       fx.uFxTravel.value += b.v.length() * dt;
-      fx.uFxIntensity.value = this.fractalLevel * (this.trackGroup!.userData.fxStrength ?? 0.6);
+      fx.uFxBallDark.value = this.ballView.darkness;
+      fx.uFxIntensity.value = this.fractalLevel * (this.trackGroup!.userData.fxStrength ?? 0.6) * (b.turboTime > 0 ? 1.3 : 1);
       fx.uFxSpeed.value += (Math.min(1, b.v.length() / 30) - fx.uFxSpeed.value) * Math.min(1, dt * 3);
       for (const bg of this.branchGroups) {
         const f2 = bg.userData.fx;
-        if (f2) { f2.uFxTime.value = fx.uFxTime.value; f2.uFxIntensity.value = fx.uFxIntensity.value; f2.uFxSpeed.value = fx.uFxSpeed.value; f2.uFxTravel.value = fx.uFxTravel.value; }
+        if (f2) { f2.uFxTime.value = fx.uFxTime.value; f2.uFxIntensity.value = fx.uFxIntensity.value; f2.uFxSpeed.value = fx.uFxSpeed.value; f2.uFxTravel.value = fx.uFxTravel.value; f2.uFxBallDark.value = fx.uFxBallDark.value; }
       }
     }
     this.camera.fx = this.speedFx;
@@ -305,7 +313,7 @@ export class Game {
     }
     this.cb.onHud?.({
       speedKmh: b.v.length() * 3.6, progress: this.run.progress, time: this.run.time, magnetEnergy: b.magnetEnergy,
-      magnetActive: b.magnetActive, driveLevel: this.mode === 'play' ? this.input.driveLevel : input.driveLevel, falls: this.run.falls,
+      magnetActive: b.magnetActive, pushCombo: b.pushCombo, turboArmed: b.turboArmed, turboActive: b.turboTime > 0, driveLevel: this.mode === 'play' ? this.input.driveLevel : input.driveLevel, falls: this.run.falls,
       phase: this.run.phase, airborne: b.airborne, mode: this.mode,
     });
     void Vector3;

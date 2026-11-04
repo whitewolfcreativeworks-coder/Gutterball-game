@@ -328,6 +328,9 @@ export class AudioEngine {
         if (now - this.lastSeam > 0.025) { this.lastSeam = now; this.seam(e.intensity); }
         break;
       }
+      case 'TURBO_ARMED': this.sweep(400, 1600, 0.35, 0.16, 'triangle'); this.sweep(800, 2400, 0.3, 0.1, 'sine'); break;
+      case 'TURBO_START': this.sweep(80, 1800, 0.6, 0.28, 'sawtooth'); this.sweep(50, 30, 0.6, 0.3, 'sine'); break;
+      case 'TURBO_END': this.sweep(900, 200, 0.4, 0.1, 'triangle'); break;
       case 'MAGNET_ENGAGED': this.sweep(120, 900, 0.28, 0.2, 'sawtooth'); this.sweep(60, 240, 0.25, 0.16, 'sine'); break;
       case 'MAGNET_RELEASED': this.sweep(520, 160, 0.12, 0.08, 'triangle'); break;
       case 'MAGNETIC_CAPTURE': this.sweep(1400, 260, 0.16, 0.18, 'square'); this.sweep(110, 40, 0.3, 0.24, 'sine'); break;

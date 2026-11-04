@@ -131,7 +131,7 @@ hud.innerHTML = `
   <div class="hint"></div>
   <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div></div>
   <div class="bottom">
-    <div><div class="speed">0<small>KM/H</small></div><div class="drive"><i></i><i></i><i></i></div></div>
+    <div><div class="speed">0<small>KM/H</small></div><div class="combo"><i></i><i></i><i></i><span class="turbo"></span></div></div>
     <div class="magring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="5"/><circle class="arc" cx="32" cy="32" r="27" fill="none" stroke="#47e6ff" stroke-width="5" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="0"/></svg><div class="lbl">MAG</div></div>
   </div>`;
 addScreen('hud', hud);
@@ -152,7 +152,12 @@ game.cb.onHud = (s: HudState) => {
   ($('.progress i', hud) as HTMLElement).style.width = `${(s.progress * 100).toFixed(1)}%`;
   $('.clock', hud).textContent = fmtTime(s.time);
   $('.speed', hud).firstChild!.textContent = String(Math.round(s.speedKmh));
-  hud.querySelectorAll('.drive i').forEach((d, i) => d.classList.toggle('on', i <= s.driveLevel));
+  // turbo combo: three swipe pips, then HOLD MAGNET, then FLICK!, then TURBO
+  hud.querySelectorAll('.combo i').forEach((d, i) => d.classList.toggle('on', s.turboActive || s.turboArmed || i < s.pushCombo));
+  const tb = $('.combo .turbo', hud);
+  tb.textContent = s.turboActive ? 'TURBO' : s.turboArmed ? 'FLICK!' : s.pushCombo >= 3 ? 'HOLD MAG' : '';
+  $('.combo', hud).classList.toggle('armed', s.turboArmed);
+  $('.combo', hud).classList.toggle('live', s.turboActive);
   ($('.magring .arc', hud) as unknown as SVGCircleElement).style.strokeDashoffset = String(169.6 * (1 - s.magnetEnergy));
   $('.magring', hud).classList.toggle('active', s.magnetActive);
   const launchEl = $('.launch', hud);

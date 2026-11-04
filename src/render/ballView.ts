@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, Color, CylinderGeometry, DoubleSide, Group, Line, LineBasicMaterial,
+  AdditiveBlending, BackSide, MeshBasicMaterial, BufferAttribute, BufferGeometry, Color, CylinderGeometry, DoubleSide, Group, Line, LineBasicMaterial,
   Mesh, MeshPhysicalMaterial, PointLight, RingGeometry, ShaderMaterial, SphereGeometry, Vector3, Matrix4, Quaternion,
 } from 'three';
 import type { BallPhysics } from '../physics/ball';
@@ -9,6 +9,8 @@ import { TractorBeam } from './beam';
 export const BEAM_COLORS: Record<string, number> = { cyan: 0x47e6ff, magenta: 0xff4fd8, gold: 0xffc84a, lime: 0x8dff5a };
 
 /** Steel ball + magnetic tractor beam + optional rolling trail. */
+const DARK_CHROME = new Color(0x22262e);
+
 export class BallView {
   readonly group = new Group();
   readonly ball: Mesh;
@@ -23,6 +25,18 @@ export class BallView {
   private tether = new TractorBeam();
   private beamLevel = 0;
   private captureFlash = 0;
+  private outline: Mesh;
+  private worldLum = 0.3;   // how bright the world's gutter is (0 dark .. 1 white)
+  private darkMix = 0;
+  /**
+   * Contrast with the medium: in bright worlds (stone, snow, sand, ice...) the
+   * steel ball would reflect its light surroundings and disappear, so in the
+   * open it turns dark gunmetal chrome; inside dark tubes it returns to bright
+   * polished steel.
+   */
+  setWorldBrightness(lum: number) { this.worldLum = lum; }
+  /** 0 = bright steel, 1 = dark chrome (the walls pair their contrast with this). */
+  get darkness() { return this.darkMix; }
 
   constructor(radius: number) {
     const geo = new SphereGeometry(radius, 64, 48);
@@ -34,6 +48,9 @@ export class BallView {
     this.ball = new Mesh(geo, mat);
     this.ball.castShadow = true;
     this.group.add(this.ball);
+    // thin black silhouette outline (inverted hull): the ball's edge always reads against bright walls
+    this.outline = new Mesh(new SphereGeometry(radius * 1.045, 48, 32), new MeshBasicMaterial({ color: 0x000000, side: BackSide, fog: false }));
+    this.ball.add(this.outline);
 
     // Tractor beam: a unit cylinder from y=0..1, scaled/oriented each frame
     const bg = new CylinderGeometry(1, 1, 1, 24, 1, true);
@@ -102,6 +119,14 @@ export class BallView {
   flashCapture() { this.captureFlash = 1; }
 
   update(b: BallPhysics, dt: number, time: number) {
+    {
+      const tk = b.track.tubeAt(b.proj.s);
+      const want = Math.max(0, Math.min(1, (this.worldLum - 0.33) / 0.18)) * (1 - tk);
+      this.darkMix += (want - this.darkMix) * Math.min(1, dt * 4);
+      const m = this.ball.material as MeshPhysicalMaterial;
+      m.color.setRGB(1, 1, 1).lerp(DARK_CHROME, this.darkMix);
+      m.envMapIntensity = 1.25 - 0.75 * this.darkMix;
+    }
     this.ball.position.copy(b.p);
     this.ball.quaternion.copy(b.q);
     this.glow.position.copy(b.p);

@@ -59,6 +59,8 @@ export interface BallTuning {
   tubeFlowAccel: number;    // pneumatic push inside tubes (m/s^2)
   tubeFlowCap: number;      // ...fading out near this speed
   gutterCruise: number;     // open-gutter speed above which you ease back down (after a tube)
+  turboDuration: number;    // seconds of turbo
+  turboChargeTime: number;  // seconds holding the booster (with a full combo) to arm turbo
 }
 
 export const DEFAULT_TUNING: BallTuning = {
@@ -85,6 +87,8 @@ export const DEFAULT_TUNING: BallTuning = {
   tubeFlowAccel: 24,
   tubeFlowCap: 72,
   gutterCruise: 46,
+  turboDuration: 7,
+  turboChargeTime: 1.0,
 };
 
 const tmpA = new Vector3();
@@ -115,6 +119,13 @@ export class BallPhysics {
   /** Projection onto the main course (progress, checkpoints, finish). */
   get mainProj() { return this.projs[0]; }
   activeIndex = 0;
+  // ---- Turbo combo: 3 swipes, hold the magnet booster, flick again ----
+  pushCombo = 0;          // swipes in the current combo (0..3)
+  comboTimer = 0;         // the combo fades if you stop swiping
+  turboCharge = 0;        // seconds the booster has been held with a full combo
+  turboArmed = false;
+  turboArmTimer = 0;      // window to fire once armed
+  turboTime = 0;          // seconds of turbo remaining
   material: MaterialProfile;
 
   // Contact state
@@ -186,7 +197,11 @@ export class BallPhysics {
     this.jumpTimer = 0;
     this.lastSeamIndex = -1;
     this.rollingState = 'rolling';
+    this.pushCombo = 0; this.comboTimer = 0; this.turboCharge = 0; this.turboArmed = false; this.turboTime = 0;
   }
+
+  /** Top-speed multiplier: 2x during turbo, easing back over its last second. */
+  turboMul() { return 1 + Math.min(1, this.turboTime); }
 
   private emit(type: SensoryEvent['type'], intensity: number, magnitude?: number, source?: string) {
     this.events.push({ type, t: this.t, intensity: Math.max(0, Math.min(1, intensity)), magnitude, source, material: this.material.id });
@@ -312,7 +327,7 @@ export class BallPhysics {
       // Propulsion (never braking): fades out approaching the level's cap speed
       const lvl = Math.max(0, Math.min(2, input.driveLevel | 0));
       const vf = this.v.dot(Tt);
-      const fade = Math.max(0, Math.min(1, (tu.driveCap[lvl] - vf) / 6));
+      const fade = Math.max(0, Math.min(1, (tu.driveCap[lvl] * this.turboMul() - vf) / 6));
       const da = tu.driveAccel[lvl] * fade;
       if (da > 0) {
         acc.addScaledVector(Tt, da * 0.3);
@@ -329,6 +344,7 @@ export class BallPhysics {
     {
       const tk = this.track.tubeAt(pr.s);
       const vf = this.v.dot(pr.T);
+      const turboK = this.turboMul();
       // the current goes calm approaching and through a split, so you have time to pick a side
       let calm = false;
       for (const j of this.junctions) {
@@ -339,23 +355,48 @@ export class BallPhysics {
       if (tk > 0.3) {
         // WARP: tubes fire you along at up to ~260 km/h (a gentle 100 km/h current near splits)
         const capHere = this.track.warpCap[Math.max(0, Math.min(this.track.n - 1, Math.round(pr.s / this.track.ds)))] || tu.tubeFlowCap;
-        const fade = Math.max(0, Math.min(1, ((calm ? Math.min(28, capHere) : capHere) - vf) / 10));
-        acc.addScaledVector(pr.T, tu.tubeFlowAccel * fade * Math.min(1, (tk - 0.3) / 0.5));
-      } else if (vf > tu.gutterCruise && !this.boosting) {
+        const fade = Math.max(0, Math.min(1, ((calm ? Math.min(28, capHere) : capHere) * turboK - vf) / 10));
+        acc.addScaledVector(pr.T, tu.tubeFlowAccel * (turboK > 1 ? 1.6 : 1) * fade * Math.min(1, (tk - 0.3) / 0.5));
+      } else if (vf > tu.gutterCruise * turboK && !this.boosting) {
         // back out in the open gutter the air brakes ease you down to cruising speed (~1 s)
-        acc.addScaledVector(pr.T, -(vf - tu.gutterCruise) * 1.6);
+        acc.addScaledVector(pr.T, -(vf - tu.gutterCruise * turboK) * 1.6);
+      }
+      // turbo drives you on toward double cruising speed in the open too
+      if (turboK > 1 && tk <= 0.3) {
+        const tf = Math.max(0, Math.min(1, (tu.gutterCruise * turboK - vf) / 10));
+        acc.addScaledVector(pr.T, 16 * tf * (turboK - 1));
       }
     }
 
     // ---- Swipe push: a physical shove that rolls the ball faster ----
+    // Swipes stack into a combo of up to three. With a full combo, holding the
+    // magnet booster for a second ARMS turbo; the next flick fires it: every top
+    // speed doubles for a few seconds.
     this.pushTimer -= dt;
+    this.comboTimer -= dt;
+    if (this.comboTimer <= 0 && !this.turboArmed) { this.pushCombo = 0; this.turboCharge = 0; }
+    if (this.turboArmed) { this.turboArmTimer -= dt; if (this.turboArmTimer <= 0) { this.turboArmed = false; this.pushCombo = 0; this.turboCharge = 0; } }
+    if (this.turboTime > 0) { this.turboTime -= dt; if (this.turboTime <= 0) { this.turboTime = 0; this.emit('TURBO_END', 1); } }
     if (input.push && input.push > 0 && grounded && this.pushTimer <= 0) {
-      const dv = 3 + 5 * Math.min(1, input.push);
       const fwd = tmpA.copy(Tt);
-      this.v.addScaledVector(fwd, dv);
-      this.w.addScaledVector(new Vector3().copy(n).cross(fwd), dv / r);
-      this.pushTimer = 0.3;
-      this.emit('PUSH', Math.min(1, input.push), dv);
+      if (this.turboArmed) {
+        // TURBO!
+        this.turboArmed = false; this.pushCombo = 0; this.turboCharge = 0;
+        this.turboTime = tu.turboDuration;
+        const dv = 14;
+        this.v.addScaledVector(fwd, dv);
+        this.w.addScaledVector(new Vector3().copy(n).cross(fwd), dv / r);
+        this.emit('TURBO_START', 1, dv);
+      } else {
+        this.pushCombo = Math.min(3, this.pushCombo + 1);
+        this.comboTimer = 6;
+        // each swipe in a combo shoves a little harder
+        const dv = (4 + 5 * Math.min(1, input.push)) * (1 + 0.2 * (this.pushCombo - 1));
+        this.v.addScaledVector(fwd, dv);
+        this.w.addScaledVector(new Vector3().copy(n).cross(fwd), dv / r);
+        this.emit('PUSH', Math.min(1, input.push), dv);
+      }
+      this.pushTimer = 0.25;
     }
 
     // ---- Jump ----
@@ -684,11 +725,17 @@ export class BallPhysics {
           if (fwd.lengthSq() > 1e-6) {
             fwd.normalize();
             const vf = this.v.dot(fwd);
-            const fade = Math.max(0, Math.min(1, (tu.magnetBoostCap - vf) / 8));
+            const fade = Math.max(0, Math.min(1, (tu.magnetBoostCap * this.turboMul() - vf) / 8));
             acc.addScaledVector(fwd, tu.magnetBoostAccel * fade);
             // spin the ball up to match, so it keeps rolling rather than skidding
             this.w.addScaledVector(new Vector3().copy(nn).cross(fwd), (tu.magnetBoostAccel * fade * dt) / this.tune.radius);
-            this.boosting = fade > 0.05;
+            this.boosting = fade > 0.05 || this.turboTime > 0;
+            // a full swipe combo + holding the booster charges turbo
+            if (this.pushCombo >= 3 && !this.turboArmed && this.turboTime <= 0) {
+              this.turboCharge += dt;
+              this.comboTimer = Math.max(this.comboTimer, 0.5);
+              if (this.turboCharge >= tu.turboChargeTime) { this.turboArmed = true; this.turboArmTimer = 4; this.emit('TURBO_ARMED', 1); }
+            }
           }
           this.magnetForce = 0.85;
         } else {
@@ -732,6 +779,9 @@ export class BallPhysics {
       magnetForce: this.magnetForce,
       magnetEnergy: this.magnetEnergy,
       boosting: this.boosting,
+      pushCombo: this.pushCombo,
+      turboArmed: this.turboArmed,
+      turboActive: this.turboTime > 0,
       submersion: this.submersion,
       inTunnel: this.inTunnel,
       lateral: pr.x,
