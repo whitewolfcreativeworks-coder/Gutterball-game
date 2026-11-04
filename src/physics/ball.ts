@@ -56,7 +56,7 @@ export interface BallTuning {
 }
 
 export const DEFAULT_TUNING: BallTuning = {
-  radius: 0.6,
+  radius: 0.75,
   mass: 1,
   gravity: 9.81,
   steerAccel: 11,
@@ -110,6 +110,8 @@ export class BallPhysics {
   readonly magnetTarget = new Vector3();
   magnetHasTarget = false;
   magnetSuppress = 0;
+  airJumpsLeft = 0;
+  private magnetRamp = 0;
   wasMagnetAirborne = false;
   // Medium
   submersion = 0;
@@ -224,7 +226,9 @@ export class BallPhysics {
         this.w.addScaledVector(ax2, da * 0.7 * 3.5 / r * dt);
       }
     } else {
-      acc.addScaledVector(pr.R, input.steer * tu.airSteerAccel);
+      // In the air you can still steer; holding the magnet gives extra authority
+      // so you can line up your landing while the beam pulls you down.
+      acc.addScaledVector(pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel));
     }
 
     // ---- Jump ----
@@ -235,7 +239,19 @@ export class BallPhysics {
       this.jumpTimer = tu.jumpCooldown;
       this.sinceContact = tu.coyoteTime + 0.01;
       this.magnetSuppress = 0.22;
+      this.airJumpsLeft = 1;
       this.emit('JUMP', 1, tu.jumpSpeed);
+    } else if (input.jump && !grounded && this.airJumpsLeft > 0 && this.jumpTimer <= tu.jumpCooldown - 0.18) {
+      // Double jump: a second flick in the air pushes the ball higher (away from
+      // the gutter floor below), cancelling some of the fall, and adds a forward flip.
+      this.airJumpsLeft--;
+      const up = tmpA.copy(pr.U).multiplyScalar(0.6).addScaledVector(WORLD_UP, 0.4).normalize();
+      const vUp = this.v.dot(up);
+      this.v.addScaledVector(up, Math.max(0, -vUp) * 0.6 + tu.jumpSpeed * 0.85);
+      this.w.addScaledVector(pr.R, 18); // forward flip
+      this.magnetSuppress = 0.18;
+      this.jumpTimer = tu.jumpCooldown;
+      this.emit('DOUBLE_JUMP', 1, tu.jumpSpeed * 0.85);
     }
 
     // ---- Magnet ----
@@ -443,6 +459,7 @@ export class BallPhysics {
     if (!want) this.magnetEngaged = false;
     if (this.magnetEngaged && this.magnetEnergy <= 0) this.magnetEngaged = false;
     const active = this.magnetEngaged;
+    if (!active) this.magnetRamp = 0;
     if (active !== this.magnetActive) {
       this.emit(active ? 'MAGNET_ENGAGED' : 'MAGNET_RELEASED', 1);
       this.magnetActive = active;
@@ -465,7 +482,8 @@ export class BallPhysics {
         } else {
           this.wasMagnetAirborne = true;
           const fall = 1 - smoothstep(tu.magnetRange * 0.55, tu.magnetRange, d);
-          const a = tu.magnetAccel * fall;
+          this.magnetRamp = Math.min(1, this.magnetRamp + dt / 0.3);
+          const a = tu.magnetAccel * fall * (0.35 + 0.65 * this.magnetRamp);
           acc.addScaledVector(nn, -a);
           // damp velocity directed away from the surface (prevents orbiting)
           const away = this.v.dot(nn);

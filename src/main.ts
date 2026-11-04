@@ -413,6 +413,8 @@ function renderSettings() {
       <label class="set"><span>Haptics <span class="note" style="display:inline">(${haptics.driver.tier === 'none' ? 'no actuator detected' : haptics.driver.tier})</span></span><input class="toggle" type="checkbox" ${settings.haptics ? 'checked' : ''} data-set="haptics"></label>
       <label class="set"><span>Haptic strength</span><input type="range" min="0.2" max="1" step="0.05" value="${settings.hapticStrength}" data-set="hapticStrength"></label>
       <button class="btn" style="width:100%;margin-top:6px" data-act="testHaptic">Test haptics</button>
+      <label class="set"><span>Fractal glow on the gutter</span><input id="set-fx" type="range" min="0" max="1" step="0.05" value="${settings.fractal}" data-set="fractal"></label>
+      <label class="set"><span>Speed effects (blur, shake)</span><input id="set-speedfx" type="range" min="0" max="1" step="0.05" value="${settings.speedFx}" data-set="speedFx"></label>
       <label class="set"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${settings.volume}" data-set="volume"></label>
       <label class="set"><span>Music</span><input class="toggle" type="checkbox" ${settings.music ? 'checked' : ''} data-set="music"></label>
     </div>
@@ -447,7 +449,7 @@ calibLoop();
 // Settings persistence
 // ---------------------------------------------------------------------------
 function loadSettings() {
-  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, input: undefined as any, mode: undefined as any };
+  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, fractal: 0.6, speedFx: 0.8, input: undefined as any, mode: undefined as any, inputVersion: 0 };
   try { return { ...def, ...JSON.parse(localStorage.getItem('gb.settings') ?? '{}') }; } catch { return def; }
 }
 function saveSettings() {
@@ -457,10 +459,13 @@ function saveSettings() {
 }
 function applySettings() {
   // Settings saved by the first build used much less sensitive tilt defaults; drop them
-  if (settings.input && settings.input.keepView === undefined) settings.input = undefined;
+  if (settings.input && (settings.input.keepView === undefined || (settings.inputVersion ?? 0) < 3)) settings.input = undefined;
+  settings.inputVersion = 3;
   if (settings.input) input.settings = { ...input.settings, ...settings.input };
   if (settings.mode === 'keyboard' && !matchMedia('(pointer: coarse)').matches) input.mode = 'keyboard';
   haptics.enabled = settings.haptics;
+  game.fractalLevel = settings.fractal;
+  game.speedFx = settings.speedFx;
   haptics.intensity = settings.hapticStrength;
   audio.setVolume(settings.volume);
   audio.setMusic(settings.music);
@@ -549,6 +554,8 @@ ui.addEventListener('input', (e) => {
     if (k === 'volume') { settings.volume = Number(v); audio.setVolume(Number(v)); }
     if (k === 'music') { settings.music = !!v; audio.setMusic(!!v); }
     if (k === 'quality') game.setQuality(v as any);
+    if (k === 'fractal') { settings.fractal = Number(v); game.fractalLevel = Number(v); }
+    if (k === 'speedFx') { settings.speedFx = Number(v); game.speedFx = Number(v); }
     saveSettings();
   }
   const cos = t.dataset.cos;

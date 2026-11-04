@@ -1,11 +1,12 @@
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
-  Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry,
+  Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry,
 } from 'three';
 import type { Track } from '../track/track';
 import { profilePolyline, halfWidth } from '../track/profile';
 import type { MaterialProfile } from '../physics/materials';
 import { surfaceMaps, TILE } from './textures';
+import { applyFractal, FRACTAL_THEMES, FractalUniforms } from './fractal';
 
 /**
  * Builds the visible gutter from the same frames and profile the physics
@@ -59,7 +60,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
 
   const step = 2; // every 2 samples = 1 m
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
-  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [];
+  const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [], fxuvs: number[] = [];
   const shellPositions: number[] = [], shellNormals: number[] = [], shellUvs: number[] = [], shellIdx: number[] = [];
   const M = ring.length;
   let runStart = -1;
@@ -77,7 +78,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
         const wx = P.x + R.x * r.x + U.x * r.y, wy = P.y + R.y * r.x + U.y * r.y, wz = P.z + R.z * r.x + U.z * r.y;
         const nx = R.x * r.nx + U.x * r.ny, ny = R.y * r.nx + U.y * r.ny, nz = R.z * r.nx + U.z * r.ny;
         if (r.part === 0) {
-          positions.push(wx, wy, wz); normals.push(nx, ny, nz); uvs.push(r.u / TILE, s / TILE);
+          positions.push(wx, wy, wz); normals.push(nx, ny, nz); uvs.push(r.u / TILE, s / TILE); fxuvs.push(r.u, s);
         } else {
           shellPositions.push(wx, wy, wz); shellNormals.push(nx, ny, nz); shellUvs.push(r.u / TILE, s / TILE);
         }
@@ -112,12 +113,20 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   geo.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
   geo.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
   geo.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  geo.setAttribute('fxuv', new BufferAttribute(new Float32Array(fxuvs), 2));
   geo.setIndex(indices);
   geo.computeTangents?.();
   const surf = new Mesh(geo, surfaceMat);
   surf.receiveShadow = true;
   surf.name = 'gutterSurface';
   g.add(surf);
+  // Animated fractal glow layer (see fractal.ts)
+  const theme = FRACTAL_THEMES[mat.id] ?? FRACTAL_THEMES.wood;
+  const centerU = ring.find((r) => r.part === 0 && Math.abs(r.x) < 1e-6 && Math.abs(r.y) < 1e-6)?.u ?? 0;
+  const fx: FractalUniforms = { uFxTime: { value: 0 }, uFxIntensity: { value: 0.5 }, uFxSpeed: { value: 0 } };
+  applyFractal(surfaceMat, theme, centerU, fx);
+  g.userData.fx = fx;
+  g.userData.fxStrength = theme.strength;
 
   const shellGeo = new BufferGeometry();
   shellGeo.setAttribute('position', new BufferAttribute(new Float32Array(shellPositions), 3));
@@ -139,6 +148,9 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   // ---- Liquid surface (water world) ----
   if (mat.medium === 'water') g.add(buildLiquid(track, mat));
 
+  // ---- Ribs arching over the gutter: they stream past and sell the speed ----
+  g.add(buildRibs(track, mat, theme));
+
   // ---- Supports / trestles ----
   g.add(buildSupports(track, mat, groundHeight));
 
@@ -153,6 +165,37 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   g.add(buildArch(track, track.length - 62, 'FINISH', mat));
   for (let c = 1; c < track.checkpoints.length; c++) g.add(buildCheckpointPosts(track, track.checkpoints[c]));
   return g;
+}
+
+export const RIB_SPACING = 7;
+
+function buildRibs(track: Track, mat: MaterialProfile, theme: { a: number }) {
+  const prof = track.profile;
+  const W = halfWidth(prof) + prof.th * 0.5;
+  const geo = new TorusGeometry(1, 0.05, 6, 28, Math.PI);
+  const m = new MeshStandardMaterial({
+    color: mat.visual.surface === 'wood' ? 0x7a5230 : new Color(mat.visual.tint).multiplyScalar(0.7),
+    emissive: new Color(theme.a), emissiveIntensity: 0.55, roughness: 0.6, metalness: mat.visual.metalness,
+  });
+  const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+  const mats: Matrix4[] = [];
+  const archH = 2.6;
+  for (let s = 20; s < track.length - 70; s += RIB_SPACING) {
+    const i = Math.round(s / track.ds);
+    if (track.gap[i] || track.tunnel[i]) continue;
+    track.sample(i, P, T, U, R);
+    if (U.y < 0.45) continue; // keep loops open
+    // torus lies in its XY plane: x across (R), y up (U), scaled into a flat arch
+    const basis = new Matrix4().makeBasis(R, U, T.clone().negate());
+    basis.scale(new Vector3(W, archH, 1));
+    basis.setPosition(P.clone().addScaledVector(U, prof.H + prof.th));
+    mats.push(basis);
+  }
+  const inst = new InstancedMesh(geo, m, mats.length);
+  mats.forEach((x, k) => inst.setMatrixAt(k, x));
+  inst.instanceMatrix.needsUpdate = true;
+  inst.name = 'ribs';
+  return inst;
 }
 
 function buildLiquid(track: Track, mat: MaterialProfile) {

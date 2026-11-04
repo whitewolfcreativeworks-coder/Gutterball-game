@@ -1,15 +1,22 @@
-import { PerspectiveCamera, Vector3, Quaternion, Matrix4 } from 'three';
+import { PerspectiveCamera, Vector3, Quaternion } from 'three';
 import type { BallPhysics } from '../physics/ball';
 import type { Track } from '../track/track';
 
 /**
- * Chase camera. Follows the *track frame* at the ball's position rather than
- * the ball's velocity (which can be erratic during impacts), with:
- *  - critically damped smoothing of position and orientation,
- *  - look-ahead along the course so upcoming obstacles stay visible,
- *  - partial banking with the track (full banking through loops so the
- *    inversion reads correctly, but heavily smoothed),
- *  - jump framing (pulls back when airborne) and FOV widening at speed.
+ * Rollercoaster chase camera.
+ *
+ * Goal: the walls should rush past and the body should *feel* the ride.
+ * Techniques (from motion-simulator and racing-game practice):
+ *  - Low and close: the camera rides just above the ball so the walls fill
+ *    the peripheral view (speed perception depends heavily on periphery).
+ *  - Full banking with the track, plus an extra lean from lateral g-force,
+ *    so the horizon swings through turns like a coaster car.
+ *  - Vertical g: the view sinks under compression (bottom of a dip) and
+ *    floats on crests / when airborne.
+ *  - Speed-dependent field of view and high-frequency vibration; short FOV
+ *    "punches" on jumps and landings.
+ *  - Look-ahead along the course so obstacles stay readable.
+ * Everything scales with the player's "speed effects" setting.
  */
 export class ChaseCamera {
   readonly cam: PerspectiveCamera;
@@ -20,74 +27,104 @@ export class ChaseCamera {
   private P = new Vector3(); private T = new Vector3(); private U = new Vector3(); private R = new Vector3();
   private P2 = new Vector3(); private T2 = new Vector3(); private U2 = new Vector3(); private R2 = new Vector3();
   private airPull = 0;
+  private lastV = new Vector3();
+  private latG = 0;      // smoothed lateral acceleration (m/s^2, + = pushed right)
+  private vertG = 0;     // smoothed normal-load excess in g
+  private dip = 0;       // current vertical camera offset
+  private fovPunch = 0;
+  private t = 0;
   shake = 0;
+  fx = 0.8;              // speed-effects strength 0..1
+  private baseFov = 80;
 
   constructor(aspect: number) {
-    this.cam = new PerspectiveCamera(70, aspect, 0.1, 6000);
+    this.cam = new PerspectiveCamera(80, aspect, 0.1, 6000);
   }
 
   resize(aspect: number) {
     this.cam.aspect = aspect;
-    // Portrait screens are narrow: widen vertical FOV so the gutter fits.
-    this.baseFov = aspect < 0.75 ? 78 : aspect < 1.2 ? 72 : 62;
+    // Portrait screens are narrow: a wide vertical FOV keeps the walls in the periphery.
+    this.baseFov = aspect < 0.75 ? 84 : aspect < 1.2 ? 76 : 66;
     this.cam.updateProjectionMatrix();
   }
-  private baseFov = 70;
 
   snap() { this.initialised = false; }
+  punch(amount: number) { this.fovPunch = Math.max(this.fovPunch, amount); }
 
   update(b: BallPhysics, track: Track, dt: number) {
+    this.t += dt;
+    const fx = this.fx;
     const s = Math.max(0, b.proj.s);
     track.frameAtS(s, this.P, this.T, this.U, this.R);
     const speed = b.v.length();
-    // Up vector: blend between world up and track up. In loops (U.y < 0.3) follow the track fully.
+
+    // --- g-forces from the ball's actual motion ---
+    const acc = new Vector3().subVectors(b.v, this.lastV).multiplyScalar(1 / Math.max(dt, 1e-3));
+    this.lastV.copy(b.v);
+    if (!this.initialised) acc.set(0, 0, 0);
+    const lat = acc.dot(this.R);
+    this.latG += (Math.max(-40, Math.min(40, lat)) - this.latG) * Math.min(1, dt * 4);
+    const vg = b.contact ? Math.max(-1, Math.min(3, b.normalAccel / 9.81 - 1)) : -0.6;
+    this.vertG += (vg - this.vertG) * Math.min(1, dt * 5);
+
+    // --- up vector: ride the bank like a coaster car, plus a g-force lean ---
     const inv = this.U.y < 0.35;
-    const bankFollow = inv ? 0.95 : 0.55;
+    const bankFollow = inv ? 0.95 : 0.85;
     const desiredUp = new Vector3(0, 1, 0).lerp(this.U, bankFollow).normalize();
-    // Camera rides behind along the track and above along its up vector
-    const back = 7.8 + Math.min(4, speed * 0.1);
+    const lean = Math.max(-0.22, Math.min(0.22, -this.latG * 0.012)) * fx; // radians
+    desiredUp.applyQuaternion(new Quaternion().setFromAxisAngle(this.T, lean));
+
+    // --- position: low and close behind along the track ---
+    const back = 5.6 + Math.min(3, speed * 0.08);
     this.airPull += ((b.airborne ? 1 : 0) - this.airPull) * Math.min(1, dt * 2.5);
-    const height = 3.8 + this.airPull * 1.4;
-    const behindS = Math.max(0, s - back);
-    track.frameAtS(behindS, this.P2, this.T2, this.U2, this.R2);
-    // lateral: follow ball partly so walls stay in view
-    const lat = b.proj.x * 0.55;
-    const vert = Math.max(0, b.proj.y - 0.4) * 0.5;
+    const targetDip = (-this.vertG * 0.45 + this.airPull * 1.2) * fx;
+    this.dip += (targetDip - this.dip) * Math.min(1, dt * 6);
+    const height = 2.5 + this.dip;
+    track.frameAtS(Math.max(0, s - back), this.P2, this.T2, this.U2, this.R2);
+    const lat0 = b.proj.x * 0.6;
+    const vert = Math.max(0, b.proj.y - 0.75) * 0.55;
     const camUp = new Vector3(0, 1, 0).lerp(this.U2, bankFollow).normalize();
-    const desiredPos = this.P2.clone().addScaledVector(this.R2, lat).addScaledVector(this.U2, vert).addScaledVector(camUp, height);
-    // Look ahead along the track
-    const ahead = Math.min(14, 5 + speed * 0.3);
+    const desiredPos = this.P2.clone().addScaledVector(this.R2, lat0).addScaledVector(this.U2, vert).addScaledVector(camUp, height);
+
+    // --- look ahead along the course ---
+    const ahead = Math.min(16, 6 + speed * 0.3);
     track.frameAtS(s + ahead, this.P2, this.T2, this.U2, this.R2);
-    const desiredLook = b.p.clone().lerp(this.P2.addScaledVector(this.U2, 0.8).addScaledVector(this.R2, b.proj.x * 0.3), 0.45);
+    const desiredLook = b.p.clone().lerp(this.P2.addScaledVector(this.U2, 0.9).addScaledVector(this.R2, b.proj.x * 0.3), 0.5);
 
     if (!this.initialised) {
       this.pos.copy(desiredPos); this.look.copy(desiredLook); this.up.copy(desiredUp);
       this.initialised = true;
     } else {
-      const kp = 1 - Math.exp(-dt * 9);
-      const kl = 1 - Math.exp(-dt * 12);
-      const ku = 1 - Math.exp(-dt * (inv ? 3.5 : 2.5));
+      const kp = 1 - Math.exp(-dt * 10);
+      const kl = 1 - Math.exp(-dt * 13);
+      const ku = 1 - Math.exp(-dt * (inv ? 4 : 5));
       this.pos.lerp(desiredPos, kp);
       this.look.lerp(desiredLook, kl);
       this.up.lerp(desiredUp, ku).normalize();
     }
-    // keep the camera from drifting too far from the ball (high-speed catch-up)
-    const d = this.pos.distanceTo(b.p);
-    if (d > 16) this.pos.lerp(desiredPos, 0.5);
+    if (this.pos.distanceTo(b.p) > 14) this.pos.lerp(desiredPos, 0.5);
 
     this.cam.position.copy(this.pos);
-    if (this.shake > 0) {
-      this.cam.position.x += (Math.random() - 0.5) * this.shake * 0.12;
-      this.cam.position.y += (Math.random() - 0.5) * this.shake * 0.12;
-      this.shake = Math.max(0, this.shake - dt * 4);
+    // --- vibration: road rumble that grows with speed, plus impact shake ---
+    const sp01 = Math.min(1, speed / 32);
+    const rumble = (b.contact ? 0.012 + 0.05 * sp01 * sp01 : 0.004) * fx;
+    const amp = rumble + this.shake * 0.14;
+    if (amp > 0) {
+      const t = this.t;
+      const nx = Math.sin(t * 61.3) * 0.6 + Math.sin(t * 97.1 + 1.3) * 0.4;
+      const ny = Math.sin(t * 73.7 + 0.7) * 0.6 + Math.sin(t * 113.9 + 2.1) * 0.4;
+      this.cam.position.addScaledVector(this.R, nx * amp).addScaledVector(this.up, ny * amp);
     }
+    this.shake = Math.max(0, this.shake - dt * 4);
     this.cam.up.copy(this.up);
     this.cam.lookAt(this.look);
-    const fov = this.baseFov + Math.min(12, Math.max(0, speed - 12) * 0.45);
+
+    // --- field of view widens with speed; short punches on jumps/landings ---
+    this.fovPunch = Math.max(0, this.fovPunch - dt * 18);
+    const fov = this.baseFov + (Math.min(18, Math.max(0, speed - 10) * 0.75) + this.fovPunch) * (0.4 + 0.6 * fx);
     if (Math.abs(this.cam.fov - fov) > 0.05) {
-      this.cam.fov += (fov - this.cam.fov) * Math.min(1, dt * 2);
+      this.cam.fov += (fov - this.cam.fov) * Math.min(1, dt * 4);
       this.cam.updateProjectionMatrix();
     }
-    void Quaternion; void Matrix4;
   }
 }

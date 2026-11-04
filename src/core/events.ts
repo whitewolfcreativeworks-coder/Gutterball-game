@@ -20,6 +20,7 @@ export type SensoryEventType =
   | 'WATER_EXIT'
   | 'SURFACE_MATERIAL_CHANGE'
   | 'JUMP'
+  | 'DOUBLE_JUMP'
   | 'TUNNEL_ENTER'
   | 'TUNNEL_EXIT';
 

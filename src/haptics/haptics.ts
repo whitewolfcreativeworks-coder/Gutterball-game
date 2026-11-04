@@ -123,6 +123,7 @@ export class HapticEngine {
         case 'MAGNETIC_CAPTURE': this.fire(26, 0.9, 3); break;
         case 'MAGNET_ENGAGED': this.fire(14, 0.5, 2); break;
         case 'JUMP': this.fire(10, 0.5, 2); break;
+        case 'DOUBLE_JUMP': this.fire(16, 0.7, 2); break;
         case 'SURFACE_SEAM_CROSSING':
           if (h.seamPulse > 0 && e.intensity > 0.15) this.fire(h.seamPulse, e.intensity, 1);
           break;

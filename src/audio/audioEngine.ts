@@ -329,6 +329,7 @@ export class AudioEngine {
       case 'MAGNET_RELEASED': this.sweep(520, 160, 0.12, 0.08, 'triangle'); break;
       case 'MAGNETIC_CAPTURE': this.sweep(1400, 260, 0.16, 0.14, 'square'); break;
       case 'JUMP': this.sweep(260, 520, 0.1, 0.06, 'sine'); break;
+      case 'DOUBLE_JUMP': this.sweep(420, 1100, 0.16, 0.08, 'triangle'); this.sweep(840, 2200, 0.12, 0.03, 'sine'); break;
       case 'WATER_ENTRY': this.splash(e.intensity); break;
       case 'WATER_EXIT': this.splash(0.3); break;
     }
@@ -440,6 +441,24 @@ export class AudioEngine {
     const g = c.createGain(); g.gain.setValueAtTime(0.5 * intensity + 0.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
     n.connect(f).connect(g); this.send(g, 0.8);
     n.start(t, 0, 0.55);
+  }
+
+  /** Air whoosh as a rib/arch passes overhead (stereo-alternating). */
+  private whooshSide = 1;
+  whoosh(intensity: number) {
+    if (!this.ctx || intensity < 0.05) return;
+    const c = this.ctx;
+    const t = c.currentTime;
+    const n = c.createBufferSource(); n.buffer = this.noise; n.playbackRate.value = 1.2;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(2400, t); f.frequency.exponentialRampToValueAtTime(500, t + 0.22);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16 * intensity, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    let out: AudioNode = g;
+    if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = 0.4 * this.whooshSide; this.whooshSide *= -1; g.connect(p); out = p; }
+    n.connect(f).connect(g);
+    out.connect(this.dry);
+    n.start(t, Math.random() * 2, 0.3);
   }
 
   /** Short UI click */

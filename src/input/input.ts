@@ -30,7 +30,7 @@ export interface InputSettings {
 }
 
 export const DEFAULT_INPUT_SETTINGS: InputSettings = {
-  sensitivity: 1.3, deadzone: 1, maxTilt: 16, jumpThreshold: 16, magnetThreshold: 13, invertSteer: false, keepView: true,
+  sensitivity: 1.3, deadzone: 1, maxTilt: 16, jumpThreshold: 10, magnetThreshold: 11, invertSteer: false, keepView: true,
 };
 
 /** Current screen rotation in window.orientation semantics (90 = device turned counter-clockwise). */
@@ -170,11 +170,13 @@ export class InputManager {
     if (this.mode !== 'tilt') return;
     // Jump: backward flick (top toward player => pitch increases)
     const oldest = this.pitchHistory[0]?.[1] ?? dp;
-    if (this.jumpArmed && dp > this.settings.jumpThreshold && dp - oldest > this.settings.jumpThreshold * 0.6) {
+    // a flick: past the threshold AND moved at least half of it within 300 ms
+    if (this.jumpArmed && dp > this.settings.jumpThreshold && dp - oldest > this.settings.jumpThreshold * 0.5) {
       this.jumpQueued = true;
       this.jumpArmed = false;
     }
-    if (!this.jumpArmed && dp < this.settings.jumpThreshold * 0.4) this.jumpArmed = true;
+    // re-arm as soon as the device comes back most of the way, so a quick second flick double-jumps
+    if (!this.jumpArmed && dp < this.settings.jumpThreshold * 0.55) { this.jumpArmed = true; this.pitchHistory.length = 0; }
     // Magnet: forward tilt held (hysteresis)
     if (!this.magnetTilt && dp < -this.settings.magnetThreshold) this.magnetTilt = true;
     else if (this.magnetTilt && dp > -this.settings.magnetThreshold * 0.55) this.magnetTilt = false;

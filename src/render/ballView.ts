@@ -4,6 +4,7 @@ import {
 } from 'three';
 import type { BallPhysics } from '../physics/ball';
 import { ballMaps } from './textures';
+import { TractorBeam } from './beam';
 
 export const BEAM_COLORS: Record<string, number> = { cyan: 0x47e6ff, magenta: 0xff4fd8, gold: 0xffc84a, lime: 0x8dff5a };
 
@@ -19,6 +20,7 @@ export class BallView {
   private trail?: Line;
   private trailPts: Vector3[] = [];
   private beamColor = new Color(BEAM_COLORS.cyan);
+  private tether = new TractorBeam();
   private beamLevel = 0;
   private captureFlash = 0;
 
@@ -68,6 +70,8 @@ export class BallView {
 
     this.light = new PointLight(this.beamColor, 0, 9, 2);
     this.group.add(this.light);
+    this.group.add(this.tether.group);
+    this.radius = radius;
   }
 
   setSkin(skin: string) {
@@ -79,7 +83,8 @@ export class BallView {
     m.needsUpdate = true;
   }
 
-  setBeamColor(name: string) { this.beamColor.set(BEAM_COLORS[name] ?? BEAM_COLORS.cyan); }
+  private radius = 0.75;
+  setBeamColor(name: string) { this.beamColor.set(BEAM_COLORS[name] ?? BEAM_COLORS.cyan); this.tether.color.copy(this.beamColor); }
 
   setTrail(on: boolean, colorHex = 0x9fe8ff) {
     if (on && !this.trail) {
@@ -109,22 +114,13 @@ export class BallView {
     this.beamMat.uniforms.uLevel.value = lvl;
     (this.glow.material as ShaderMaterial).uniforms.uLevel.value = Math.min(1, lvl * 1.2);
     this.light.intensity = lvl * 18;
-    const show = lvl > 0.02 && b.magnetHasTarget;
-    this.beam.visible = show;
-    this.ring.visible = show;
-    if (show) {
-      const from = b.p, to = b.magnetTarget;
-      const dir = new Vector3().subVectors(to, from);
-      const len = Math.max(0.01, dir.length());
-      dir.multiplyScalar(1 / len);
-      this.beam.position.copy(from);
-      this.beam.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir);
-      const width = 0.18 + 0.22 * lvl;
-      this.beam.scale.set(width, len, width);
-      this.ring.position.copy(to).addScaledVector(dir, -0.04);
-      this.ring.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir.clone().negate());
-      const pulse = 1 + 0.15 * Math.sin(time * 20);
-      this.ring.scale.setScalar(pulse * (0.6 + lvl));
+    // The old straight cylinder is replaced by the curved tether
+    this.beam.visible = false;
+    this.ring.visible = false;
+    if (b.magnetHasTarget || lvl < 0.02) {
+      const n = new Vector3().subVectors(b.p, b.magnetTarget);
+      if (n.lengthSq() < 1e-6) n.copy(b.n); n.normalize();
+      this.tether.update(b.p, b.magnetTarget, n, b.v, b.magnetHasTarget ? Math.min(1, lvl) : 0, this.radius, time, dt);
     }
     if (this.trail) {
       this.trailPts.unshift(b.p.clone());

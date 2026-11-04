@@ -166,7 +166,7 @@ export const MATERIALS: Record<string, MaterialProfile> = {
       seamGain: 0, reverb: 0.15,
     },
     haptic: { rollTexture: 0.25, seamPulse: 0, impactScale: 0.85 },
-    visual: { surface: 'rubber', tint: 0x26272b, roughness: 0.85, metalness: 0, sky: sky(20, 0.2, -2, 200), fog: 0x0b0d18, fogDensity: 0.006, ground: 0x07080d, scenery: 'neon' },
+    visual: { surface: 'rubber', tint: 0x575b68, roughness: 0.8, metalness: 0, sky: sky(10, 1.2, 5, 200), fog: 0x3a2a5a, fogDensity: 0.0035, ground: 0x1c1d33, scenery: 'neon' },
   },
   sand: {
     id: 'sand', name: 'Sand',

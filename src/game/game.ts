@@ -7,6 +7,8 @@ import { buildWorld, World } from '../render/world';
 import { buildTrackGroup } from '../render/trackMesh';
 import { BallView } from '../render/ballView';
 import { ChaseCamera } from '../render/chaseCamera';
+import { SpeedEffects } from '../render/speedFx';
+import { RIB_SPACING } from '../render/trackMesh';
 import { SensoryBus, SensoryEvent } from '../core/events';
 import type { AudioEngine } from '../audio/audioEngine';
 import type { HapticEngine } from '../haptics/haptics';
@@ -45,6 +47,9 @@ export class Game {
   private trackGroup?: Group;
   private ballView?: BallView;
   readonly camera: ChaseCamera;
+  private post: SpeedEffects;
+  private lastRib = -1;
+  private blur = 0;
   run?: Run;
   track?: Track;
   material?: MaterialProfile;
@@ -59,20 +64,29 @@ export class Game {
   paused = false;
   cb: GameCallbacks = {};
   cosmetics: Cosmetics = { skin: 'steel', beam: 'cyan', trail: false };
+  /** Player setting 0..1 for the animated fractal gutter glow. */
+  fractalLevel = 0.6;
+  /** Player setting 0..1 for speed blur, vignette and camera shake. */
+  speedFx = 0.8;
   private frameTimes: number[] = [];
   fps = 60;
+  // Adaptive resolution: keep frame pacing smooth on high-DPI tablets
+  private dprCap = Math.min(devicePixelRatio, 2);
+  private dpr = Math.min(devicePixelRatio, 1.6);
+  private perfTimer = 0;
 
   constructor(private canvas: HTMLCanvasElement, private audio: AudioEngine, private haptics: HapticEngine, private input: InputManager) {
     const mobile = matchMedia('(pointer: coarse)').matches;
     this.quality = (new URLSearchParams(location.search).get('quality') as any) ?? (localStorage.getItem('gb.quality') as any) ?? 'high';
     this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 2 : 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.95;
     this.renderer.shadowMap.enabled = this.quality === 'high';
     this.renderer.shadowMap.type = PCFSoftShadowMap;
     this.camera = new ChaseCamera(innerWidth / innerHeight);
+    this.post = new SpeedEffects(this.renderer, this.scene, this.camera.cam);
     this.resize();
     addEventListener('resize', () => this.resize());
     this.bus.subscribe((st, ev) => this.onSensory(st, ev));
@@ -83,7 +97,9 @@ export class Game {
     this.quality = q;
     localStorage.setItem('gb.quality', q);
     this.renderer.shadowMap.enabled = q === 'high';
-    this.renderer.setPixelRatio(q === 'high' ? Math.min(devicePixelRatio, 2) : Math.min(devicePixelRatio, 1.25));
+    this.dprCap = q === 'high' ? Math.min(devicePixelRatio, 2) : Math.min(devicePixelRatio, 1.25);
+    this.dpr = Math.min(this.dpr, this.dprCap);
+    this.renderer.setPixelRatio(this.dpr);
     if (this.course) this.load(this.course, this.mode);
   }
 
@@ -93,6 +109,7 @@ export class Game {
     const w = st?.clientWidth || innerWidth, h = st?.clientHeight || innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.resize(w / h);
+    this.post?.setSize(w, h);
   }
 
   private disposeScene() {
@@ -114,9 +131,11 @@ export class Game {
     this.mode = mode;
     this.material = MATERIALS[course.materialId];
     this.track = new Track(course.layout());
+    this.lastRib = -1;
     this.world = buildWorld(this.scene, this.renderer, this.track, this.material, this.quality);
     this.trackGroup = buildTrackGroup(this.track, this.material, this.world.groundHeight);
     this.scene.add(this.trackGroup);
+    this.post.setScene(this.scene, this.camera.cam);
     this.run = new Run(this.track, this.material);
     this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
     this.ballView = new BallView(this.run.ball.tune.radius);
@@ -178,7 +197,9 @@ export class Game {
     if (this.mode === 'play') this.haptics.update(st, ev, this.dtLast);
     for (const e of ev) {
       if (e.type === 'MAGNETIC_CAPTURE') this.ballView?.flashCapture();
-      if ((e.type === 'COLLISION_IMPACT' || e.type === 'AIRBORNE_END') && e.intensity > 0.45) this.camera.shake = Math.max(this.camera.shake, e.intensity * 0.6);
+      if ((e.type === 'COLLISION_IMPACT' || e.type === 'AIRBORNE_END') && e.intensity > 0.3) { this.camera.shake = Math.max(this.camera.shake, e.intensity * 0.7 * this.speedFx); this.camera.punch(e.intensity * 6); }
+      if (e.type === 'JUMP') this.camera.punch(4);
+      if (e.type === 'DOUBLE_JUMP') this.camera.punch(8);
     }
   }
   private dtLast = 1 / 60;
@@ -191,6 +212,14 @@ export class Game {
     this.dtLast = dt;
     this.frameTimes.push(dt);
     if (this.frameTimes.length > 60) { this.frameTimes.shift(); this.fps = 1 / (this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length); }
+    if (!FIXED_DT) {
+      this.perfTimer += dt;
+      if (this.perfTimer > 2) {
+        this.perfTimer = 0;
+        const next = this.fps < 50 ? Math.max(1, this.dpr - 0.2) : this.fps > 58.5 ? Math.min(this.dprCap, this.dpr + 0.1) : this.dpr;
+        if (Math.abs(next - this.dpr) > 0.01) { this.dpr = next; this.renderer.setPixelRatio(this.dpr); this.resize(); }
+      }
+    }
     if (!this.run || !this.track || !this.ballView) return;
     this.time += dt;
     let input: BallInput;
@@ -209,14 +238,33 @@ export class Game {
     else this.audio.quiet();
     this.showHints(b.proj.s);
     this.ballView.update(b, dt, this.time);
+    const fx = this.trackGroup?.userData.fx;
+    if (fx) {
+      fx.uFxTime.value = this.time;
+      fx.uFxIntensity.value = this.fractalLevel * (this.trackGroup!.userData.fxStrength ?? 0.6);
+      fx.uFxSpeed.value += (Math.min(1, b.v.length() / 30) - fx.uFxSpeed.value) * Math.min(1, dt * 3);
+    }
+    this.camera.fx = this.speedFx;
     this.camera.update(b, this.track, dt);
+    // ribs overhead: whoosh as each one passes
+    const rib = Math.floor(b.proj.s / RIB_SPACING);
+    if (rib !== this.lastRib) {
+      if (this.lastRib >= 0 && this.mode !== 'attract' && !this.paused && !this.track.isTunnel(b.proj.s)) this.audio.whoosh(Math.min(1, b.v.length() / 30));
+      this.lastRib = rib;
+    }
     // Shadow camera follows the ball
     if (this.world) {
       const sun = this.world.sun;
       sun.target.position.copy(b.p);
       sun.position.copy(b.p).addScaledVector(this.world.sunDir, 90);
     }
-    this.renderer.render(this.scene, this.camera.cam);
+    const spd = b.v.length();
+    this.blur += (Math.max(0, Math.min(1, (spd - 12) / 22)) - this.blur) * Math.min(1, dt * 3);
+    if (this.quality === 'high' && this.speedFx > 0.01) {
+      this.post.render(this.blur * this.speedFx, (0.18 + 0.32 * this.blur) * this.speedFx, b.magnetActive ? 1 : 0);
+    } else {
+      this.renderer.render(this.scene, this.camera.cam);
+    }
     if (this.mode === 'preview' && !this.paused) {
       this.previewTimer -= dt;
       if (this.previewTimer <= 0) { this.previewTimer = 1e9; this.cb.onPreviewEnd?.(); }

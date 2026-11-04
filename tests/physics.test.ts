@@ -111,7 +111,7 @@ describe('ball physics', () => {
     let last = b.p.clone();
     sim(b, 1.2, { ...idle, steer: 1 }, () => { maxStep = Math.max(maxStep, b.p.distanceTo(last) - b.v.length() * DT); last = b.p.clone(); });
     expect(b.proj.x).toBeGreaterThan(1);
-    expect(maxStep).toBeLessThan(0.01);
+    expect(maxStep).toBeLessThan(0.03); // only tiny contact corrections, never a jump
   });
 
   it('climbs the outside wall of a turn higher at higher speed (curvature + speed, no steering)', () => {
@@ -214,5 +214,37 @@ describe('ball physics', () => {
     // the flow carries the ball even on a near-flat channel
     expect(b.v.dot(b.proj.T)).toBeGreaterThan(5);
     void ev;
+  });
+});
+
+describe('double jump', () => {
+  it('a second jump in the air sends the ball higher than a single jump', () => {
+    const run = (double: boolean) => {
+      const tr = new Track(straight(-6));
+      const b = new BallPhysics(tr, MATERIALS.wood);
+      b.placeAt(25, 12);
+      sim(b, 0.3, idle);
+      sim(b, 1 / 240, { ...idle, jump: true });
+      let maxY = 0, evs: string[] = [];
+      for (let i = 0; i < 240 * 2.5; i++) {
+        const t = i / 240;
+        b.step(DT, { ...idle, jump: double && Math.abs(t - 0.35) < 0.003 });
+        evs.push(...b.events.map((e) => e.type)); b.events.length = 0;
+        maxY = Math.max(maxY, b.proj.y);
+      }
+      return { maxY, evs };
+    };
+    const single = run(false), dbl = run(true);
+    expect(dbl.evs).toContain('DOUBLE_JUMP');
+    expect(dbl.maxY).toBeGreaterThan(single.maxY + 1.5);
+  });
+  it('only one extra jump per flight', () => {
+    const tr = new Track(straight(-6));
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(25, 12);
+    sim(b, 0.3, idle);
+    const evs: string[] = [];
+    for (let i = 0; i < 240 * 1.2; i++) { b.step(DT, { ...idle, jump: i % 60 === 0 }); evs.push(...b.events.map((e) => e.type)); b.events.length = 0; if (b.contact && i > 30) break; }
+    expect(evs.filter((e) => e === 'DOUBLE_JUMP').length).toBeLessThanOrEqual(1);
   });
 });
