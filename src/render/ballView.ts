@@ -113,7 +113,7 @@ export class BallView {
     this.beamMat.uniforms.uTime.value = time;
     this.beamMat.uniforms.uLevel.value = lvl;
     (this.glow.material as ShaderMaterial).uniforms.uLevel.value = Math.min(1, lvl * 1.2);
-    this.light.intensity = lvl * 18;
+    this.light.intensity = lvl * 28;
     // The old straight cylinder is replaced by the curved tether
     this.beam.visible = false;
     this.ring.visible = false;

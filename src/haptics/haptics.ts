@@ -120,8 +120,8 @@ export class HapticEngine {
         case 'AIRBORNE_END':
           if (e.intensity > 0.1) this.fire(10 + 24 * e.intensity * h.impactScale, e.intensity, 3);
           break;
-        case 'MAGNETIC_CAPTURE': this.fire(26, 0.9, 3); break;
-        case 'MAGNET_ENGAGED': this.fire(14, 0.5, 2); break;
+        case 'MAGNETIC_CAPTURE': this.fire(40, 1, 3); break;
+        case 'MAGNET_ENGAGED': this.fire(22, 0.8, 2); break;
         case 'JUMP': this.fire(10, 0.5, 2); break;
         case 'PUSH': this.fire(12 + 10 * e.intensity, 0.6, 2); break;
         case 'DOUBLE_JUMP': this.fire(16, 0.7, 2); break;
@@ -143,7 +143,7 @@ export class HapticEngine {
     }
     // Magnet hum: light periodic texture
     if (st.magnetActive && st.magnetForce > 0.3) {
-      if (performance.now() - this.lastPulseAt > 160) this.fire(6, st.magnetForce * 0.6, 0);
+      if (performance.now() - this.lastPulseAt > 110) this.fire(8, Math.min(1, st.magnetForce * 0.9), 0);
     }
   }
 

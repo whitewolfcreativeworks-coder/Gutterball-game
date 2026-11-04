@@ -292,7 +292,7 @@ export class AudioEngine {
     this.wind!.filt.frequency.setTargetAtTime(250 + sp * 35, t, 0.08);
     // --- magnet hum ---
     // magnet hum; when boosting on the track it becomes a rising thrust tone tied to speed
-    const mag = st.magnetActive ? (st.boosting ? 0.17 : 0.06 + 0.12 * st.magnetForce) : 0;
+    const mag = st.magnetActive ? (st.boosting ? 0.22 : 0.12 + 0.16 * st.magnetForce) : 0;
     this.hum!.gain.gain.setTargetAtTime(mag, t, 0.04);
     this.hum!.filt.frequency.setTargetAtTime(st.boosting ? 900 + sp * 45 : 350 + st.magnetForce * 1200, t, 0.05);
     this.hum!.o1.frequency.setTargetAtTime(st.boosting ? 60 + sp * 2.2 : 52 + st.magnetForce * 14, t, 0.05);
@@ -326,9 +326,9 @@ export class AudioEngine {
         if (now - this.lastSeam > 0.025) { this.lastSeam = now; this.seam(e.intensity); }
         break;
       }
-      case 'MAGNET_ENGAGED': this.sweep(180, 820, 0.22, 0.12, 'sine'); break;
+      case 'MAGNET_ENGAGED': this.sweep(120, 900, 0.28, 0.2, 'sawtooth'); this.sweep(60, 240, 0.25, 0.16, 'sine'); break;
       case 'MAGNET_RELEASED': this.sweep(520, 160, 0.12, 0.08, 'triangle'); break;
-      case 'MAGNETIC_CAPTURE': this.sweep(1400, 260, 0.16, 0.14, 'square'); break;
+      case 'MAGNETIC_CAPTURE': this.sweep(1400, 260, 0.16, 0.18, 'square'); this.sweep(110, 40, 0.3, 0.24, 'sine'); break;
       case 'JUMP': this.sweep(260, 520, 0.1, 0.06, 'sine'); break;
       case 'PUSH': this.impact(0.25 + 0.3 * e.intensity, 0.6); this.whoosh(0.5 + 0.5 * e.intensity); break;
       case 'DOUBLE_JUMP': this.sweep(420, 1100, 0.16, 0.08, 'triangle'); this.sweep(840, 2200, 0.12, 0.03, 'sine'); break;

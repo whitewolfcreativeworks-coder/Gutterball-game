@@ -269,3 +269,58 @@ describe('magnet booster', () => {
     expect(b.magnetEnergy).toBeLessThan(0.7);
   });
 });
+
+describe('magnet clamp', () => {
+  // A full tube; put the ball on a surface point at angle (deg) around the pipe, moving slowly forward
+  const tube = () => new Track({ id: 't', name: 't', segments: [{ len: 20, pitch: -3, tube: true }, { len: 300, pitch: -3, tube: true }], obstacles: [], hints: [] });
+  const onSurface = (b: BallPhysics, tr: Track, deg: number, speed: number) => {
+    b.placeAt(60, speed);
+    const pr = b.proj, H = tr.profile.H, W = tr.profile.a + tr.profile.rc, r = b.tune.radius;
+    const a = (deg - 90) * Math.PI / 180; // 90 = right wall at rim height, 180 = roof
+    const x = (W - r) * Math.cos(a), y = H + (W - r) * Math.sin(a);
+    b.p.copy(pr.P).addScaledVector(pr.R, x).addScaledVector(pr.U, y);
+    b.n.set(0, 0, 0).addScaledVector(pr.R, -Math.cos(a)).addScaledVector(pr.U, -Math.sin(a)).normalize();
+    b.w.copy(b.n).cross(b.v).multiplyScalar(1 / r);
+    b.sinceContact = 0; b.contact = true; b.airborne = false;
+    b.proj.project(b.p.x, b.p.y, b.p.z);
+  };
+  const hold = (magnet: boolean, deg: number) => {
+    const tr = tube();
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    onSurface(b, tr, deg, 6);
+    let minH = 1e9, attached = 0;
+    for (let i = 0; i < 240 * 1.5; i++) {
+      b.step(1 / 240, { steer: 0, magnet, jump: false, driveLevel: 0 }); b.events.length = 0;
+      minH = Math.min(minH, b.proj.y);
+      if (b.contact) attached++;
+    }
+    return { minH, attachedFrac: attached / 360 };
+  };
+  it('holds you on the roof of a pipe at low speed (and you fall without it)', () => {
+    const on = hold(true, 180), off = hold(false, 180);
+    expect(on.minH).toBeGreaterThan(10);
+    expect(on.attachedFrac).toBeGreaterThan(0.95);
+    expect(off.minH).toBeLessThan(5);
+  });
+  it('holds you high on a vertical wall', () => {
+    const on = hold(true, 95);
+    expect(on.minH).toBeGreaterThan(5.5);
+    expect(on.attachedFrac).toBeGreaterThan(0.95);
+  });
+  it('yanks you out of the air onto the gutter fast, and lands without bouncing', () => {
+    const tr = new Track(straight(-6));
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(80, 20);
+    b.p.addScaledVector(b.proj.U, 7); b.sinceContact = 1; b.contact = false; b.airborne = true;
+    let t = 0, landed = -1, bounced = false;
+    sim(b, 2, { steer: 0, magnet: true, jump: false, driveLevel: 0 }, (tt) => {
+      t = tt;
+      if (landed < 0 && b.contact) landed = tt;
+      if (landed >= 0 && tt > landed + 0.05 && !b.contact) bounced = true;
+    });
+    void t;
+    expect(landed).toBeGreaterThan(0);
+    expect(landed).toBeLessThan(0.6);   // 7 m in well under a second (free fall takes ~1.2 s)
+    expect(bounced).toBe(false);
+  });
+});

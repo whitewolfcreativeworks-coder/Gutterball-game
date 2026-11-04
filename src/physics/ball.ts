@@ -71,12 +71,12 @@ export const DEFAULT_TUNING: BallTuning = {
   jumpSpeed: 7.2,
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
-  magnetPressG: 1.7,
+  magnetPressG: 4.2,
   magnetBoostAccel: 14,
   magnetBoostCap: 62,
-  magnetAccel: 26,
-  magnetRange: 20,
-  magnetDrain: 0.3,
+  magnetAccel: 62,
+  magnetRange: 26,
+  magnetDrain: 0.26,
   magnetRegen: 0.16,
   magnetMinRestart: 0.15,
 };
@@ -85,6 +85,8 @@ const tmpA = new Vector3();
 const tmpB = new Vector3();
 const tmpC = new Vector3();
 const jTmp = new Vector3();
+const tmpQv = new Vector3();
+const tmpQv2 = new Vector3();
 const jA = new Vector3();
 const jB = new Vector3();
 const tmpQ = new Quaternion();
@@ -370,7 +372,7 @@ export class BallPhysics {
       const vn = this.v.dot(nn);
       if (vn < 0) {
         if (-vn > impactSpeed) { impactSpeed = -vn; impactSource = src; }
-        const e = -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0;
+        const e = this.magnetActive && src === 'track' ? 0 : -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0; // magnet: lands and sticks, no bounce
         const Jn = -(1 + e) * m * vn;
         this.v.addScaledVector(nn, Jn / m);
         normalImpulseTotal += Jn;
@@ -512,8 +514,9 @@ export class BallPhysics {
       const noise = 0.5 + 0.5 * Math.sin(s * 0.23) * Math.sin(s * 0.071 + 1.3);
       return 1 - gv * noise;
     }
-    if (mat.medium === 'water') return 1 - 0.5 * this.submersion;
-    return 1;
+    const clamp = this.magnetActive && this.sinceContact <= 0.05 ? 1.8 : 1; // the field clamps you to the surface
+    if (mat.medium === 'water') return (1 - 0.5 * this.submersion) * clamp;
+    return clamp;
   }
 
   private rollingResistance(dt: number) {
@@ -577,6 +580,7 @@ export class BallPhysics {
     if (this.magnetEngaged && this.magnetEnergy <= 0) this.magnetEngaged = false;
     const active = this.magnetEngaged;
     if (!active) this.magnetRamp = 0;
+    const engagedNow = active && !this.magnetActive;
     if (active !== this.magnetActive) {
       this.emit(active ? 'MAGNET_ENGAGED' : 'MAGNET_RELEASED', 1);
       this.magnetActive = active;
@@ -624,6 +628,19 @@ export class BallPhysics {
         if (grounded) {
           // press into surface: raises normal load -> more traction, holds inverted
           acc.addScaledVector(nn, -tu.magnetPressG * tu.gravity);
+          // ...and holds you where you are on a wall: it cancels most of the pull of
+          // gravity *around* the gutter (a rolling ball would otherwise just roll
+          // down the wall), but never the downhill pull along the course.
+          {
+            const g = tmpQv.set(0, -tu.gravity, 0);
+            g.addScaledVector(nn, -g.dot(nn));
+            const fwd0 = tmpQv2.copy(this.proj.T).addScaledVector(nn, -this.proj.T.dot(nn));
+            if (fwd0.lengthSq() > 1e-6) { fwd0.normalize(); g.addScaledVector(fwd0, -g.dot(fwd0)); }
+            acc.addScaledVector(g, -0.9);
+          }
+          // kill any small hop off the surface: you stay locked on
+          const off = this.v.dot(nn);
+          if (off > 0) this.v.addScaledVector(nn, -off * Math.min(1, dt * 25));
           // BOOSTER: on the track the field also drives the ball forward along the course
           const fwd = new Vector3().copy(this.proj.T).addScaledVector(nn, -this.proj.T.dot(nn));
           if (fwd.lengthSq() > 1e-6) {
@@ -635,20 +652,22 @@ export class BallPhysics {
             this.w.addScaledVector(new Vector3().copy(nn).cross(fwd), (tu.magnetBoostAccel * fade * dt) / this.tune.radius);
             this.boosting = fade > 0.05;
           }
-          this.magnetForce = 0.55;
+          this.magnetForce = 0.85;
         } else {
           this.wasMagnetAirborne = true;
           const fall = 1 - smoothstep(tu.magnetRange * 0.55, tu.magnetRange, d);
-          this.magnetRamp = Math.min(1, this.magnetRamp + dt / 0.3);
-          const a = tu.magnetAccel * fall * (0.35 + 0.65 * this.magnetRamp);
+          // LUNGE: the instant the beam locks on you get yanked toward the surface
+          if (engagedNow) this.v.addScaledVector(nn, -Math.min(5, 2 + d * 0.25));
+          this.magnetRamp = Math.min(1, this.magnetRamp + dt / 0.1);
+          const a = tu.magnetAccel * fall * (0.5 + 0.5 * this.magnetRamp);
           acc.addScaledVector(nn, -a);
           // damp velocity directed away from the surface (prevents orbiting)
           const away = this.v.dot(nn);
-          if (away > 0) acc.addScaledVector(nn, -away * 2.2 * fall);
-          // approach limiter: firm but not brutal captures (max closing speed shrinks near the surface)
+          if (away > 0) acc.addScaledVector(nn, -away * 4 * fall);
+          // approach limiter: a hard, fast pull that still lands cleanly
           const closing = -away;
-          const vmax = 4 + 2.2 * Math.max(0, d - this.tune.radius);
-          if (closing > vmax) acc.addScaledVector(nn, Math.min(90, (closing - vmax) * 14));
+          const vmax = 9 + 4 * Math.max(0, d - this.tune.radius);
+          if (closing > vmax) acc.addScaledVector(nn, Math.min(140, (closing - vmax) * 14));
           this.magnetForce = Math.min(1, a / tu.magnetAccel);
         }
       }

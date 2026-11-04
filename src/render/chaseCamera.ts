@@ -32,6 +32,7 @@ export class ChaseCamera {
   private vertG = 0;     // smoothed normal-load excess in g
   private dip = 0;       // current vertical camera offset
   private fovPunch = 0;
+  private magPull = 0;
   private t = 0;
   shake = 0;
   fx = 0.8;              // speed-effects strength 0..1
@@ -144,7 +145,10 @@ export class ChaseCamera {
 
     // --- field of view widens with speed; short punches on jumps/landings ---
     this.fovPunch = Math.max(0, this.fovPunch - dt * 18);
-    const fov = this.baseFov + (Math.min(18, Math.max(0, speed - 10) * 0.75) + this.fovPunch) * (0.4 + 0.6 * fx);
+    // tractor beam yanking you through the air: the view narrows toward the surface (dolly-zoom pull)
+    const pullT = b.magnetActive && !b.contact && b.magnetHasTarget ? 7 * b.magnetForce : 0;
+    this.magPull += (pullT - this.magPull) * Math.min(1, dt * 8);
+    const fov = this.baseFov + (Math.min(18, Math.max(0, speed - 10) * 0.75) + this.fovPunch - this.magPull) * (0.4 + 0.6 * fx);
     if (Math.abs(this.cam.fov - fov) > 0.05) {
       this.cam.fov += (fov - this.cam.fov) * Math.min(1, dt * 4);
       this.cam.updateProjectionMatrix();
