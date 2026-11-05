@@ -9,7 +9,7 @@ struct GutterballWatchApp: App {
 
 /// The menu: play, your best time, and two settings for the wrist controls.
 struct RootView: View {
-    @State private var playing = false
+    @State private var playing = ProcessInfo.processInfo.arguments.contains("-autoplay")
     @AppStorage("best") private var best: Double = 0
     @AppStorage("invertSteer") private var invertSteer = false
     @AppStorage("invertTilt") private var invertTilt = false

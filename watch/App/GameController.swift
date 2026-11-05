@@ -38,6 +38,10 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
     private var camPos = Vec3.zero, camLook = Vec3.zero, camUp = Vec3.up
     private var camInit = false
     private var lastNotch = 0
+    /// Launched with -autoplay (simulator demos and screenshots): pulls, fires and drives itself.
+    let autoplay = ProcessInfo.processInfo.arguments.contains("-autoplay")
+    private var clock = 0.0
+    private let pilot = Autopilot()
 
     override init() {
         let track = WatchCourse.build()
@@ -90,9 +94,16 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         let dt = lastTime == 0 ? 1.0 / 60 : min(0.05, time - lastTime)
         lastTime = time
+        clock += dt
         lock.lock()
+        if autoplay && run.phase == .plunger {
+            // demo: wind the plunger back, then let it go
+            if clock > 0.8 { run.setPull(min(0.85, (clock - 0.8) * 0.8)) }
+            if clock > 2.2 { run.fire() }
+        }
         let wrist = motion.read()
         var input = BallInput(steer: wrist.steer, jump: wrist.jump || touchJump, magnet: wrist.magnet || touchMagnet)
+        if autoplay { input = pilot.decide(run.ball) }
         if run.phase != .running { input = BallInput() }
         touchJump = false
         run.update(dt, input)

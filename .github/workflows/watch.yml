@@ -9,14 +9,16 @@ on:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Xcode version
         run: xcodebuild -version && swift --version
       - name: Test the physics core
         working-directory: watch/GutterCore
-        run: swift test 2>&1 | tail -60
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tail -60
       - name: Generate the Xcode project
         working-directory: watch
         run: brew install xcodegen && xcodegen generate
@@ -27,3 +29,26 @@ jobs:
           xcodebuild -project Gutterball.xcodeproj -scheme GutterballWatch \
             -destination 'generic/platform=watchOS Simulator' \
             -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error|warning: unre|BUILD" | head -80
+      - name: Run it on an Apple Watch simulator and take screenshots
+        working-directory: watch
+        run: |
+          set -x
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'watchOS' in k for x in v if 'Ultra' in x['name'] or 'Series' in x['name']))")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find build/Build/Products -name "Gutterball.app" -maxdepth 3 | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" com.whitewolfcreativeworks.gutterball.watchkitapp -autoplay
+          mkdir -p shots
+          for t in 2 6 12 20 30 42 56; do
+            sleep $([ $t = 2 ] && echo 2 || echo $((t - prev)))
+            prev=$t
+            xcrun simctl io "$UDID" screenshot "shots/t$(printf %02d $t).png"
+          done
+          ls -la shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: watch-screenshots
+          path: watch/shots
+          if-no-files-found: ignore
