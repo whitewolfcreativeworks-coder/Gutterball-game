@@ -90,6 +90,25 @@ final class GutterCoreTests: XCTestCase {
         XCTAssertTrue(back)
     }
 
+    func testTubesKeepYouMoving() {
+        for start in [500.0, 1250.0] {
+            let run = Run(track: WatchCourse.build())
+            run.setPull(0.8); run.fire()
+            run.ball.placeAt(s: start, speed: 26)
+            var log = "start \(start):"
+            var minV = 1e9
+            for k in 0..<(60 * 6) {
+                run.update(1.0 / 60, Autopilot().decide(run.ball))
+                run.events.removeAll()
+                let b = run.ball
+                if k % 30 == 0 { log += String(format: " [s=%.0f v=%.1f x=%.1f y=%.1f tk=%.2f c=%d]", b.proj.s, b.v.length, b.proj.x, b.proj.y, run.track.tubeAt(b.proj.s), b.contact ? 1 : 0) }
+                if k > 30 { minV = min(minV, b.v.length) }
+            }
+            print(log)
+            XCTAssertGreaterThan(minV, 15, log)
+        }
+    }
+
     func testTubesAreReallyClosedPipes() {
         let t = WatchCourse.build()
         let closed = (0..<t.n).filter { t.tubeK[$0] > 0.99 }.count
