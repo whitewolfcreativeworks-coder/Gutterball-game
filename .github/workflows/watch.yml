@@ -46,6 +46,13 @@ jobs:
             xcrun simctl io "$UDID" screenshot "shots/t$(printf %02d $t).png"
           done
           ls -la shots
+          # print each screenshot (shrunk) into the log as base64, so it can be read back without artifact storage
+          set +x
+          for f in shots/*.png; do
+            sips -Z 360 "$f" --out "$f.small.png" >/dev/null
+            b=$(basename "$f" .png)
+            base64 -i "$f.small.png" | fold -w 1000 | sed "s/^/SHOT $b /"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
