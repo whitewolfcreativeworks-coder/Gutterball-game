@@ -142,6 +142,8 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
 
     private func finished() {
         let t = run.finishTime
+        // demo runs that skipped part of the course never count as a best time
+        if autoplay && ProcessInfo.processInfo.arguments.contains("-at") { return }
         DispatchQueue.main.async {
             let best = UserDefaults.standard.double(forKey: "best")
             let isBest = best == 0 || t < best
