@@ -142,3 +142,29 @@ Every race starts with a pinball-style plunger built into the start of the gutte
 - **Camera:** behind the knob, and it tightens as the spring winds. The chase camera carries on from that view instead of jumping.
 - **Run clock:** starts at the launch.
 - **Opting out:** can be turned off in Settings, which brings back the plain swipe-up launch.
+
+## The safety net
+
+A wide, soft, glowing net hangs under the course: 48 m across and up to 10 m below the floor.
+- **Fitted to the ground:** it is never below the terrain and can sit as close as 1.4 m under the floor. A 1-2-1 smoothing pass along the course keeps it free of steps.
+- **Where there's no net:**
+  - in loops, rolls and other steep or inverted sections
+  - in tight turns (radius under 36 m)
+  - wherever any gutter passes through the space under the course (checked with a spatial hash)
+  - on stretches shorter than 40 m
+- **How it works:**
+  - it lives in the gutter's own local frame (`Track.netSurface`), so it follows every bend
+  - it is a thin sheet in the collision field
+  - while you're in it, it soaks up bounce and sideways roll but keeps your forward speed
+- **Getting back:** 0.6 s after the catch, the tractor beam carries the ball along a guided spline in course coordinates. The path goes out beside the gutter, up over the rim, and down into the middle about one second ahead. The ball is set down at the forward speed it arrived with.
+- **Run rules:** a ball in the net, or on the beam's path, is never counted as a fall.
+
+## Tube themes
+
+Now and then a tube puts on a show (`src/render/tubeThemes.ts`):
+- **Lasers:** rings of sweeping beams.
+- **Fireworks:** bursts ahead of you, with pops.
+- **Haunted:** flickering ghost, eyes, skull, bat and BOO holograms.
+- **Pinball:** JACKPOT, 1000, EXTRA BALL and similar holograms, with chimes.
+
+At most three tubes per course get a theme (about one in three tubes, 90 m or longer), picked deterministically and varied by world. The plain fractal tubes stay the main event. All the art is drawn in code.

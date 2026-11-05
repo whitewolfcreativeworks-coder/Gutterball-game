@@ -1,8 +1,8 @@
 import {
   BoxGeometry, BackSide, Object3D, ShaderMaterial, UniformsLib, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
-  Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry, AdditiveBlending, EdgesGeometry, LineSegments, LineBasicMaterial,
+  Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry, AdditiveBlending, EdgesGeometry, LineSegments, LineBasicMaterial, RepeatWrapping,
 } from 'three';
-import { TrackProjector, type Track } from '../track/track';
+import { TrackProjector, NET, type Track } from '../track/track';
 import { profileRing, halfWidth } from '../track/profile';
 import type { MaterialProfile } from '../physics/materials';
 import { SKY_THEMES } from './sky';
@@ -223,6 +223,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   // ---- Obstacles ----
   g.add(buildObstacles(track, mat));
   if (track.pads.length) g.add(buildPads(track));
+  { const net = buildNet(track, mat); if (net) g.add(net); }
   // ---- Chain-lift strips ----
   const chain = buildLiftChains(track);
   if (chain) { g.add(chain); g.userData.chain = chain.material; }
@@ -637,6 +638,48 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
   g.userData.movers = movers;
   g.userData.holo = { meshes: all, solid, holo, holoUsed, holoEdge };
   return g;
+}
+
+/**
+ * The safety net under the course: a see-through glowing mesh in the world's
+ * colour, so you can see it's there to catch you.
+ */
+let netTex: CanvasTexture | null = null;
+function buildNet(track: Track, mat: MaterialProfile): Mesh | null {
+  if (!netTex) {
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
+    const c = cv.getContext('2d')!;
+    c.strokeStyle = '#fff'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(64, 64); c.moveTo(64, 0); c.lineTo(0, 64); c.stroke(); // diamond mesh
+    c.fillStyle = '#fff'; for (const [x, y] of [[0, 0], [64, 0], [0, 64], [64, 64], [32, 32]]) { c.beginPath(); c.arc(x, y, 4, 0, 7); c.fill(); }
+    netTex = new CanvasTexture(cv); netTex.wrapS = netTex.wrapT = RepeatWrapping;
+  }
+  const theme = FRACTAL_THEMES[mat.id] ?? FRACTAL_THEMES.wood;
+  const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+  const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+  const XS: number[] = []; for (let k = 0; k <= 16; k++) XS.push(-NET.half + (2 * NET.half * k) / 16);
+  const step = 4;
+  let prevRow = -1;
+  for (let i = 0; i < track.n; i += step) {
+    if (!track.netOn[i]) { prevRow = -1; continue; }
+    const s = i * track.ds;
+    track.frameAtS(s, P, T, U, R);
+    const row = pos.length / 3;
+    for (const x of XS) {
+      const q = P.clone().addScaledVector(R, x).addScaledVector(U, track.netSurface(s, x));
+      pos.push(q.x, q.y, q.z); uv.push(x / 2.2, s / 2.2);
+    }
+    if (prevRow >= 0) for (let k = 0; k < XS.length - 1; k++) { const a = prevRow + k, b = row + k; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    prevRow = row;
+  }
+  if (!idx.length) return null;
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  geo.setIndex(idx);
+  const m = new Mesh(geo, new MeshBasicMaterial({ map: netTex, color: new Color(theme.a).lerp(new Color(0xffffff), 0.35), transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
+  m.name = 'safetyNet';
+  return m;
 }
 
 /**

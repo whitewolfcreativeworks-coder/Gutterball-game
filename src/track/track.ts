@@ -74,6 +74,16 @@ export interface TriggerPad {
   obs: number[];      // indices of the obstacles it turns into holograms
 }
 
+/**
+ * THE SAFETY NET: a wide, shallow, glowing net strung under the course. Fall
+ * off the gutter and you land in it; a tractor beam then lifts you back up
+ * over the rim into the gutter and the run carries on. It sits NET_DEPTH
+ * below the floor (closer above low ground), wherever the course runs
+ * fairly level and open below (not in loops, rolls, tight spirals, or where
+ * another part of the course passes underneath).
+ */
+export const NET = { half: 24, depth: 10, curve: 0.005, lip: 2.5 };
+
 export interface HintSpec { at?: string; s: number; text: string; }
 
 export interface CourseLayout {
@@ -165,6 +175,9 @@ export class Track {
   readonly padHit: Uint8Array;
   readonly ghost: Uint8Array;
   readonly holoUsed: Uint8Array;
+  /** Safety net: 1 where there is one; its height (local y, negative) under the floor. */
+  readonly netOn: Uint8Array;
+  readonly netY: Float32Array;
   readonly hints: HintSpec[];
   readonly checkpoints: number[];
   readonly segmentStarts: { s: number; label?: string }[] = [];
@@ -237,6 +250,9 @@ export class Track {
       ...o, s: base(o.at) + o.s, y: o.y ?? 0, kind: o.kind ?? 'block',
       move: o.move ?? { amp: 0.35, period: 9 + (k % 5) * 1.3, phase: k * 1.7 },
     }));
+    this.netOn = new Uint8Array(this.n);
+    this.netY = new Float32Array(this.n).fill(-NET.depth);
+    this.placeNet([]);
     this.ghost = new Uint8Array(this.obstacles.length);
     this.holoUsed = new Uint8Array(this.obstacles.length);
     this.placePads();
@@ -296,6 +312,91 @@ export class Track {
       if (at < 0) continue;
       this.pads.push({ s: at, side, y, len, tall, obs: g });
     }
+  }
+
+  /**
+   * Where the safety net goes. `others` are the other gutters of the course:
+   * the net is left out wherever any gutter (this one elsewhere, or another)
+   * passes through the space under the course.
+   */
+  placeNet(others: Track[]) {
+    const n = this.n, ds = this.ds;
+    const ok = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const k = i * 3;
+      if (this.U[k + 1] < 0.85) continue;
+      // tight turns: the space beside the gutter would fold over itself
+      const j0 = Math.max(0, i - 8), j1 = Math.min(n - 1, i + 8);
+      const dTx = this.T[j1 * 3] - this.T[j0 * 3], dTz = this.T[j1 * 3 + 2] - this.T[j0 * 3 + 2], dTy = this.T[j1 * 3 + 1] - this.T[j0 * 3 + 1];
+      const kappa = Math.hypot(dTx, dTy, dTz) / ((j1 - j0) * ds || 1);
+      if (kappa > 1 / (NET.half + 12)) continue;
+      ok[i] = 1;
+    }
+    // anything passing through the net's space? (a spatial hash of every gutter, every 3 m)
+    const cell = 20, grid = new Map<string, { t: Track; i: number }[]>();
+    const add = (t: Track) => {
+      for (let i = 0; i < t.n; i += 6) {
+        const key = `${Math.floor(t.P[i * 3] / cell)},${Math.floor(t.P[i * 3 + 2] / cell)}`;
+        let l = grid.get(key); if (!l) grid.set(key, (l = [])); l.push({ t, i });
+      }
+    };
+    add(this); for (const o of others) add(o);
+    const reach = NET.half + 6;
+    for (let i = 0; i < n; i += 4) {
+      if (!ok[i]) continue;
+      const k = i * 3;
+      const px = this.P[k], py = this.P[k + 1], pz = this.P[k + 2];
+      const cx = Math.floor(px / cell), cz = Math.floor(pz / cell);
+      let hit = false;
+      for (let a = -2; a <= 2 && !hit; a++) for (let b = -2; b <= 2 && !hit; b++) {
+        for (const q of grid.get(`${cx + a},${cz + b}`) ?? []) {
+          if (q.t === this && Math.abs(q.i - i) * ds < 60) continue;
+          const qk = q.i * 3;
+          const dx = q.t.P[qk] - px, dy = q.t.P[qk + 1] - py, dz = q.t.P[qk + 2] - pz;
+          const al = dx * this.T[k] + dy * this.T[k + 1] + dz * this.T[k + 2];
+          const lx = dx * this.R[k] + dy * this.R[k + 1] + dz * this.R[k + 2];
+          const ly = dx * this.U[k] + dy * this.U[k + 1] + dz * this.U[k + 2];
+          if (Math.abs(al) < 14 && Math.abs(lx) < reach && ly < 3 && ly > this.netY[i] - 8) { hit = true; break; }
+        }
+      }
+      if (hit) for (let j = Math.max(0, i - 24); j < Math.min(n, i + 24); j++) ok[j] = 0;
+    }
+    // only keep runs of 40 m or more, pulled in 6 m at each end
+    this.netOn.fill(0);
+    let st = -1;
+    for (let i = 0; i <= n; i++) {
+      const v = i < n && ok[i] === 1;
+      if (v && st < 0) st = i;
+      if (!v && st >= 0) {
+        const a = st + Math.round(6 / ds), b = i - 1 - Math.round(6 / ds);
+        if ((b - a) * ds >= 40) for (let j = a; j <= b; j++) this.netOn[j] = 1;
+        st = -1;
+      }
+    }
+  }
+  /** Set the net's height under the floor from the ground below (keeps it above ground). */
+  fitNetToGround(groundHeight: (x: number, z: number) => number) {
+    for (let i = 0; i < this.n; i++) {
+      const k = i * 3;
+      const clear = this.P[k + 1] - groundHeight(this.P[k], this.P[k + 2]);
+      this.netY[i] = -Math.min(NET.depth, Math.max(1.4, clear - 0.8));
+    }
+    // smooth it along the course (a step would be a wall to a rolling ball)
+    const tmp = Float32Array.from(this.netY);
+    for (let pass = 0; pass < 3; pass++) for (let i = 1; i < this.n - 1; i++) tmp[i] = (tmp[i - 1] + 2 * tmp[i] + tmp[i + 1]) / 4;
+    for (let i = 0; i < this.n; i++) this.netY[i] = Math.max(this.netY[i], tmp[i]);
+  }
+  netAt(s: number) { return this.netOn[this.idx(s)] === 1; }
+  netYAt(s: number) {
+    const f = Math.max(0, Math.min(this.n - 1.001, s / this.ds));
+    const i = Math.floor(f), u = f - i;
+    return this.netY[i] + (this.netY[i + 1] - this.netY[i]) * u;
+  }
+  /** Height of the net surface across the course at lateral x (local y). */
+  netSurface(s: number, x: number) {
+    const ax = Math.min(Math.abs(x), NET.half);
+    const edge = Math.max(0, ax - (NET.half - 3)) / 3;
+    return this.netYAt(s) + NET.curve * ax * ax + NET.lip * edge * edge;
   }
 
   /** Back to solid obstacles and unlit pads (a new run). */
@@ -587,6 +688,17 @@ export class Track {
     if (!this.layout.openStart && s < 0.5) d = Math.min(d, Math.max(s - 0.5, -s - 2, Math.abs(x) - W0, y - 4));
     // ...and a soft end wall after the run-out
     if (!this.layout.openEnd && s > this.length - 0.5) d = Math.min(d, Math.max(this.length - 0.5 - s, s - this.length - 2, Math.abs(x) - W0, y - 4));
+    // the safety net (a thin sheet; never in the visible-only pass)
+    if (!visibleOnly && s >= 0 && s <= this.length && this.netOn[this.idx(s)] === 1) {
+      const ax = Math.abs(x);
+      if (ax <= NET.half) {
+        const yN = this.netSurface(s, x);
+        const slope = 2 * NET.curve * ax + (ax > NET.half - 3 ? (2 * NET.lip * (ax - (NET.half - 3))) / 9 : 0);
+        d = Math.min(d, Math.abs(y - yN) / Math.sqrt(1 + slope * slope) - 0.2);
+      } else {
+        d = Math.min(d, Math.hypot(ax - NET.half, y - this.netSurface(s, NET.half)) - 0.2);
+      }
+    }
     if (includeObstacles) {
       for (let o = 0; o < this.obstacles.length; o++) {
         if (this.ghost[o]) continue; // a hologram: no collision
@@ -696,6 +808,13 @@ export class Course {
   readonly rejoinError: number[] = [];
   /** Distance along the course from the start to where each gutter begins (0 for the main course). */
   readonly startS: number[] = [0];
+  /** Nets clear of every other gutter, then fitted above the ground (call once the world exists). */
+  fitNets(groundHeight?: (x: number, z: number) => number) {
+    for (const t of this.all) {
+      if (groundHeight) t.fitNetToGround(groundHeight);
+      t.placeNet(this.all.filter((o) => o !== t));
+    }
+  }
   constructor(layout: CourseLayout) {
     this.main = new Track({ ...layout, finishLine: true });
     for (const b of layout.branches ?? []) {
@@ -777,6 +896,7 @@ export class Course {
       this.branches.push(br);
     }
     this.all = [this.main, ...this.branches];
+    this.fitNets();
   }
 }
 

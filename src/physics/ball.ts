@@ -151,6 +151,11 @@ export class BallPhysics {
   magnetEnergy = 1;
   magnetForce = 0;
   readonly magnetTarget = new Vector3();
+  /** Caught by the safety net: the beam is lifting you back into the gutter. */
+  netLift = false;
+  private netTime = 0;
+  private liftTime = 0;
+  private liftSide = 1;
   magnetHasTarget = false;
   magnetSuppress = 0;
   boosting = false;
@@ -190,6 +195,7 @@ export class BallPhysics {
     // rolling without slipping: w = (n x v) / r
     this.w.copy(U).cross(this.v).multiplyScalar(1 / this.tune.radius);
     this.n.copy(U);
+    this.netLift = false; this.netTime = 0;
     this.proj.reset(s);
     this.proj.project(this.p.x, this.p.y, this.p.z);
     for (let i = 0; i < this.projs.length; i++) { if (i === this.activeIndex) continue; this.projs[i].relocate(this.p.x, this.p.y, this.p.z); this.projs[i].project(this.p.x, this.p.y, this.p.z); }
@@ -502,8 +508,10 @@ export class BallPhysics {
     this.magnetSuppress -= dt;
     this.updateMagnet(acc, input, dt);
 
+    this.updateNetLift(acc, dt);
     this.v.addScaledVector(acc, dt);
     this.p.addScaledVector(this.v, dt);
+    this.applyNetLift(dt);
 
     // ---- Collision resolution ----
     this.selectTrack();
@@ -919,6 +927,93 @@ export class BallPhysics {
     } else {
       this.magnetEnergy = Math.min(1, this.magnetEnergy + tu.magnetRegen * 0.35 * dt);
     }
+  }
+
+  /**
+   * THE SAFETY NET. Land in the net under the course and, after a moment, a
+   * tractor beam lifts you out: up beside the gutter, over the rim, and down
+   * into the middle a little way ahead, keeping your forward speed.
+   */
+  private updateNetLift(acc: Vector3, dt: number) {
+    void acc;
+    const tr = this.track, pr = this.proj;
+    if (this.netLift) return; // the lift path is applied after integration (applyNetLift)
+    const inNet = tr.netAt(pr.s) && pr.y < tr.netYAt(pr.s) + 3.2 && pr.y < -0.3 && Math.abs(pr.along) < 2;
+    // a soft net: it soaks up the bounce and the sideways roll, but you keep going forward
+    if (inNet && this.sinceContact < 0.08) {
+      const va = this.v.dot(pr.T);
+      const k = 1 - Math.exp(-7 * dt);
+      this.v.addScaledVector(pr.T, va * k).multiplyScalar(1 - k);
+    }
+    if (inNet && this.sinceContact < 0.25 && this.netTime === 0) { this.emit('NET_CATCH', 1); this.netTime = 1e-6; }
+    if (this.netTime > 0) {
+      if (!inNet && this.sinceContact > 0.5) { this.netTime = 0; return; }
+      this.netTime += dt;
+      if (this.netTime > 0.6) this.startNetLift();
+    }
+  }
+
+  /** The beam's path, in course coordinates [s, x, y]: out beside the gutter, up over the rim, down into the middle ahead. */
+  private liftPath: [number, number, number][] = [];
+  private liftDur = 1.2;
+  private liftVf = 14;
+  private startNetLift() {
+    const tr = this.track, pr = this.proj;
+    const prof = tr.profileAt(pr.s), W = prof.a + prof.rc;
+    const [wl, wr] = tr.wallsAt(pr.s);
+    const rim = Math.max(wl, wr);
+    const side = pr.x >= 0 ? 1 : -1;
+    const vf = Math.max(14, Math.min(40, this.v.dot(pr.T)));
+    const s0 = pr.s, r = this.tune.radius;
+    const out = side * Math.max(W + 3.5, Math.abs(pr.x) * 0.8);
+    this.liftPath = [
+      [s0, pr.x, pr.y],
+      [s0 + vf * 0.25, out, pr.y + 2],
+      [s0 + vf * 0.55, side * (W + 3), rim + 3.2],
+      [s0 + vf * 0.85, side * 1.5, rim + 1.6],
+      [s0 + vf * 1.15, 0, r + 0.05],
+    ];
+    this.liftDur = 1.15; this.liftVf = vf;
+    this.netLift = true; this.liftTime = 0; this.liftSide = side;
+    this.emit('MAGNET_ENGAGED', 1);
+  }
+  private liftPoint(t: number, out: Vector3) {
+    const q = this.liftPath, n = q.length - 1;
+    const f = Math.max(0, Math.min(0.9999, t)) * n, i = Math.floor(f), u = f - i;
+    const at = (k: number) => q[Math.max(0, Math.min(n, k))];
+    const cr = (c: number) => {
+      const p0 = at(i - 1)[c], p1 = at(i)[c], p2 = at(i + 1)[c], p3 = at(i + 2)[c];
+      return 0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (-p0 + 3 * p1 - 3 * p2 + p3) * u * u * u);
+    };
+    const s = cr(0), x = cr(1), y = cr(2);
+    const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+    this.track.frameAtS(s, P, T, U, R);
+    return out.copy(P).addScaledVector(R, x).addScaledVector(U, y);
+  }
+  /** Carry the ball along the beam's path (after integration, before collisions). */
+  private applyNetLift(dt: number) {
+    if (!this.netLift) return;
+    this.liftTime += dt;
+    const t = this.liftTime / this.liftDur;
+    const np = this.liftPoint(t, new Vector3());
+    this.v.subVectors(np, this.p).multiplyScalar(1 / Math.max(dt, 1e-4));
+    this.p.copy(np);
+    const last = this.liftPath[this.liftPath.length - 1];
+    this.magnetHasTarget = true; this.magnetForce = 1;
+    this.liftPointLocal(last, this.magnetTarget);
+    if (t >= 1) {
+      // set down in the gutter, rolling on at the speed you came in with
+      const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+      this.track.frameAtS(last[0], P, T, U, R);
+      this.v.copy(T).multiplyScalar(this.liftVf).addScaledVector(U, -1);
+      this.netLift = false; this.netTime = 0;
+      this.emit('MAGNETIC_CAPTURE', 1);
+    }
+  }
+  private liftPointLocal(q: [number, number, number], out: Vector3) {
+    const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+    this.track.frameAtS(q[0], P, T, U, R);
+    return out.copy(P).addScaledVector(R, q[1]).addScaledVector(U, q[2]);
   }
 
   /**

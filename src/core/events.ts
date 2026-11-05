@@ -29,7 +29,8 @@ export type SensoryEventType =
   | 'TUNNEL_EXIT'
   | 'LIFT_CLACK'
   | 'TRIGGER_PAD'
-  | 'HOLO_BOOST';
+  | 'HOLO_BOOST'
+  | 'NET_CATCH';
 
 export interface SensoryEvent {
   type: SensoryEventType;

@@ -1,6 +1,6 @@
 import { BallInput, BallPhysics, BallTuning } from '../physics/ball';
 import type { MaterialProfile } from '../physics/materials';
-import { Course, Track } from '../track/track';
+import { Course, Track, NET } from '../track/track';
 import type { SensoryEvent } from '../core/events';
 
 export type RunPhase = 'ready' | 'running' | 'finished' | 'respawning';
@@ -145,6 +145,9 @@ export class Run {
     // dropped into a gap: once you're below the floor you've fallen (no hovering under the gutter)
     let insideAny = false; // (at a tube junction the ball can be below one pipe's floor yet inside the other)
     for (let k = 0; k < b.tracks.length && !insideAny; k++) { const p = b.projs[k]; if (Math.abs(p.along) < 3 && b.tracks[k].channelDepthLocal(p.s, p.x, p.y) > -0.3) insideAny = true; }
+    // a safety net below (or its beam carrying you): let it catch you, that's not a fall
+    const netted = b.netLift || (b.track.netAt(pr.s) && Math.abs(pr.x) < NET.half + 3 && pr.y > b.track.netYAt(pr.s) - 3 && Math.abs(pr.along) < 3);
+    if (netted) { this.underTimer = 0; this.outsideTimer = 0; this.stuckTimer = 0; return; }
     const under = !insideAny && (pr.y < -2.5 || (pr.y < -0.8 && !b.track.isGap(pr.s)));
     this.underTimer = under ? this.underTimer + this.fixedDt : 0;
     if (this.underTimer > 0.25) { this.underTimer = 0; this.fail(); return; }

@@ -8,6 +8,7 @@ import { buildTrackGroup, updateMovingObstacles } from '../render/trackMesh';
 import { Finale, FINALE_FOR_WORLD } from '../finale/finale';
 import { PlungerLauncher, launchSpeed } from '../finale/launcher';
 import { TubeStreaks } from '../render/streaks';
+import { TubeThemes } from '../render/tubeThemes';
 import { FogExp2, Color } from 'three';
 import { FRACTAL_THEMES } from '../render/fractal';
 import { BallView } from '../render/ballView';
@@ -65,6 +66,7 @@ export class Game {
   courseGeo?: Course;
   private branchGroups: Group[] = [];
   private streaks?: TubeStreaks;
+  tubeThemes?: TubeThemes;
   private fogBase?: { color: Color; density: number };
   private fogDark = new Color(0x000000);
   private fogMix = 0;
@@ -154,6 +156,7 @@ export class Game {
     this.track = this.courseGeo.main;
     this.lastRib = -1;
     this.world = buildWorld(this.scene, this.renderer, this.courseGeo.all, this.material, this.quality);
+    this.courseGeo.fitNets(this.world.groundHeight); // the safety net hangs above the ground
     this.hemiBase = -1;
     const cg = this.courseGeo;
     const carveFor = (idx: number) => cg.junctions.flatMap((j) =>
@@ -184,6 +187,7 @@ export class Game {
     this.streaks = new TubeStreaks();
     { const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood; this.streaks.setPalette(th.a, th.b, th.psy); }
     this.scene.add(this.streaks.mesh);
+    this.tubeThemes = new TubeThemes(this.scene, this.courseGeo, course.id);
     this.applyCosmetics();
     this.scene.add(this.ballView.group);
     this.ghostView = new GhostView(this.run.ball.tune.radius);
@@ -433,6 +437,7 @@ export class Game {
     else if (this.finale) this.finale.applyCamera(this.camera.cam);
     else this.camera.update(b, b.track, dt);
     this.streaks?.update(b.track, b.proj.s, b.v.length(), dt, this.time, 0.5 + 0.5 * this.speedFx);
+    if (!this.intro && !this.finale) this.tubeThemes?.update(b, this.paused ? 0 : dt, this.time, this.mode === 'play' && !this.paused ? (k) => this.audio.themeSound(k) : undefined);
     // depth: inside a tube the far end falls away into darkness (fog to near-black in the world's colour)
     if (this.fogBase && this.scene.fog instanceof FogExp2) {
       const tkF = Math.max(b.track.tubeAt(b.proj.s), b.track.tubeAt(b.proj.s + 10));

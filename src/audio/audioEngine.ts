@@ -445,6 +445,21 @@ export class AudioEngine {
     setTimeout(() => out.disconnect(), 900);
   }
 
+  /** Tube-theme sounds: kept quiet, under the rolling sound. */
+  themeSound(kind: 'lasers' | 'fireworks' | 'haunted' | 'pinball' | 'firework') {
+    if (!this.ctx) return;
+    if (kind === 'firework') {
+      this.pop(true);
+      for (let k = 1; k <= 3; k++) setTimeout(() => this.pop(false), 90 + k * 70 + Math.random() * 60);
+    } else if (kind === 'haunted') {
+      this.sweep(220 + Math.random() * 60, 110, 0.9, 0.05, 'sine');
+      this.sweep(330 + Math.random() * 80, 160, 0.8, 0.025, 'triangle');
+    } else if (kind === 'pinball') {
+      const f = [1046.5, 1318.5, 1568, 2093][Math.floor(Math.random() * 4)];
+      this.chime(f, 0.12); setTimeout(() => this.chime(f * 1.5, 0.08), 60);
+    }
+  }
+
   /** Chain-lift ratchet: a short dry click with a metallic body. */
   private clack() {
     const c = this.ctx!;
