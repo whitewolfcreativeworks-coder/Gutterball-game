@@ -646,6 +646,7 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
 function buildPads(track: Track) {
   const g = new Group();
   const tex = padTexture();
+  const chevTex = chevTexCache ?? (chevTexCache = chevronTexture());
   const idle = new MeshBasicMaterial({ map: tex, color: 0xffb020, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false, side: DoubleSide, fog: false, toneMapped: false });
   const lit = new MeshBasicMaterial({ map: tex, color: 0x40f0ff, transparent: true, opacity: 1, blending: AdditiveBlending, depthWrite: false, side: DoubleSide, fog: false, toneMapped: false });
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
@@ -662,10 +663,65 @@ function buildPads(track: Track) {
     m.renderOrder = 2;
     meshes.push(m);
     g.add(m);
+    // guide arrows: three chevrons on the surface tracing the line from the
+    // floor up the wall to the pad, pulsing toward it
+    const prof = track.profileAt(pd.s);
+    const arcTop = prof.a + (prof.rc * Math.PI) / 2 + (pd.y - prof.rc);
+    const at = (j: number) => {
+      const sj = pd.s - 36 + j * 11;
+      const u = prof.a * 0.35 + (arcTop - pd.tall * 0.3 - prof.a * 0.35) * Math.pow(j / 3, 0.85);
+      return { sj, u };
+    };
+    const surf = (sj: number, u: number, pos: Vector3, nrm: Vector3) => {
+      const pf = track.profileAt(sj);
+      track.frameAtS(sj, P, T, U, R);
+      let x: number, y: number, nx: number, ny: number;
+      const fil = (pf.rc * Math.PI) / 2;
+      if (u <= pf.a) { x = u; y = 0; nx = 0; ny = 1; }
+      else if (u <= pf.a + fil) { const th = (u - pf.a) / pf.rc; x = pf.a + pf.rc * Math.sin(th); y = pf.rc - pf.rc * Math.cos(th); nx = -Math.sin(th); ny = Math.cos(th); }
+      else { x = pf.a + pf.rc; y = pf.rc + (u - pf.a - fil); nx = -1; ny = 0; }
+      pos.copy(P).addScaledVector(R, pd.side * x).addScaledVector(U, y);
+      nrm.copy(R).multiplyScalar(pd.side * nx).addScaledVector(U, ny).normalize();
+      pos.addScaledVector(nrm, 0.04);
+    };
+    const chevs: Mesh[] = [];
+    const pos = new Vector3(), nrm = new Vector3(), nxt = new Vector3(), n2 = new Vector3();
+    for (let j = 0; j < 3; j++) {
+      const { sj, u } = at(j);
+      const i = Math.round(sj / track.ds);
+      if (sj < 2 || track.tubeK[i] > 0 || track.tunnel[i] || track.isGap(sj)) continue;
+      const b2 = at(j + 1);
+      surf(b2.sj, b2.u, nxt, n2);
+      surf(sj, u, pos, nrm);
+      const dir = nxt.sub(pos);
+      dir.addScaledVector(nrm, -dir.dot(nrm)).normalize();
+      const X = new Vector3().crossVectors(dir, nrm);
+      const cm = new Mesh(new PlaneGeometry(2.2, 2.2), new MeshBasicMaterial({ map: chevTex, color: 0xffb020, transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false, side: DoubleSide, fog: false, toneMapped: false }));
+      cm.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(X, dir, nrm));
+      cm.position.copy(pos);
+      cm.userData.j = j;
+      chevs.push(cm);
+      g.add(cm);
+    }
+    m.userData.chevs = chevs;
   });
   g.userData.pads = { meshes, idle, lit };
   return g;
 }
+
+/** A single chevron pointing "up" the texture (+y). */
+function chevronTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = 128; cv.height = 128;
+  const c = cv.getContext('2d')!;
+  c.fillStyle = '#000'; c.fillRect(0, 0, 128, 128);
+  c.strokeStyle = '#fff'; c.lineWidth = 20; c.lineCap = 'round'; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(22, 92); c.lineTo(64, 40); c.lineTo(106, 92); c.stroke();
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  return t;
+}
+let chevTexCache: CanvasTexture | null = null;
 
 function padTexture() {
   const cv = document.createElement('canvas');
@@ -759,7 +815,14 @@ export function updateMovingObstacles(root: Object3D, track: Track) {
     const pd = o.userData?.pads;
     if (pd) {
       pd.idle.opacity = 0.6 + 0.35 * (0.5 + 0.5 * Math.sin(track.time * 5));
-      for (const m of pd.meshes as Mesh[]) m.material = track.padHit[m.userData.pad] ? pd.lit : pd.idle;
+      for (const m of pd.meshes as Mesh[]) {
+        const hit = track.padHit[m.userData.pad] === 1;
+        m.material = hit ? pd.lit : pd.idle;
+        for (const c of m.userData.chevs as Mesh[]) {
+          c.visible = !hit;
+          if (!hit) (c.material as MeshBasicMaterial).opacity = 0.35 + 0.6 * Math.max(0, Math.sin(track.time * 5 - c.userData.j * 1.1));
+        }
+      }
     }
     const ms = o.userData?.movers as Mesh[] | undefined;
     if (!ms) return;

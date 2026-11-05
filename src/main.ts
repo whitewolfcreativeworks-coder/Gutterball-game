@@ -12,6 +12,8 @@ import { REWARD_TABLE } from './commerce/adAccounting';
 import { COMMERCE_CONFIG } from './commerce/config';
 import { MATERIALS } from './physics/materials';
 import type { RunPhase } from './game/run';
+import { GhostStore, MAX_SAVED } from './game/ghost';
+const ghostStore = new GhostStore();
 
 // ---------------------------------------------------------------------------
 // Bootstrap
@@ -30,6 +32,13 @@ const playback = new AdPlayback(adServer, playerId);
 
 const settings = loadSettings();
 applySettings();
+function applyScreenClass() {
+  const sc = screenClass();
+  document.documentElement.dataset.screen = sc;
+  game.camera.compact = sc === 'mini' ? 1 : sc === 'phone' ? 0.5 : 0;
+}
+applyScreenClass();
+addEventListener('resize', applyScreenClass);
 
 (window as any).__gutterball = { game, audio, haptics, input, entitlements, adServer, playback }; // debugging & smoke tests
 
@@ -133,7 +142,8 @@ hud.innerHTML = `
   <div class="hint"></div>
   <button class="skipbtn" data-act="skipFinale" style="display:none">Skip ›</button>
   <div class="musicdock"><button class="musicbtn" data-act="musicMenu" aria-label="Music">♪</button><div class="musicmenu"></div></div>
-  <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div></div>
+  <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div><button class="ghostbtn" data-act="ghostToggle" style="display:none"></button></div>
+  <div class="replaytag" style="display:none">▶ REPLAY</div>
   <div class="bottom">
     <div><div class="speed">0<small>KM/H</small></div><div class="combo"><i></i><i></i><i></i><span class="turbo"></span></div></div>
     <div class="magring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="5"/><circle class="arc" cx="32" cy="32" r="27" fill="none" stroke="#47e6ff" stroke-width="5" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="0"/></svg><div class="lbl">MAG</div></div>
@@ -174,6 +184,14 @@ game.cb.onHud = (s: HudState) => {
   $('.magring', hud).classList.toggle('active', s.magnetActive);
   const launchEl = $('.launch', hud);
   launchEl.style.display = s.phase === 'ready' && s.mode === 'play' ? 'block' : 'none';
+  {
+    // before the race: race the ghost of your last run (or a saved one), or not
+    const gb = $('.ghostbtn', hud);
+    const has = !!game.ghost && s.phase === 'ready' && s.mode === 'play';
+    gb.style.display = has ? 'inline-block' : 'none';
+    if (has) { gb.textContent = `👻 Ghost ${fmtTime(game.ghost!.time)} · ${game.ghostOn ? 'ON' : 'OFF'}`; gb.classList.toggle('off', !game.ghostOn); }
+    $('.replaytag', hud).style.display = game.replay ? 'block' : 'none';
+  }
   $('.pausebtn', hud).style.display = s.mode === 'play' ? 'grid' : 'none';
   $('.skipbtn', hud).style.display = s.mode === 'play' && s.phase === 'finished' && screen === 'hud' ? 'block' : 'none';
   $('.bottom', hud).style.opacity = s.mode === 'play' ? (s.phase === 'finished' ? '0' : '1') : '0.7'; // the finish contraption plays clean
@@ -195,6 +213,7 @@ const pause = el('div', 'results');
 addScreen('pause', pause);
 function showPause() {
   if (game.mode !== 'play') return;
+  if (game.replay) { game.stopReplay(); game.restart(); showSaved(); return; }
   game.paused = true;
   pause.innerHTML = `
     <div class="lbl">Paused</div><div class="big" style="font-size:56px">${game.course?.world}</div>
@@ -224,9 +243,36 @@ function showResults(bonus = 0, kind = '') {
     <div class="big">${fmtTime(t)}</div>
     <div class="lbl" style="color:${isBest ? 'var(--wood)' : 'var(--ink-faint)'}">${isBest ? 'New personal best' : 'Best ' + fmtTime(prev)}</div>
     <div class="stats"><div><b>${game.run.falls}</b>falls</div><div><b>${(game.track!.length / 1000).toFixed(2)} km</b>distance</div>${kind === 'plinko' ? `<div><b>${bonus.toLocaleString()}</b>Plinko</div>` : ''}</div>
-    <div class="row"><button class="btn primary" data-act="restart">Run again</button><button class="btn" data-act="menu">Menu</button></div>`;
+    <div class="row"><button class="btn primary" data-act="restart">Run again${game.lastRun ? ' vs ghost' : ''}</button><button class="btn" data-act="menu">Menu</button></div>
+    <div class="row" style="margin-top:10px">${savedRunButton()}<button class="btn" data-act="savedRuns">Saved runs (${ghostStore.list(game.course.id).length})</button></div>`;
   show('results');
 }
+function savedRunButton() {
+  const r = game.lastRun;
+  if (!r || !game.course) return '';
+  if (ghostStore.isSaved(r.course, r.date)) return '<button class="btn" disabled>Saved ✓</button>';
+  if (!ghostStore.qualifies(r.course, r.time)) return `<button class="btn" disabled>Not in your ${MAX_SAVED} best</button>`;
+  return '<button class="btn" data-act="saveRun">Save run</button>';
+}
+
+// ----- Saved runs: your 10 best per course, to race or watch -----
+const saved = el('div', 'results');
+addScreen('saved', saved);
+let savedReturn = 'results';
+function showSaved() {
+  if (!game.course) return;
+  const list = ghostStore.list(game.course.id);
+  const d = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  saved.innerHTML = `
+    <div class="lbl">${game.course.world} · your ${MAX_SAVED} best runs</div>
+    <div class="savedlist">${list.length ? list.map((r, i) => `
+      <div class="savedrow"><b>${i + 1}</b><span class="t">${fmtTime(r.time)}</span><span class="d">${d(r.date)}${r.falls ? ` · ${r.falls} fall${r.falls > 1 ? 's' : ''}` : ''}</span>
+        <button class="btn sm primary" data-act="raceSaved" data-id="${r.date}">Race</button><button class="btn sm" data-act="watchSaved" data-id="${r.date}">Watch</button><button class="btn sm x" data-act="delSaved" data-id="${r.date}" aria-label="Delete">✕</button></div>`).join('')
+      : '<div class="note" style="margin:24px 0">No saved runs yet. Finish a run and tap “Save run”.</div>'}</div>
+    <div class="row" style="margin-top:18px"><button class="btn" data-act="savedBack">Back</button></div>`;
+  show('saved');
+}
+game.cb.onReplayDone = () => { game.restart(); showSaved(); };
 
 // ----- Course detail (over live preview) -----
 const detail = el('div', 'passthrough');
@@ -468,8 +514,20 @@ calibLoop();
 // ---------------------------------------------------------------------------
 // Settings persistence
 // ---------------------------------------------------------------------------
+/**
+ * Screen size class. The game was tuned on a tablet; phones get a lighter
+ * HUD and calmer default effects, and the smallest phones (iPhone mini / SE
+ * size) also get a slightly tighter camera so the ball and obstacles read
+ * bigger, with the controls line and extra HUD chrome dropped.
+ */
+function screenClass(): 'tablet' | 'phone' | 'mini' {
+  const a = Math.min(innerWidth, innerHeight), b = Math.max(innerWidth, innerHeight);
+  if (a < 380 || b < 700) return 'mini';
+  return a < 500 ? 'phone' : 'tablet';
+}
 function loadSettings() {
-  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, musicGenre: 'ambient' as Genre, musicLevel: 0.5, fractal: 0.6, speedFx: 0.8, input: undefined as any, mode: undefined as any, inputVersion: 0 };
+  const sc = screenClass();
+  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, musicGenre: 'ambient' as Genre, musicLevel: 0.5, fractal: sc === 'tablet' ? 0.6 : sc === 'phone' ? 0.5 : 0.42, speedFx: sc === 'tablet' ? 0.8 : sc === 'phone' ? 0.7 : 0.6, input: undefined as any, mode: undefined as any, inputVersion: 0 };
   try { return { ...def, ...JSON.parse(localStorage.getItem('gb.settings') ?? '{}') }; } catch { return def; }
 }
 function saveSettings() {
@@ -537,6 +595,18 @@ ui.addEventListener('click', async (e) => {
     case 'musicMenu': { const d = $('.musicdock', hud); d.classList.toggle('open'); renderMusicMenu(); break; }
     case 'genre': { settings.musicGenre = id as Genre; audio.setGenre(id as Genre); saveSettings(); renderMusicMenu(); break; }
     case 'resume': resume(); break;
+    case 'ghostToggle': game.ghostOn = !game.ghostOn; break;
+    case 'saveRun': {
+      const r = game.lastRun;
+      if (r) { const rank = ghostStore.save(r); toast(rank ? `Saved — #${rank} of your best runs` : 'Couldn’t save (storage full?)'); }
+      showResults();
+      break;
+    }
+    case 'savedRuns': savedReturn = screen; showSaved(); break;
+    case 'savedBack': if (savedReturn === 'results' && game.run?.phase === 'finished') showResults(); else { show('hud'); } break;
+    case 'raceSaved': { const g = game.course && ghostStore.load(game.course.id, Number(id)); if (g) { game.paused = false; game.raceGhost(g); show('hud'); } break; }
+    case 'watchSaved': { const g = game.course && ghostStore.load(game.course.id, Number(id)); if (g) { game.paused = false; game.watch(g); show('hud'); } break; }
+    case 'delSaved': if (game.course) { ghostStore.remove(game.course.id, Number(id)); showSaved(); } break;
     case 'restart': game.paused = false; game.restart(); show('hud'); break;
     case 'calibrate': input.calibrate(); toast('Neutral position set'); break;
     case 'enableTilt': { const ok = await input.requestSensors(); toast(ok ? 'Tilt sensors on' : 'Tilt sensors unavailable on this device'); saveSettings(); renderSettings(); break; }

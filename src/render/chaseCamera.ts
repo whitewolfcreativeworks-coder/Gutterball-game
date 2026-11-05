@@ -37,6 +37,8 @@ export class ChaseCamera {
   shake = 0;
   fx = 0.8;              // speed-effects strength 0..1
   private baseFov = 80;
+  /** 0 tablet .. 1 smallest phones: a slightly tighter view so the ball and obstacles read bigger. */
+  compact = 0;
   private freeK = 0;     // 0 = ride the track, 1 = follow the ball freely (it has left the channel)
   private freeDir = new Vector3(0, 0, -1);
 
@@ -89,7 +91,7 @@ export class ChaseCamera {
     desiredUp.applyQuaternion(new Quaternion().setFromAxisAngle(this.T, lean));
 
     // --- position: low and close behind along the track ---
-    const back = 6.6 + Math.min(3.5, speed * 0.07);
+    const back = 6.6 - 0.6 * this.compact + Math.min(3.5, speed * 0.07);
     this.airPull += ((b.airborne ? 1 : 0) - this.airPull) * Math.min(1, dt * 2.5);
     const targetDip = (-this.vertG * 0.45 + this.airPull * 1.2) * fx;
     this.dip += (targetDip - this.dip) * Math.min(1, dt * 6);
@@ -183,7 +185,7 @@ export class ChaseCamera {
     this.magPull += (pullT - this.magPull) * Math.min(1, dt * 8);
     // warp: at tube speeds the view stretches wider still
     const warp = tk * Math.min(16, Math.max(0, speed - 38) * 0.5) + (b.turboMul() - 1) * 10;
-    const fov = this.baseFov + (Math.min(18, Math.max(0, speed - 10) * 0.75) + warp + this.fovPunch - this.magPull) * (0.4 + 0.6 * fx);
+    const fov = this.baseFov - 5 * this.compact + (Math.min(18, Math.max(0, speed - 10) * 0.75) + warp + this.fovPunch - this.magPull) * (0.4 + 0.6 * fx);
     if (Math.abs(this.cam.fov - fov) > 0.05) {
       this.cam.fov += (fov - this.cam.fov) * Math.min(1, dt * 4);
       this.cam.updateProjectionMatrix();

@@ -12,7 +12,7 @@ const server = createServer(async (req, res) => {
 const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-proxy-server'] });
 const shot = async (name, at, setup) => {
   const p = await browser.newPage();
-  await p.setViewport({ width: 390, height: 780, deviceScaleFactor: 1 });
+  await p.setViewport({ width: 375, height: 812, deviceScaleFactor: 1 });
   p.on('pageerror', (e) => console.log('ERR', e.message));
   await p.goto(`http://127.0.0.1:4174/?play=wood&mode=keyboard&quality=low&fixed=1&at=${at}&v=20`, { waitUntil: 'load' });
   await p.waitForFunction(() => window.__gutterball?.game?.run?.time > 0.1, { timeout: 300000, polling: 500 });
@@ -20,6 +20,6 @@ const shot = async (name, at, setup) => {
   await p.waitForFunction(() => window.__gutterball.game.run.time > 1.0, { timeout: 300000, polling: 500 });
   await p.screenshot({ path: `screenshots/${name}.png` }); await p.close();
 };
-await shot('holo-pad', 725);
-await shot('holo-obstacles', 850, () => { const g = window.__gutterball.game; g.run.course.main.triggerPad(0); });
+await shot('holo-pad', 703);
+// (hologram shot is too slow on SwiftShader)
 await browser.close(); server.close();

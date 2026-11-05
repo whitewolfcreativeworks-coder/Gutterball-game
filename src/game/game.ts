@@ -10,6 +10,8 @@ import { TubeStreaks } from '../render/streaks';
 import { FogExp2, Color } from 'three';
 import { FRACTAL_THEMES } from '../render/fractal';
 import { BallView } from '../render/ballView';
+import { GhostView } from '../render/ghostView';
+import { GhostRecorder, ghostPos, type GhostRun } from './ghost';
 import { ChaseCamera } from '../render/chaseCamera';
 import { SpeedEffects } from '../render/speedFx';
 import { RIB_SPACING } from '../render/trackMesh';
@@ -28,6 +30,7 @@ export interface Cosmetics { skin: string; beam: string; trail: boolean; }
 
 export interface GameCallbacks {
   onHint?: (text: string) => void;
+  onReplayDone?: () => void;
   onPhase?: (phase: RunPhase) => void;
   onHud?: (h: HudState) => void;
   onPreviewEnd?: () => void;
@@ -164,7 +167,10 @@ export class Game {
       if (p === 'respawning') this.camera.shake = 0.3;
       if (p === 'running') this.camera.snap();
       // across the line: hands off, the finish contraption takes over
-      if (p === 'finished' && this.mode === 'play') this.startFinale();
+      if (p === 'finished' && this.mode === 'play' && !this.replay) {
+        this.lastRun = this.ghostRec.finish(course.id, this.run!.finishTime, this.run!.falls);
+        this.startFinale();
+      }
     };
     this.ballView = new BallView(this.run.ball.tune.radius);
     {
@@ -179,6 +185,10 @@ export class Game {
     this.scene.add(this.streaks.mesh);
     this.applyCosmetics();
     this.scene.add(this.ballView.group);
+    this.ghostView = new GhostView(this.run.ball.tune.radius);
+    this.scene.add(this.ghostView.group);
+    if (this.lastRun?.course !== course.id) { this.lastRun = null; this.ghost = null; }
+    this.replay = null;
     this.autopilot = mode !== 'play' ? new Autopilot(this.track) : undefined;
     this.hintIndex = 0; this.routeHint.clear();
     this.previewTimer = mode === 'preview' ? 18 : 0;
@@ -207,6 +217,7 @@ export class Game {
     if (this.mode !== 'play' || !this.run || this.run.phase !== 'ready' || this.paused) return false;
     this.input.calibrate();
     this.run.launch();
+    this.ghostRec.reset();
     return true;
   }
 
@@ -223,9 +234,13 @@ export class Game {
   /** Tap to skip the finish contraption. */
   skipFinale() { if (this.finale && !this.finaleReported) { this.finaleReported = true; this.cb.onFinaleDone?.(this.finale.score, this.finale.kind); } }
 
-  restart() {
+  restart(keepGhost = false) {
     if (!this.run || !this.track) return;
     this.endFinale();
+    this.replay = null;
+    this.ghostRec.reset();
+    // run again: race the ghost of your last finished run
+    if (!keepGhost && this.lastRun) this.ghost = this.lastRun;
     this.camera.cam.fov = 80; this.camera.cam.updateProjectionMatrix();
     this.run.reset();
     this.hintIndex = 0; this.routeHint.clear();
@@ -271,6 +286,27 @@ export class Game {
     }
   }
   private dtLast = 1 / 60;
+  // ---- ghost runs ----
+  private ghostRec = new GhostRecorder();
+  /** Your last finished run on this course (raced as the ghost when you run again). */
+  lastRun: GhostRun | null = null;
+  /** The ghost you're racing (the last run, or a saved one). */
+  ghost: GhostRun | null = null;
+  ghostOn = true;
+  /** A saved run being watched. */
+  replay: GhostRun | null = null;
+  private replayT = 0;
+  private ghostView?: GhostView;
+  private ghostP = new Vector3();
+  /** Race a saved run as the ghost. */
+  raceGhost(g: GhostRun) { this.ghost = g; this.ghostOn = true; this.restart(true); }
+  /** Watch a saved run play back. */
+  watch(g: GhostRun) {
+    this.restart(true);
+    this.replay = g; this.replayT = 0;
+    this.run?.launch();
+  }
+  stopReplay() { this.replay = null; }
   private static padHintShown = false;
 
   private frame = (now: number) => {
@@ -297,14 +333,28 @@ export class Game {
     if (this.finale) {
       if (!this.paused) this.finale.update(dt);
       if (this.finale.done && !this.finaleReported) { this.finaleReported = true; this.cb.onFinaleDone?.(this.finale.score, this.finale.kind); }
+    } else if (!this.paused && this.replay) {
+      // watching a saved run: the recording drives the ball
+      this.replayT += dt;
+      this.run.time = this.replayT;
+      ghostPos(this.replay, this.replayT, this.ghostP);
+      this.run.ball.followGhost(this.ghostP, dt);
+      if (this.replayT > this.replay.time + 1) { this.replay = null; this.cb.onReplayDone?.(); }
     } else if (!this.paused) {
       this.run.update(dt, input);
+      if (this.mode === 'play' && (this.run.phase === 'running' || this.run.phase === 'respawning')) this.ghostRec.sample(this.run.time, this.run.ball.p);
       if (this.mode !== 'play' && this.run.phase === 'finished') {
         this.run.reset(); this.run.launch(); this.run.ball.placeAt(6, 12);
       }
       if (this.mode !== 'play' && this.run.phase === 'ready') { this.run.launch(); }
     }
     const b = this.run.ball;
+    {
+      const g = this.ghost;
+      const t = this.run.phase === 'ready' ? 0 : this.run.time;
+      const show = g && this.ghostOn && this.mode === 'play' && !this.replay && !this.finale && t < g.time + 1.5;
+      this.ghostView?.update(show ? ghostPos(g!, t, this.ghostP) : null, this.time, this.camera.cam.position);
+    }
     const events = this.run.pendingEvents.splice(0);
     if (!this.paused && !this.finale) this.bus.publish(b.snapshot(), events);
     if (this.finale) this.audio.quiet();

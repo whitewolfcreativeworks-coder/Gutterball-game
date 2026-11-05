@@ -921,6 +921,29 @@ export class BallPhysics {
     }
   }
 
+  /**
+   * Replay: put the ball where a recorded run had it (no physics). Velocity,
+   * spin, contact and the active gutter all follow, so the camera, sound and
+   * ball view behave as they did on the run.
+   */
+  followGhost(p: Vector3, dt: number) {
+    const v = tmpB.subVectors(p, this.p).multiplyScalar(1 / Math.max(dt, 1e-3));
+    if (v.length() > 150) v.copy(this.v); // a respawn jump
+    this.v.lerp(v, 0.6);
+    this.p.copy(p);
+    this.t += dt;
+    this.selectTrack();
+    const d = this.sdfAndNormal(tmpA);
+    const r = this.tune.radius;
+    this.contact = d < r + 0.12;
+    if (this.contact) this.n.copy(tmpA);
+    this.w.copy(this.n).cross(this.v).multiplyScalar(1 / r);
+    this.airborne = !this.contact;
+    this.airborneTime = this.airborne ? this.airborneTime + dt : 0;
+    this.magnetActive = false; this.boosting = false;
+    this.slipSpeed = 0;
+  }
+
   snapshot(): SensoryState {
     const pr = this.proj;
     return {
