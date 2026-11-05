@@ -99,9 +99,7 @@ export const WOOD_COURSE: CourseLayout = {
     { len: 90, pitch: -7, label: 'logs', fx: { flow: 1 } },
     // SKATE WALL: the outside wall shoots up; ride it as high as your speed takes you
     ...vertWall(1).map((g, i) => (i === 0 ? { ...g, label: 'woodVert' } : g)),
-    { len: 63, yaw: 180, bank: 50, pitch: -9, tube: true, label: 'funnel', fx: { twist: 1.5, flow: -1 } },
-    { len: 50, yaw: 180, bank: 55, pitch: -10, tube: true, fx: { twist: 1.8, flow: -1.2 } },
-    { len: 38, yaw: 180, bank: 58, pitch: -11, tube: true, fx: { twist: 2.1, flow: -1.4 } },
+    { len: 380, yaw: 360, bank: 50, pitch: -10, tube: true, label: 'funnel', fx: { twist: 1.8, flow: -1.2 } }, // one long smooth spiral
     { len: 30, bank: 0, pitch: -8, tube: true },
     { len: 80, yaw: -40, bank: -20, pitch: -7, tunnel: true, label: 'shed', fx: { flow: -2 } },
     { len: 80, yaw: 40, bank: 20, pitch: -7, tunnel: true, fx: { flow: -2 } },

@@ -32,6 +32,8 @@ export interface Segment {
   lift?: number;      // chain lift: carries the ball uphill at this speed (m/s)
   wall?: { L?: number; R?: number }; // extra wall height (m) on each side here (vert walls)
   widen?: number;     // the floor widens by this factor (funnel bowls; eased in and out)
+  exact?: boolean;    // keep this segment exactly as written (solved geometry): no flow limits
+  steep?: boolean;    // a deliberate plunge (lift-hill drops) may go past the normal steepness limit
   warp?: number;      // top speed the tube's air current pushes you to here (m/s; default: full warp)
   /**
    * Fractal motion for this section (visual only):
@@ -141,7 +143,8 @@ export class Track {
   readonly layout: CourseLayout;
 
   constructor(layout: CourseLayout) {
-    this.layout = layout;
+    this.layout = { ...layout, segments: applyFlowLimits(layout.segments) };
+    layout = this.layout;
     this.profile = layout.profile ?? DEFAULT_PROFILE;
     const total = layout.segments.reduce((a, s) => a + s.len, 0);
     this.n = Math.floor(total / this.ds) + 1;
@@ -291,7 +294,7 @@ export class Track {
     return Math.max(0, Math.min(this.n - 1, Math.round(s / this.ds)));
   }
 
-  private isSteepOrInverted(s: number): boolean {
+  isSteepOrInverted(s: number): boolean {
     const i = this.idx(s);
     return this.U[i * 3 + 1] < 0.85;
   }
@@ -643,4 +646,46 @@ export class Course {
     }
     this.all = [this.main, ...this.branches];
   }
+}
+
+
+/**
+ * FLOW LIMITS: the course should flow like a pinball tube, not jolt like a
+ * coaster's quick jinks. Every segment is checked against limits a fast ball
+ * can carry speed through, and stretched where it is tighter:
+ *
+ *  - turns: the sharpest point of a turn (the turtle's easing makes the
+ *    middle ~1.875x tighter than average) is at least FLOW.turnR
+ *  - crests (nose going down): radius at least FLOW.crestR, so you float
+ *    rather than get flung; sags (nose coming up): at least FLOW.sagR
+ *  - bank: changes no faster than FLOW.bankRate degrees per metre
+ *  - steepness: no steeper than FLOW.maxDown degrees, except deliberate
+ *    `steep` plunges (lift-hill drops)
+ *
+ * Loops, rolls and `exact` (solved) segments are left exactly as written.
+ */
+export const FLOW = { turnR: 32, crestR: 30, sagR: 22, bankRate: 2.5, maxDown: -55, peak: 1.875 };
+
+export function applyFlowLimits(segs: Segment[]): Segment[] {
+  const D = Math.PI / 180;
+  let pitch = 0, bank = 0;
+  return segs.map((seg) => {
+    const p1raw = seg.pitch ?? pitch;
+    const out: Segment = { ...seg };
+    if (!seg.loop && !seg.roll && !seg.exact) {
+      const p1 = seg.steep ? p1raw : Math.max(FLOW.maxDown, p1raw);
+      out.pitch = seg.pitch === undefined ? undefined : p1;
+      const dp = p1 - pitch;
+      const b1 = seg.bank ?? bank;
+      const need = Math.max(
+        FLOW.peak * Math.abs(seg.yaw ?? 0) * D * FLOW.turnR,
+        FLOW.peak * Math.abs(dp) * D * (dp < 0 ? FLOW.crestR : FLOW.sagR),
+        Math.abs(b1 - bank) / FLOW.bankRate,
+      );
+      if (need > seg.len) out.len = Math.ceil(need);
+    }
+    pitch = out.pitch ?? pitch;
+    bank = seg.bank ?? bank;
+    return out;
+  });
 }

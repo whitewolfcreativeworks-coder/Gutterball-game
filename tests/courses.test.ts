@@ -239,3 +239,44 @@ describe('every world: branches rejoin cleanly and can be ridden', () => {
     });
   }
 });
+
+describe('quick reset', () => {
+  it('flung far off course, the ball blinks back into the gutter where it left, at speed', () => {
+    const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
+    const run = new Run(course, MATERIALS.wood);
+    run.launch();
+    const s0 = 900;
+    run.ball.placeAt(s0, 34);
+    for (let f = 0; f < 30; f++) run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any);
+    const sLeft = run.ball.mainProj.s;
+    // something goes haywire: the ball is thrown 80 m sideways
+    run.ball.p.addScaledVector(run.ball.proj.R, 80);
+    let t = 0;
+    for (let f = 0; f < 60 && !(run.phase === 'running' && t > 0.05 && run.ball.proj.x ** 2 < 4 && Math.abs(run.ball.proj.along) < 1); f++) { run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any); t += 1 / 60; }
+    expect(t).toBeLessThan(0.6);
+    expect(Math.abs(run.ball.mainProj.s - sLeft)).toBeLessThan(40);
+    expect(run.ball.v.length()).toBeGreaterThan(20);
+    expect(run.falls).toBe(1);
+  });
+});
+
+describe('flow: no jolting turns', () => {
+  it('every course turns no tighter than the flow limit (outside loops, rolls and solved segments)', async () => {
+    const { FLOW } = await import('../src/track/track');
+    for (const c of CATALOG) {
+      const tr = new Track(c.layout());
+      const segs = tr.layout.segments;
+      let worst = Infinity, at = '';
+      tr.segmentStarts.forEach((g, k) => {
+        const seg = segs[k];
+        if (seg.loop || seg.roll || seg.exact) return;
+        const i0 = Math.round(g.s / tr.ds) + 2, i1 = Math.round((g.s + seg.len) / tr.ds) - 2;
+        for (let i = i0; i < i1; i++) {
+          const rate = Math.abs(tr.angles[(i + 1) * 3] - tr.angles[(i - 1) * 3]) / (2 * tr.ds) * Math.PI / 180; // rad per m
+          if (rate > 1e-6 && 1 / rate < worst) { worst = 1 / rate; at = `${c.id} #${k} ${seg.label ?? ''}`; }
+        }
+      });
+      expect(worst, at).toBeGreaterThan(FLOW.turnR * 0.95);
+    }
+  });
+});

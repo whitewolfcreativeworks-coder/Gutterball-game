@@ -154,9 +154,9 @@ export class Game {
     const cg = this.courseGeo;
     const carveFor = (idx: number) => cg.junctions.flatMap((j) =>
       j.a === idx ? [{ s0: j.aS[0], s1: j.aS[1], other: cg.all[j.b] }] : j.b === idx ? [{ s0: j.bS[0], s1: j.bS[1], other: cg.all[j.a] }] : []);
-    this.trackGroup = buildTrackGroup(this.track, this.material, this.world.groundHeight, false, carveFor(0), cg.all);
+    this.trackGroup = buildTrackGroup(this.track, this.material, this.world.groundHeight, false, carveFor(0), cg.all, this.quality);
     this.scene.add(this.trackGroup);
-    this.branchGroups = cg.branches.map((t, k) => { const g = buildTrackGroup(t, this.material!, this.world!.groundHeight, true, carveFor(k + 1), cg.all); this.scene.add(g); return g; });
+    this.branchGroups = cg.branches.map((t, k) => { const g = buildTrackGroup(t, this.material!, this.world!.groundHeight, true, carveFor(k + 1), cg.all, this.quality); this.scene.add(g); return g; });
     this.post.setScene(this.scene, this.camera.cam);
     this.run = new Run(this.courseGeo, this.material);
     this.run.onPhase = (p) => {

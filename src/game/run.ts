@@ -20,6 +20,8 @@ export class Run {
   stuckTimer = 0;
   outsideTimer = 0;
   underTimer = 0;
+  /** The last place the ball was safely in a gutter (for the quick reset). */
+  private lastGood = { track: 0, s: 0, v: 0 };
   finishTime = 0;
   readonly fixedDt = 1 / 240;
   private acc = 0;
@@ -41,6 +43,7 @@ export class Run {
     this.falls = 0;
     this.checkpointIndex = 0;
     this.ball.placeAt(this.track.checkpoints[0], 0);
+    this.lastGood = { track: 0, s: this.track.checkpoints[0], v: 0 };
   }
 
   launch() {
@@ -66,8 +69,16 @@ export class Run {
     if (this.phase === 'respawning') {
       this.respawnTimer -= dt;
       if (this.respawnTimer <= 0) {
-        const s = this.track.checkpoints[this.checkpointIndex];
-        this.ball.placeAt(s, 10);
+        // QUICK RESET: back in the middle of the gutter where you left it, at
+        // the speed you had (never into a gap, a loop or an inverted section)
+        const g = this.lastGood;
+        const tr = this.course.all[g.track] ?? this.track;
+        let s = Math.max(4, Math.min(tr.length - 70, g.s));
+        let guard = 0;
+        while (guard++ < 200 && s < tr.length - 70 && (tr.isGap(s) || tr.isGap(s + 8) || tr.isSteepOrInverted(s))) s += 3;
+        if (tr.isGap(s) || tr.isSteepOrInverted(s)) { s = this.track.checkpoints[this.checkpointIndex]; this.ball.placeAt(s, 22, 0, 0); }
+        else this.ball.placeAt(s, Math.max(22, Math.min(60, g.v)), 0, g.track);
+        this.outsideTimer = 0; this.underTimer = 0; this.stuckTimer = 0;
         this.setPhase('running');
       }
       return 0;
@@ -111,6 +122,11 @@ export class Run {
       b.w.multiplyScalar(1 - 0.6 * this.fixedDt);
       return;
     }
+    // remember the last place we were safely rolling in a gutter
+    if (b.contact && Number.isFinite(b.v.x) && Math.abs(pr.along) < 3 && b.track.channelDepthLocal(pr.s, pr.x, pr.y) > 0.3 && !b.track.isGap(pr.s))
+      this.lastGood = { track: b.activeIndex, s: pr.s, v: b.v.length() };
+    // a numerical glitch (wedged between surfaces, NaN): reset at once
+    if (!Number.isFinite(b.p.x + b.p.y + b.p.z + b.v.x + b.v.y + b.v.z)) { this.fail(); return; }
     // failure: left the gutter and fell, or far away from the track
     const W = b.track.halfWidthAt(pr.s);
     const off = Math.abs(pr.x) > W + 1.5 && pr.y < b.track.profile.H - 1;
@@ -132,12 +148,12 @@ export class Run {
     }
     // stuck (wedged against an obstacle)
     if (b.v.length() < 0.6) this.stuckTimer += this.fixedDt; else this.stuckTimer = 0;
-    if (this.stuckTimer > 3) { this.stuckTimer = 0; this.fail(); }
+    if (this.stuckTimer > 1.5) { this.stuckTimer = 0; this.fail(); }
   }
 
   fail() {
     this.falls++;
-    this.respawnTimer = 1.2;
+    this.respawnTimer = 0.18; // a blink, not a wait
     this.setPhase('respawning');
   }
 

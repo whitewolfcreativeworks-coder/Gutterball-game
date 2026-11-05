@@ -22,7 +22,7 @@ const firstHint = H('start', 0, 'Swipe up, or tap the screen edges, to launch');
 // ---------------------------------------------------------------------------
 function concrete(): CourseLayout {
   const step = (): Seg[] => [{ len: 16, pitch: -30 }, { len: 14, pitch: -2, fx: { pulse: 1 } }];
-  const box = (dir: number, pitch = -6): Seg[] => [{ len: 30, yaw: 90 * dir, bank: 10 * dir, pitch, fx: { twist: dir } }, { len: 26, bank: 0, pitch }];
+  const box = (dir: number, pitch = -6): Seg[] => [{ len: 95, yaw: 90 * dir, bank: 10 * dir, pitch, fx: { twist: dir } }, { len: 26, bank: 0, pitch }];
   const legs = 34, mid = 50;
   const segs: Seg[] = [
     ...START(),
@@ -48,7 +48,7 @@ function concrete(): CourseLayout {
     ...L(tubeRun(220, 40, -7), 'sewerMain'),
     ...L(pipeCorner(150, -100, -7), 'weir'),
     ...L(terraces(5, 14, -30, 16), 'longSpill'),
-    ...L([...box(-1), ...box(1), ...box(-1)], 'chicane2'), ...run(30, -7),
+    ...L([...box(-1), ...box(1)], 'chicane2'), ...run(30, -7),
     ...L(run(120, -6), 'outfall'),
     ...liftHill(70, -70, 0, { label: 'outfallShaft' }),
     ...FINISH(),
@@ -227,7 +227,7 @@ function glass(): CourseLayout {
 // ---------------------------------------------------------------------------
 function rubber(): CourseLayout {
   const legs = 30;
-  const serp = (n: number, tube = false): Seg[] => { const o: Seg[] = []; let d = 1; for (let i = 0; i < n; i++) { o.push({ len: 46, yaw: 75 * d * (i === 0 || i === n - 1 ? 1 : 2), bank: (tube ? 20 : 35) * d, pitch: -8, tube, fx: { twist: d * 1.5 } }); d = -d; } o.push({ len: 18, bank: 0, pitch: -7, tube }); return o; };
+  const serp = (n: number, tube = false): Seg[] => { const o: Seg[] = []; let d = 1; for (let i = 0; i < n; i++) { o.push({ len: 90, yaw: 40 * d * (i === 0 || i === n - 1 ? 1 : 2), bank: (tube ? 20 : 35) * d, pitch: -8, tube, fx: { twist: d * 1.5 } }); d = -d; } o.push({ len: 18, bank: 0, pitch: -7, tube }); return o; };
   const segs: Seg[] = [
     ...START(),
     ...L(serp(6, true), 'worm'),
@@ -244,7 +244,7 @@ function rubber(): CourseLayout {
     ...L(serp(5), 'worm3'),
     ...L(jump(30, 12, 12), 'tramp2'), ...L(jump(30, 13, 12), 'tramp3'),
     ...L(run(140, -7), 'bumpers'), ...L(vertWall(1), 'rampL'), ...L(vertWall(-1), 'rampR'),
-    ...L(vortex(1.5, 30, 16, 62, -9, 1, { tube: true }), 'spinBowl'),
+    ...L(helix(1.25, 40, 50, -10, 1, { tube: true }), 'spinBowl'),
     ...L(hops(6, 22, 9, -8), 'ejectors2'),
     ...liftHill(60, -65, 0, { label: 'tower2' }), ...L(wave(1), 'rubberWave'),
     ...L(run(110, -7), 'slalom'),
@@ -384,19 +384,19 @@ function grating(): CourseLayout {
   const segs: Seg[] = [
     ...START(),
     ...L(tubeRun(200, 30, -6), 'rhythm'),
-    ...L(hairpin(1, 54, 12, -6), 'hairpin1'), ...run(40, -6),
+    ...L(hairpin(1, 230, 12, -6), 'hairpin1'), ...run(40, -6),
     ...L([{ len: 18, pitch: -28 }, { len: 14, pitch: -3 }, { len: 18, pitch: -28 }, { len: 18, pitch: -5 }], 'mouseDrops'),
-    ...L([...hairpin(-1), ...run(30, -7), ...hairpin(1), ...run(30, -7), ...hairpin(-1), ...run(30, -7), ...hairpin(1)], 'chain'),
+    ...L([...hairpin(-1, 230), ...run(30, -7), ...hairpin(1, 230)], 'chain'),
     ...run(30, -7),
     ...L(helix(1, 26, 30, -12, -1, { tube: true }), 'stair'),
-    ...L([...hairpin(1, 46), ...run(16, -14), ...hairpin(-1, 46), ...run(16, -14), ...hairpin(1, 46), ...run(16, -14), ...hairpin(-1, 46), ...run(16, -14), ...hairpin(1, 46), ...run(16, -14), ...hairpin(-1, 46)], 'stack'),
+    ...L([...hairpin(1, 230, 14, -9), ...run(24, -12), ...hairpin(-1, 230, 14, -9), ...run(24, -12), ...hairpin(1, 230, 14, -9)], 'stack'),
     ...run(20, -8),
     ...L(jump(30, 11, 9), 'hatch'),
     ...L(run(160, -6, { fx: { flow: 2 } }), 'rattle'),
-    ...hairpin(1, 54),
+    ...hairpin(1, 230),
     // ACT II — CATWALKS: obstacle catwalk, the second stack, the double hatch
     ...liftHill(60, -55, 0, { label: 'mouseLift' }), ...L(run(150, -6), 'catwalk'),
-    ...L([...hairpin(-1), ...run(30, -7), ...hairpin(1), ...run(30, -7), ...hairpin(-1)], 'chain2'),
+    ...L(hairpin(-1, 230), 'chain2'),
     ...run(30, -7),
     ...L(terraces(4, 16, -28, 14), 'ladder'),
     ...run(30, -12), ...L(helix(1, 28, 30, -12, 1, { tube: true }), 'stair2'),
@@ -420,17 +420,17 @@ function snow(): CourseLayout {
   const segs: Seg[] = [
     ...START(),
     ...L(run(90, -6, { fx: { flow: 0.5 } }), 'groomed'),
-    ...L([...koch(1, 160, -7), ...koch(1, 140, -7)], 'slalom'),
+    ...L(labyrinth(4, 22, 110, 22, -7), 'slalom'),
     ...run(20, -7),
     ...L(hops(6, 20, 4, -7), 'moguls'),
     ...L(run(90, -8, { tube: true, fx: { flow: -1.5 } }), 'drift'), ...run(20, -8),
-    ...L(koch(2, 300, -7), 'kochCascade'),
+    ...L([...sweeper(170, 55, -7), ...sweeper(170, -70, -7), ...sweeper(170, 55, -7)], 'kochCascade'),
     ...run(20, -7),
     ...L(helix(1, 36, 35, -10, 1, { tube: true }), 'peakHelix'),
     ...L([{ len: 80, pitch: -26, fx: { flow: -2 } }, { len: 20, pitch: 9, openSky: true, fx: { pulse: 1 } }, { len: 34, pitch: -24, gap: true, openSky: true }, { len: 60, pitch: -24, fx: { flow: -1 } }, { len: 40, pitch: -6 }], 'skiJump'),
     // ACT II — BACKCOUNTRY: tree slalom, the couloir, the pretzel, the small jump
     ...L(run(150, -7), 'trees'),
-    ...L(koch(1, 160, -8), 'slalom2'),
+    ...L(labyrinth(4, 20, 100, 20, -8), 'slalom2'),
     ...L(tubeRun(220, 40, -9), 'couloir'),
     ...L(pretzel(34, 40, -9, { tube: true }), 'cornice'),
     ...L(hops(6, 22, 4, -7), 'moguls2'), ...liftHill(70, -60, 0, { label: 'chairlift' }),
@@ -441,7 +441,7 @@ function snow(): CourseLayout {
   return {
     id: 'snow', name: 'Koch Alpine', checkpointEvery: 220, segments: segs,
     obstacles: [...field('trees', 'posts', 6, 14, 22), { at: 'groomed', s: 50, x: -3.3, ls: 2, w: 5, h: 1.6 }],
-    hints: [firstHint, H('trees', 0, 'Act II: backcountry. Tree slalom'), H('couloir', 0, 'The couloir'), H('cornice', 0, 'Cornice pretzel'), H('halfpipe', 0, 'Half-pipe wall!'), H('kicker', 0, 'Kicker: JUMP, then MAGNET'), H('slalom', 0, 'Koch slalom: carve the notches'), H('moguls', 0, 'Moguls'), H('kochCascade', 0, 'Koch cascade: notches inside notches'),
+    hints: [firstHint, H('trees', 0, 'Act II: backcountry. Tree slalom'), H('couloir', 0, 'The couloir'), H('cornice', 0, 'Cornice pretzel'), H('halfpipe', 0, 'Half-pipe wall!'), H('kicker', 0, 'Kicker: JUMP, then MAGNET'), H('slalom', 0, 'Slalom: carve the long turns'), H('moguls', 0, 'Moguls'), H('kochCascade', 0, 'Giant slalom: ride the high line'),
       H('skiJump', 0, 'THE SKI JUMP: jump, then MAGNET to land')],
   };
 }

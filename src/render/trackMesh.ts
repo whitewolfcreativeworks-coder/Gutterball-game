@@ -1,10 +1,11 @@
 import {
-  BoxGeometry, BackSide, Object3D, ShaderMaterial, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
+  BoxGeometry, BackSide, Object3D, ShaderMaterial, UniformsLib, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
   Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry,
 } from 'three';
 import { TrackProjector, type Track } from '../track/track';
 import { profileRing, halfWidth } from '../track/profile';
 import type { MaterialProfile } from '../physics/materials';
+import { SKY_THEMES } from './sky';
 import { surfaceMaps, TILE } from './textures';
 import { applyFractal, FRACTAL_THEMES, FractalUniforms } from './fractal';
 
@@ -12,11 +13,22 @@ import { applyFractal, FRACTAL_THEMES, FractalUniforms } from './fractal';
  * Builds the visible gutter from the same frames and profile the physics
  * uses, so what you see is exactly what the ball rolls on.
  */
-export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, isBranch = false, junctions?: { s0: number; s1: number; other: Track }[], allTracks?: Track[]): Group {
+export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight: (x: number, z: number) => number, isBranch = false, junctions?: { s0: number; s1: number; other: Track }[], allTracks?: Track[], quality: 'low' | 'high' = 'high'): Group {
   const g = new Group();
   const vis = mat.visual;
   const maps = surfaceMaps(vis.surface, vis.tint);
-  const surfaceMat = vis.transparent && vis.surface === 'glass'
+  const glass = vis.transparent && vis.surface === 'glass';
+  const surfaceMat = glass && quality === 'high'
+    // REAL GLASS (three.js physical transmission): the world behind is refracted
+    // through the gutter, tinted by its thickness, with bright fresnel edges,
+    // a clearcoat and a faint oil-slick iridescence
+    ? new MeshPhysicalMaterial({
+      color: 0xffffff, roughness: 0.04, metalness: 0, transmission: 1, thickness: 0.9, ior: 1.5,
+      attenuationColor: new Color(vis.tint).multiplyScalar(0.55), attenuationDistance: 2.2,
+      clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 1, iridescence: 0.35, iridescenceIOR: 1.3,
+      side: DoubleSide, normalMap: maps.normalMap, envMapIntensity: 1.4,
+    })
+    : glass
     ? new MeshPhysicalMaterial({ color: vis.tint, roughness: vis.roughness, metalness: 0, transmission: 0.0, transparent: true, opacity: vis.opacity ?? 0.4, side: DoubleSide, normalMap: maps.normalMap, depthWrite: true, envMapIntensity: 0.35 })
     : new MeshStandardMaterial({
       map: maps.map, normalMap: maps.normalMap, roughnessMap: maps.roughnessMap, roughness: 1, metalness: vis.metalness,
@@ -197,7 +209,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   g.add(shell);
 
   // ---- Liquid surface (water world) ----
-  if (mat.medium === 'water') g.add(buildLiquid(track, mat));
+  if (mat.medium === 'water') { const lq = buildLiquid(track, mat); g.add(lq); g.userData.water = lq.userData.water; }
 
   // ---- Ribs arching over the gutter: they stream past and sell the speed ----
   g.add(buildRibs(track, mat, theme));
@@ -259,18 +271,20 @@ function buildRibs(track: Track, mat: MaterialProfile, theme: { a: number }) {
 
 function buildLiquid(track: Track, mat: MaterialProfile) {
   const depth = mat.mediumParams?.depth ?? 1.2;
-  const prof = track.profile;
-  // half-width of the water surface at given depth (inside the fillet)
-  const W = depth >= prof.rc ? prof.a + prof.rc : prof.a + Math.sqrt(prof.rc * prof.rc - (prof.rc - depth) ** 2);
-  const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+  const pos: number[] = [], uv: number[] = [], tan: number[] = [], nrm: number[] = [], idx: number[] = [];
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
   let row = 0;
   for (let i = 0; i < track.n; i += 2) {
     if (track.gap[i]) { row = -1; continue; }
     track.sample(i, P, T, U, R);
+    // half-width of the water surface at this depth (inside the fillet; wider in bowls)
+    const prof = track.profileAt(i * track.ds);
+    const W = depth >= prof.rc ? prof.a + prof.rc : prof.a + Math.sqrt(prof.rc * prof.rc - (prof.rc - depth) ** 2);
     for (const side of [-1, 1]) {
       pos.push(P.x + R.x * W * side + U.x * depth, P.y + R.y * W * side + U.y * depth, P.z + R.z * W * side + U.z * depth);
-      uv.push(side < 0 ? 0 : 1, i * track.ds / 6);
+      uv.push(side < 0 ? 0 : 1, i * track.ds);
+      tan.push(T.x, T.y, T.z);
+      nrm.push(U.x, U.y, U.z);
     }
     const base = pos.length / 3 - 2;
     if (row > 0) idx.push(base - 2, base, base - 1, base - 1, base, base + 1);
@@ -279,12 +293,92 @@ function buildLiquid(track: Track, mat: MaterialProfile) {
   const geo = new BufferGeometry();
   geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
   geo.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  geo.setAttribute('aTan', new BufferAttribute(new Float32Array(tan), 3));
+  geo.setAttribute('normal', new BufferAttribute(new Float32Array(nrm), 3));
   geo.setIndex(idx);
-  geo.computeVertexNormals();
-  const m = new MeshPhysicalMaterial({ color: mat.visual.water ?? 0x3fb7c9, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.55, clearcoat: 1, side: DoubleSide, depthWrite: false });
+  const sky = SKY_THEMES[mat.id] ?? SKY_THEMES.water;
+  const sunDir = new Vector3().setFromSphericalCoords(1, (90 - mat.visual.sky.elevation) * Math.PI / 180, mat.visual.sky.azimuth * Math.PI / 180);
+  const water = new Color(mat.visual.water ?? 0x3fb7c9);
+  const m = new ShaderMaterial({
+    transparent: true, depthWrite: false, side: DoubleSide, fog: true,
+    uniforms: {
+      ...UniformsLib.fog,
+      uTime: { value: 0 },
+      uDeep: { value: water.clone().multiplyScalar(0.35).lerp(new Color(0x05304a), 0.4) },
+      uShallow: { value: water.clone().lerp(new Color(0x9ff5e6), 0.35) },
+      uZenith: { value: new Color(sky.zenith) },
+      uHorizon: { value: new Color(sky.horizon ?? mat.visual.fog) },
+      uSun: { value: sunDir },
+      uSunCol: { value: new Color(sky.sunColor) },
+      uWidth: { value: 6 },
+    },
+    vertexShader: /* glsl */ `
+      attribute vec3 aTan;
+      varying vec2 vUv; varying vec3 vN; varying vec3 vT; varying vec3 vW;
+      #include <fog_pars_vertex>
+      void main() {
+        vUv = uv;
+        vN = normalize(mat3(modelMatrix) * normal);
+        vT = normalize(mat3(modelMatrix) * aTan);
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vW = wp.xyz;
+        vec4 mvPosition = viewMatrix * wp;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime, uWidth;
+      uniform vec3 uDeep, uShallow, uZenith, uHorizon, uSun, uSunCol;
+      varying vec2 vUv; varying vec3 vN; varying vec3 vT; varying vec3 vW;
+      #include <fog_pars_fragment>
+      float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+      // wave height: a few travelling wave trains flowing downstream, plus fine ripples
+      float H(vec2 q) {
+        float t = uTime;
+        float h = 0.0;
+        h += 0.10 * sin(q.y * 0.55 - t * 3.2 + sin(q.x * 0.9) * 1.5);
+        h += 0.06 * sin(q.y * 1.3 + q.x * 0.7 - t * 4.1);
+        h += 0.05 * sin(q.y * 0.9 - q.x * 1.1 - t * 2.7);
+        h += 0.045 * (vn(q * vec2(1.6, 0.7) - vec2(0.0, t * 2.4)) - 0.5);
+        h += 0.02 * (vn(q * vec2(4.0, 2.2) - vec2(t * 0.3, t * 5.0)) - 0.5);
+        return h;
+      }
+      void main() {
+        vec2 q = vec2((vUv.x - 0.5) * 2.0 * uWidth, vUv.y);   // metres: across, along
+        float e = 0.08;
+        float hx = (H(q + vec2(e, 0.0)) - H(q - vec2(e, 0.0))) / (2.0 * e);
+        float hy = (H(q + vec2(0.0, e)) - H(q - vec2(0.0, e))) / (2.0 * e);
+        vec3 N0 = normalize(vN), T = normalize(vT), Rr = normalize(cross(T, N0));
+        vec3 N = normalize(N0 - Rr * hx * 2.2 - T * hy * 2.2);
+        vec3 V = normalize(cameraPosition - vW);
+        if (dot(N, V) < 0.0) N = -N;
+        float ndv = clamp(dot(N, V), 0.0, 1.0);
+        float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+        vec3 Rf = reflect(-V, N);
+        vec3 skyC = mix(uHorizon, uZenith, pow(clamp(Rf.y, 0.0, 1.0), 0.4));
+        float spec = pow(max(dot(Rf, normalize(uSun)), 0.0), 260.0) * 6.0 + pow(max(dot(Rf, normalize(uSun)), 0.0), 30.0) * 0.25;
+        // body: shallow and bright at the banks, deep in the middle; caustic shimmer
+        float across = abs(vUv.x - 0.5) * 2.0;
+        vec3 body = mix(uDeep, uShallow, smoothstep(0.35, 1.0, across));
+        float caus = pow(vn(q * 1.7 + vec2(0.0, -uTime * 1.5)) * vn(q * 2.3 + vec2(uTime * 0.4, -uTime * 2.0)), 2.0);
+        body += uShallow * caus * 0.6;
+        vec3 col = mix(body, skyC, fres) + uSunCol * spec;
+        // foam: along the banks and on the crests, churned by the flow
+        float hh = H(q);
+        float fn = vn(q * vec2(2.5, 1.2) - vec2(0.0, uTime * 3.0));
+        float foam = smoothstep(0.82, 0.98, across + fn * 0.12) + smoothstep(0.12, 0.2, hh + fn * 0.06) * 0.6;
+        col = mix(col, vec3(0.95, 0.98, 1.0), clamp(foam, 0.0, 1.0) * 0.85);
+        float alpha = clamp(0.62 + fres * 0.35 + foam * 0.3, 0.0, 0.95);
+        gl_FragColor = vec4(col, alpha);
+        #include <fog_fragment>
+      }`,
+  });
   const mesh = new Mesh(geo, m);
   mesh.name = 'liquid';
   mesh.renderOrder = 2;
+  mesh.userData.water = m;
   return mesh;
 }
 
@@ -575,6 +669,8 @@ function buildLiftChains(track: Track): Mesh | null {
 /** Slide the moving obstacles to where the physics has them now (and run the lift chains). */
 export function updateMovingObstacles(root: Object3D, track: Track) {
   const ch = root.userData?.chain as ShaderMaterial | undefined;
+  const wtr = root.userData?.water as ShaderMaterial | undefined;
+  if (wtr) wtr.uniforms.uTime.value = track.time;
   if (ch) ch.uniforms.uScroll.value = track.time * 20; // the chain runs at lift speed
   root.traverse((o) => {
     const ms = o.userData?.movers as Mesh[] | undefined;

@@ -182,7 +182,7 @@ game.cb.onFinaleDone = (score: number, kind: string) => { if (game.mode === 'pla
 game.cb.onPhase = (p: RunPhase) => {
   if (game.mode !== 'play') return;
   if (p === 'finished') toast('FINISH!');
-  if (p === 'respawning') toast('Off the track — back to the last checkpoint');
+  if (p === 'respawning') toast('Reset!');
 };
 
 function controlsHint() {

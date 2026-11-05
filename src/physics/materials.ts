@@ -123,7 +123,7 @@ export const MATERIALS: Record<string, MaterialProfile> = {
       seamGain: 0.0, reverb: 0.4,
     },
     haptic: { rollTexture: 0.08, seamPulse: 0, impactScale: 1 },
-    visual: { surface: 'ice', tint: 0x8fb8d8, roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.82, sky: sky(2, 2.5, 12, 120), fog: 0xdde9f2, fogDensity: 0.004, ground: 0xe8eef3, scenery: 'glacier' },
+    visual: { surface: 'ice', tint: 0x4f7fae, roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.88, sky: sky(2, 2.5, 12, 120), fog: 0xdde9f2, fogDensity: 0.004, ground: 0xe8eef3, scenery: 'glacier' },
   },
   water: {
     id: 'water', name: 'Water',

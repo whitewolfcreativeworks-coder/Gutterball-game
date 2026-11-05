@@ -1,4 +1,5 @@
 import { Color, Material } from 'three';
+import { ShaderChunk } from 'three';
 
 /**
  * Animated fractal glow layered into the gutter surface.
@@ -29,7 +30,7 @@ export const FRACTAL_THEMES: Record<string, FractalTheme> = {
   wood:     { kind: 0,  a: 0xffc060, b: 0xff5a10, scale: 0.12,  flow: 0.55, strength: 0.55, c: [0.52, 0.62], psy: 0.55 },   // Kali set
   concrete: { kind: 1,  a: 0x7ff3ff, b: 0x2a5cff, scale: 0.10,  flow: 0.5,  strength: 1.1, c: [0, 0], psy: 0.12 },         // Menger / Sierpinski carpet
   metal:    { kind: 2,  a: 0x9fdcff, b: 0xb04cff, scale: 0.13,  flow: 0.8,  strength: 0.8,  c: [0.12, -0.08], psy: 0.35 },  // Mandelbox
-  ice:      { kind: 3,  a: 0x3fc8ff, b: 0x3a3dff, scale: 0.14,  flow: 0.45, strength: 0.45,  c: [0, 0], psy: 0.1 },         // hexagonal frost
+  ice:      { kind: 3,  a: 0x3fe0ff, b: 0x6a2cff, scale: 0.14,  flow: 0.45, strength: 0.7,   c: [0, 0], psy: 0.25 },         // hexagonal frost
   water:    { kind: 4,  a: 0x9ffcff, b: 0x1a6dff, scale: 0.11,  flow: 0.9,  strength: 0.6,  c: [0, 0], psy: 0.25 },         // caustic flow
   glass:    { kind: 5,  a: 0xff5cc8, b: 0x2affc4, scale: 0.12,  flow: 0.6,  strength: 1.0, c: [0, 0], psy: 0.85 },         // Apollonian gasket
   rubber:   { kind: 6,  a: 0xff2bd6, b: 0x2bf0ff, scale: 0.12,  flow: 0.8,  strength: 0.5,  c: [0, 0], psy: 1.0 },         // Turing labyrinth
@@ -175,7 +176,17 @@ float fxPattern(vec2 p) {
     w = (w - o) * 2.0; sc *= 2.0;
     d = min(d, fxSeg(w, vec2(0.0), vec2(0.9 * grow, 0.0)) / sc);
   }
-  return clamp(fxLine(d, 0.004, fw * 1.2) + exp(-d * 45.0) * 0.55 + fxFbm(p * 6.0) * 0.12, 0.0, 1.2);
+  // LIVE STARS: inside each crystal a kaleidoscopic fractal (folded inversions)
+  // drifts and morphs as you pass, framed by the frost arms
+  vec2 kz = p * 2.2;
+  float kf = 0.0;
+  vec2 kc = vec2(0.52 + 0.08 * sin(t * 0.37), 0.47 + 0.08 * cos(t * 0.29));
+  for (int i = 0; i < 7; i++) {
+    kz = abs(kz) / max(dot(kz, kz), 1e-3) - kc;
+    kf += exp(-abs(length(kz) - 0.8) * 6.0);
+  }
+  float inside = exp(-d * 9.0) * smoothstep(1.05 * grow, 0.6 * grow, r);
+  return clamp(fxLine(d, 0.004, fw * 1.2) + exp(-d * 45.0) * 0.55 + inside * (0.18 + 0.14 * kf) + fxFbm(p * 6.0) * 0.08, 0.0, 1.3);
 #elif FX_KIND == 4
   // WATER — iterated flow warp and caustic ridges (bright where the warped
   // field folds over itself), drifting like light through moving water.
@@ -380,7 +391,9 @@ export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: n
     sh.fragmentShader = GLSL + sh.fragmentShader
       .replace('#include <map_fragment>', '#include <map_fragment>\n float fxLum = max(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)), 1e-3); diffuseColor.rgb *= mix(1.0, min(1.0, 0.045 / fxLum), vFxMode.w);\n diffuseColor.a = mix(diffuseColor.a, 1.0, vFxMode.w); // see-through gutters become projection screens inside tubes')
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n reflectedLight.indirectSpecular *= 1.0 - 0.9 * vFxMode.w; reflectedLight.directSpecular *= 1.0 - 0.7 * vFxMode.w;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();')
+      // real-glass gutters stop being see-through inside tubes (the projection owns the walls)
+      .replace('#include <transmission_fragment>', ShaderChunk.transmission_fragment.replace('material.transmission = transmission;', 'material.transmission = transmission * (1.0 - vFxMode.w);'));
   };
   mat.customProgramCacheKey = () => `fx${theme.kind}`;
   mat.needsUpdate = true;

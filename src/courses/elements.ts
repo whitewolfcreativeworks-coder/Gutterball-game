@@ -273,10 +273,10 @@ export const funnelBowl = (dir = 1, widen = 2.2): Seg[] => [
   { len: 40, pitch: -9, widen, fx: { flow: -1 } },
   // two long, steady sweeps (one segment each keeps the turn even; the radius
   // stays well clear of the widened floor so the inside edge never pinches)
-  { len: 2 * Math.PI * 44 * 0.7, yaw: 252 * dir, bank: 44 * dir, pitch: -12, widen, fx: { twist: 2 * dir, flow: -1.5, pulse: 0.5 } },
-  { len: 2 * Math.PI * 36 * 0.7, yaw: 252 * dir, bank: 54 * dir, pitch: -15, widen, fx: { twist: 2.6 * dir, flow: -2, pulse: 0.6 } },
+  { len: 2 * Math.PI * 44 * 0.7, yaw: 252 * dir, bank: 44 * dir, pitch: -12, widen, exact: true, fx: { twist: 2 * dir, flow: -1.5, pulse: 0.5 } },
+  { len: 2 * Math.PI * 36 * 0.7, yaw: 252 * dir, bank: 54 * dir, pitch: -15, widen, exact: true, fx: { twist: 2.6 * dir, flow: -2, pulse: 0.6 } },
   // unwind over a long last curve, narrow back to a normal gutter, then drop through the hole
-  { len: 120, yaw: 72 * dir, bank: 26 * dir, pitch: -12, widen: 1.6, fx: { flow: -2, twist: dir } },
+  { len: 120, yaw: 72 * dir, bank: 26 * dir, pitch: -12, widen: 1.6, exact: true, fx: { flow: -2, twist: dir } },
   { len: 70, yaw: 0, bank: 0, pitch: -10, fx: { flow: -2 } },
   { len: 30, pitch: -10 },
   { len: 40, pitch: -58, tube: true, fx: { flow: -3, twist: 2 } },     // down the hole
