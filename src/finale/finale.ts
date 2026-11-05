@@ -383,6 +383,10 @@ export class Finale {
             this.ballVel.y *= -0.35; this.ballVel.x *= 0.8;
           }
         }
+        // wedged above the slots (against a rail or balanced on a peg): give the board a tap
+        const slow = Math.hypot(this.ballVel.x, this.ballVel.y) < 1.2 && this.ballPos.y > st.slotTop;
+        st.stall = slow ? (st.stall ?? 0) + dt : 0;
+        if (st.stall > 0.3) { st.stall = 0; this.ballVel.set(-Math.sign(this.ballPos.x || 1) * (3 + Math.random() * 2), 3, 0); this.audio.clink(0.3); }
         const still = Math.hypot(this.ballVel.x, this.ballVel.y) < 0.6 && this.ballPos.y < st.floor + this.r + 0.2;
         st.still = still ? st.still + dt : 0;
         if (st.still > 0.4 || this.t > 30) {
