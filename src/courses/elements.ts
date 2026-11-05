@@ -243,3 +243,43 @@ export const field = (at: string, pattern: 'zigzag' | 'posts' | 'gates' | 'colon
   }
   return out;
 };
+
+// ---------------------------------------------------------------------------
+// Skate-park elements (v4)
+// ---------------------------------------------------------------------------
+
+/**
+ * VERT WALL: a sharp kink where the outside wall shoots up like a skate-park
+ * quarter pipe. Carry speed in and the ball climbs the wall until gravity
+ * stops it, then drops back into the gutter and the run carries on.
+ * dir +1 = the course kinks left (you climb the right wall).
+ */
+export const vertWall = (dir: number, height = 28, yaw = 60, len = 50, pitch = -5): Seg[] => {
+  const wall = dir > 0 ? { R: height } : { L: height };
+  return [
+    { len: 24, pitch, fx: { flow: -1 } },
+    { len, yaw: yaw * dir, bank: 0, pitch: pitch + 2, wall, fx: { pulse: 1, twist: dir } },
+    { len: 30, pitch, wall, fx: { flow: 1 } },
+    { len: 30, pitch },
+  ];
+};
+
+/**
+ * FUNNEL BOWL: the gutter opens out into a wide, smooth, steeply banked
+ * funnel. Roll round and round it as it tightens, then drop through the
+ * hole (a steep tube plunge) and carry on below. dir +1 = spirals left.
+ */
+export const funnelBowl = (dir = 1, widen = 2.2): Seg[] => [
+  { len: 40, pitch: -9, widen, fx: { flow: -1 } },
+  // two long, steady sweeps (one segment each keeps the turn even; the radius
+  // stays well clear of the widened floor so the inside edge never pinches)
+  { len: 2 * Math.PI * 44 * 0.7, yaw: 252 * dir, bank: 44 * dir, pitch: -12, widen, fx: { twist: 2 * dir, flow: -1.5, pulse: 0.5 } },
+  { len: 2 * Math.PI * 36 * 0.7, yaw: 252 * dir, bank: 54 * dir, pitch: -15, widen, fx: { twist: 2.6 * dir, flow: -2, pulse: 0.6 } },
+  // unwind over a long last curve, narrow back to a normal gutter, then drop through the hole
+  { len: 120, yaw: 72 * dir, bank: 26 * dir, pitch: -12, widen: 1.6, fx: { flow: -2, twist: dir } },
+  { len: 70, yaw: 0, bank: 0, pitch: -10, fx: { flow: -2 } },
+  { len: 30, pitch: -10 },
+  { len: 40, pitch: -58, tube: true, fx: { flow: -3, twist: 2 } },     // down the hole
+  { len: 40, pitch: -8, tube: true, fx: { flow: -2 } },
+  { len: 30, pitch: -6 },
+];

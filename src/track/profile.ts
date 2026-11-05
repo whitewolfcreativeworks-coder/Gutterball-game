@@ -17,10 +17,10 @@ export interface GutterProfile {
   rc: number;  // fillet radius
   H: number;   // wall height above floor
   th: number;  // shell thickness
-  lip: number; // inward-curling rim at the wall tops (keeps the ball in the gutter)
+  lip: number; // a small rounded bead along the wall tops (a bump you can feel, not a ledge)
 }
 
-export const DEFAULT_PROFILE: GutterProfile = { a: 2.8, rc: 3.6, H: 6.6, th: 0.32, lip: 1.4 };
+export const DEFAULT_PROFILE: GutterProfile = { a: 2.8, rc: 3.6, H: 6.6, th: 0.32, lip: 0.45 };
 
 export const CONTAIN_ABOVE_RIM = 2.6;
 
@@ -76,8 +76,12 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
   // into. `visibleOnly` gives the real surface (for the magnet and visuals).
   // In 'open sky' sections they stop a few metres above the rim: a big double
   // jump can fly off course there, and only the tractor beam saves you.
+  // Raised walls (built-up corners, vert walls) are tall enough for any normal
+  // line; above them the containment also stops just over the top, so a ball
+  // going hot enough to clear one flies out for real and the tractor beam
+  // brings it home (rather than rolling up an invisible wall).
   if (visibleOnly) sdf = Math.max(sdf, y - Hs);
-  else if (openSky) sdf = Math.max(sdf, y - (Hs + CONTAIN_ABOVE_RIM));
+  else if (openSky || (curl <= 0 && raisedK(Hs, p) > 0.5)) sdf = Math.max(sdf, y - (Hs + CONTAIN_ABOVE_RIM));
   const W = p.a + p.rc;
   const phiMax = curl * Math.PI / 2;
   if (curl > 0) {
@@ -119,7 +123,9 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
     }
     sdf = Math.min(sdf, d);
   }
-  const lipLen = p.lip * (1 - curl) * (1 - ok);
+  // raised walls (built-up corners, vert walls) have no bead: as they taper back
+  // down, a bead would sweep down onto a ball riding high like a ceiling
+  const lipLen = p.lip * (1 - curl) * (1 - ok) * (1 - raisedK(Hs, p));
   if (p.lip > 0 && lipLen > 0.01) {
     // Rolled lip: a flange overhanging the channel at the top of each wall
     // (at the end of the curl when the walls are curling into a tube).
@@ -127,9 +133,11 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
     const c = Math.cos(phiMax), sn = Math.sin(phiMax);
     const u = ax0 * c + dy0 * sn, v = -ax0 * sn + dy0 * c;
     const cx = W - lipLen / 2 + p.th / 2;
-    const qx = Math.abs(u - cx) - (lipLen / 2 + p.th / 2);
-    const qy = Math.abs(v - p.th / 2) - p.th / 2;
-    const lipD = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
+    // rounded box: a bead, no sharp edge to snag on
+    const rb = Math.min(0.14, p.th / 2 - 0.01);
+    const qx = Math.abs(u - cx) - (lipLen / 2 + p.th / 2) + rb;
+    const qy = Math.abs(v - p.th / 2) - p.th / 2 + rb;
+    const lipD = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rb;
     sdf = Math.min(sdf, lipD);
   }
   if (closed) {
@@ -140,12 +148,18 @@ export function shellSDF(x: number, y: number, p: GutterProfile, closed = false,
   return sdf;
 }
 
+/** 0 on a normal wall, 1 once a wall is built up by more than ~1 m. */
+export function raisedK(Hs: number, p: GutterProfile): number { return Math.max(0, Math.min(1, (Hs - p.H - 0.2) / 0.8)); }
+
 /** Radius and sweep of the overhang on a built-up corner wall. */
 export const OVERHANG_R = 2.4;
 export const OVERHANG_ANGLE = (110 * Math.PI) / 180;
 /** How far a wall has turned into an overhang (0 = normal wall with flat lip, 1 = full overhang). */
-export function overhangK(Hs: number, p: GutterProfile): number {
-  return Math.max(0, Math.min(1, (Hs - p.H - 0.5) / 3));
+export function overhangK(_Hs: number, _p: GutterProfile): number {
+  // (v4) retired: raised corner walls now end in the same small bead as every
+  // other wall. The big curl kicked fast balls around; the walls are tall
+  // enough instead, and the tractor beam handles anything that flies.
+  return 0;
 }
 
 /** Sample the inner profile as a polyline for mesh generation (left wall top -> right wall top). */
@@ -197,7 +211,7 @@ export function profileRing(p: GutterProfile, curl: number, arcSteps = 12, curlS
   const phiMax = curl * Math.PI / 2;
   const half = (Hs: number) => {
     const ok = curl > 0 ? 0 : overhangK(Hs, p);
-    const lipLen = p.lip * (1 - curl) * (1 - ok);
+    const lipLen = p.lip * (1 - curl) * (1 - ok) * (1 - raisedK(Hs, p));
     const right: Array<[number, number, number, number]> = []; // x, y, nx, ny (right half, floor centre -> lip)
     right.push([0, 0, 0, 1]);
     right.push([p.a, 0, 0, 1]);

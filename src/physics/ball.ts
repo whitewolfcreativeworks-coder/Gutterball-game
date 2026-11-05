@@ -292,7 +292,7 @@ export class BallPhysics {
     const grounded = this.sinceContact <= tu.coyoteTime;
 
     // ---- Tunnel enter/exit events (acoustics) ----
-    const tun = (this.track.isTunnel(pr.s) || this.track.isTube(pr.s)) && Math.abs(pr.x) < halfWidth(this.track.profile) + 0.5;
+    const tun = (this.track.isTunnel(pr.s) || this.track.isTube(pr.s)) && Math.abs(pr.x) < this.track.halfWidthAt(pr.s) + 0.5;
     if (tun !== this.inTunnel) { this.emit(tun ? 'TUNNEL_ENTER' : 'TUNNEL_EXIT', 1); this.inTunnel = tun; }
 
     // ---- Forces -> velocity ----
@@ -333,7 +333,8 @@ export class BallPhysics {
       // Grip assist: sideways sliding settles quickly when you ease off the
       // tilt, so the ball goes where you point it instead of wandering.
       // (only on the flat floor: on a wall, sideways motion IS the ride up the corner and must keep its energy)
-      const onFloor = 1 - Math.max(0, Math.min(1, (Math.abs(pr.x) - this.track.profile.a * 0.6) / (this.track.profile.a * 0.5)));
+      const flA = this.track.profileAt(pr.s).a;
+      const onFloor = 1 - Math.max(0, Math.min(1, (Math.abs(pr.x) - flA * 0.6) / (flA * 0.5)));
       acc.addScaledVector(Rt, -vlat * 1.2 * onFloor * (1 - Math.min(1, Math.abs(input.steer))));
       // Δω = (n × dir)/r * Δv ; scale 3.5 so friction delivers ~the requested linear accel
       const gyro = st * (1 - tu.steerDirectFrac) * 3.5 / r * dt;
@@ -598,7 +599,7 @@ export class BallPhysics {
       const pr = this.projs[i], tr = this.tracks[i];
       if (i !== this.activeIndex) pr.project(this.p.x, this.p.y, this.p.z);
       if (Math.abs(pr.along) > 3 || tr.isGap(pr.s)) continue;
-      if (Math.abs(pr.x) > halfWidth(tr.profile) + 2 || pr.y < -0.5) continue;
+      if (Math.abs(pr.x) > tr.halfWidthAt(pr.s) + 2 || pr.y < -0.5) continue;
       if (pr.y < bestY) { bestY = pr.y; best = i; }
     }
     return best;
@@ -695,7 +696,7 @@ export class BallPhysics {
     const mat = this.material;
     const pr = this.proj;
     let sub = 0;
-    if (mat.medium === 'water' && !this.track.isGap(pr.s) && Math.abs(pr.x) < halfWidth(this.track.profile)) {
+    if (mat.medium === 'water' && !this.track.isGap(pr.s) && Math.abs(pr.x) < this.track.halfWidthAt(pr.s)) {
       const depth = mat.mediumParams?.depth ?? 1.2;
       const r = this.tune.radius;
       sub = Math.max(0, Math.min(1, (depth - (pr.y - r)) / (2 * r)));
@@ -744,7 +745,7 @@ export class BallPhysics {
       // The beam works on the track you are ON or directly ABOVE: an upper
       // track (High Road), a tunnel roof, a branch, not always the main gutter.
       const bi = grounded0 ? this.activeIndex : this.beamTrack();
-      const btr = this.tracks[bi], prj = this.projs[bi], prof = btr.profile;
+      const btr = this.tracks[bi], prj = this.projs[bi], prof = btr.profileAt(prj.s);
       const Wc = halfWidth(prof);
       const inTube = btr.tubeAt(prj.s) > 0.85;
       const [wl, wr] = btr.wallsAt(prj.s);

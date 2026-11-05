@@ -1,4 +1,5 @@
 import type { CourseLayout } from '../track/track';
+import { vertWall } from './elements';
 
 /**
  * WORLD 1 — WOOD (free). "Timberline Run".
@@ -96,6 +97,8 @@ export const WOOD_COURSE: CourseLayout = {
     { len: 16, pitch: -26, fx: { flow: -1 } }, { len: 18, pitch: -3, fx: { pulse: 1 } },
     { len: 16, pitch: -26, fx: { flow: -1 } }, { len: 18, pitch: -3, fx: { pulse: 1 } },
     { len: 90, pitch: -7, label: 'logs', fx: { flow: 1 } },
+    // SKATE WALL: the outside wall shoots up; ride it as high as your speed takes you
+    ...vertWall(1).map((g, i) => (i === 0 ? { ...g, label: 'woodVert' } : g)),
     { len: 63, yaw: 180, bank: 50, pitch: -9, tube: true, label: 'funnel', fx: { twist: 1.5, flow: -1 } },
     { len: 50, yaw: 180, bank: 55, pitch: -10, tube: true, fx: { twist: 1.8, flow: -1.2 } },
     { len: 38, yaw: 180, bank: 58, pitch: -11, tube: true, fx: { twist: 2.1, flow: -1.4 } },
@@ -166,6 +169,7 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'millSweep', s: 0, text: 'The Sawmill: a pipe corner. Fast enough and you go over the top' },
     { at: 'flume', s: 0, text: 'Log flume' },
     { at: 'logs', s: 0, text: 'Log pile: time the sliding log' },
+    { at: 'woodVert', s: 0, text: 'Vert wall: ride it up and drop back in' },
     { at: 'funnel', s: 0, text: 'Sawdust funnel' },
     { at: 'shed', s: 0, text: 'Drying shed' },
     { at: 'bigLift', s: 0, text: 'The Big One: up the lift hill...' },

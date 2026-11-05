@@ -30,6 +30,8 @@ export interface Segment {
   openSky?: boolean;  // containment walls stop above the rim (fly-off-course zone)
   tube?: boolean;     // the walls curl over and close into a full pipe
   lift?: number;      // chain lift: carries the ball uphill at this speed (m/s)
+  wall?: { L?: number; R?: number }; // extra wall height (m) on each side here (vert walls)
+  widen?: number;     // the floor widens by this factor (funnel bowls; eased in and out)
   warp?: number;      // top speed the tube's air current pushes you to here (m/s; default: full warp)
   /**
    * Fractal motion for this section (visual only):
@@ -125,6 +127,10 @@ export class Track {
   readonly lift: Float32Array;
   /** Wall height (m above the floor) on the left and right, per sample: raised on the outside of corners. */
   readonly wallL: Float32Array;
+  /** Explicit extra wall height per sample (from Segment.wall). */
+  private wallXL: Float32Array; private wallXR: Float32Array;
+  /** Floor-width factor per sample (1 = the standard gutter). */
+  readonly widen: Float32Array;
   readonly wallR: Float32Array;
   /** Per-sample fractal motion [flow, pulse, twist], smoothed between sections. */
   readonly fxMode: Float32Array;
@@ -152,6 +158,8 @@ export class Track {
     this.tubeK = new Float32Array(this.n);
     this.warpCap = new Float32Array(this.n);
     this.lift = new Float32Array(this.n);
+    this.wallXL = new Float32Array(this.n); this.wallXR = new Float32Array(this.n);
+    this.widen = new Float32Array(this.n).fill(1);
     this.build();
     {
       // the walls curl closed gradually: box filter (+-12 m), then ease
@@ -166,6 +174,15 @@ export class Track {
     }
     this.wallL = new Float32Array(this.n).fill(this.profile.H);
     this.wallR = new Float32Array(this.n).fill(this.profile.H);
+    // ease the floor width in and out over ~30 m
+    {
+      const src = this.widen.slice(), win = Math.round(15 / this.ds);
+      for (let i = 0; i < this.n; i++) {
+        let a = 0, c = 0;
+        for (let j = Math.max(0, i - win); j <= Math.min(this.n - 1, i + win); j++) { a += src[j]; c++; }
+        this.widen[i] = a / c;
+      }
+    }
     this.raiseCornerWalls();
     // blend fractal motion across ~16 m so sections morph into each other
     {
@@ -202,7 +219,8 @@ export class Track {
    * can carry your speed high round the corner instead of hitting the rim.
    */
   private raiseCornerWalls() {
-    const n = this.n, ds = this.ds, v = 55, g = 9.81, maxExtra = 8;
+    // sized for thumb-push speeds (~245 km/h): the line a fast ball takes round each bend
+    const n = this.n, ds = this.ds, v = 68, g = 9.81, maxExtra = 12;
     const extraL = new Float32Array(n), extraR = new Float32Array(n);
     for (let i = 2; i < n - 2; i++) {
       if (this.tubeK[i] > 0.02 || this.tunnel[i] || this.gap[i]) continue;
@@ -211,7 +229,7 @@ export class Track {
       const kappa = Math.abs(dyaw) * Math.PI / 180;
       const theta = Math.atan(v * v * kappa / g) * 180 / Math.PI;
       const bankHelp = this.angles[i * 3 + 2] * Math.sign(dyaw);                          // bank tilted toward the inside helps
-      const e = Math.max(0, Math.min(1, (theta - bankHelp - 45) / 32)) * maxExtra;
+      const e = Math.max(0, Math.min(1, (theta - bankHelp - 40) / 30)) * maxExtra;
       if (dyaw > 0) extraR[i] = e; else extraL[i] = e;                                     // left turn: ball is flung right
     }
     // build up ahead of and after each corner (max over +-14 m), then taper smoothly (box +-10 m)
@@ -221,6 +239,8 @@ export class Track {
       for (let i = 0; i < n; i++) { let a = 0, c = 0; for (let j = Math.max(0, i - w2); j <= Math.min(n - 1, i + w2); j++) { a += m[j]; c++; } out[i] = a / c; }
       return out;
     };
+    // explicit walls (vert walls) win where they are taller
+    for (let i = 0; i < n; i++) { extraL[i] = Math.max(extraL[i], this.wallXL[i]); extraR[i] = Math.max(extraR[i], this.wallXR[i]); }
     const sl = spread(extraL), sr = spread(extraR);
     for (let i = 0; i < n; i++) {
       const open = 1 - Math.min(1, this.tubeK[i] * 20);                                   // never inside or entering tubes
@@ -230,8 +250,42 @@ export class Track {
     }
   }
 
+  /** The cross-section at arc length s (wider in funnel bowls). */
+  profileAt(s: number): GutterProfile {
+    const w = this.widenAt(s);
+    if (w < 1.0005) return this.profile;
+    return { ...this.profile, a: this.profile.a * w };
+  }
+  /**
+   * Floor-width factor at s, interpolated linearly between samples. It must be
+   * continuous along the course: any step in the width is a tiny wall across
+   * the track to the collision normal, and a fast ball would run into it.
+   */
+  widenAt(s: number): number {
+    const f = Math.max(0, Math.min(this.n - 1.001, s / this.ds));
+    const i = Math.floor(f), u = f - i;
+    return this.widen[i] + (this.widen[i + 1] - this.widen[i]) * u;
+  }
+  private profScratch: GutterProfile = { ...DEFAULT_PROFILE };
+  /** Same as profileAt, without allocating (for the hot collision path). */
+  private profileAtFast(s: number): GutterProfile {
+    const w = this.widenAt(s);
+    if (w < 1.0005) return this.profile;
+    const p = this.profScratch;
+    p.a = this.profile.a * w; p.rc = this.profile.rc; p.H = this.profile.H; p.th = this.profile.th; p.lip = this.profile.lip;
+    return p;
+  }
+  /** Half-width of the channel at arc length s. */
+  halfWidthAt(s: number) { const p = this.profileAt(s); return p.a + p.rc; }
+
   /** Visible wall heights [left, right] at arc length s. */
-  wallsAt(s: number): [number, number] { const i = this.idx(s); return [this.wallL[i], this.wallR[i]]; }
+  wallsAt(s: number): [number, number] { return [this.wallAt(this.wallL, s), this.wallAt(this.wallR, s)]; }
+  /** Wall height interpolated along the course (a stepped wall top is a row of tiny ledges to the collision normal). */
+  private wallAt(arr: Float32Array, s: number) {
+    const f = Math.max(0, Math.min(this.n - 1.001, s / this.ds));
+    const i = Math.floor(f), u = f - i;
+    return arr[i] + (arr[i + 1] - arr[i]) * u;
+  }
 
   private idx(s: number): number {
     return Math.max(0, Math.min(this.n - 1, Math.round(s / this.ds)));
@@ -317,6 +371,8 @@ export class Track {
         this.tubeK[i] = seg.tube ? 1 : 0;
         this.warpCap[i] = seg.warp ?? 0;
         this.lift[i] = seg.lift ?? 0;
+        this.wallXL[i] = seg.wall?.L ?? 0; this.wallXR[i] = seg.wall?.R ?? 0;
+        this.widen[i] = seg.widen ?? 1;
         writeSample(i, !!seg.tunnel, !!seg.gap);
         i++;
         sGlobal += this.ds;
@@ -365,7 +421,7 @@ export class Track {
   channelDepthLocal(s: number, x: number, y: number): number {
     const s0 = this.layout.openStart ? 0 : -2, s1 = this.layout.openEnd ? this.length : this.length + 2;
     if (s < s0 || s > s1) return -1e6;
-    return channelDepth(x, y, this.profile, this.tubeAt(s));
+    return channelDepth(x, y, this.profileAtFast(s), this.tubeAt(s));
   }
   isGap(s: number) { return this.gap[this.idx(s)] === 1; }
 
@@ -400,7 +456,7 @@ export class Track {
   sdfLocal(s: number, x: number, y: number, includeObstacles = true, visibleOnly = false): number {
     let d = 1e6;
     const s0 = this.layout.openStart ? 0 : -2, s1 = this.layout.openEnd ? this.length : this.length + 2;
-    if (s >= s0 && s <= s1 && !this.isGap(s)) { const ii = this.idx(s); d = shellSDF(x, y, this.profile, this.isTunnel(s), visibleOnly, this.openSky[ii] === 1, this.tubeAt(s), this.wallL[ii], this.wallR[ii]); }
+    if (s >= s0 && s <= s1 && !this.isGap(s)) { const ii = this.idx(s); d = shellSDF(x, y, this.profileAtFast(s), this.isTunnel(s), visibleOnly, this.openSky[ii] === 1, this.tubeAt(s), this.wallAt(this.wallL, s), this.wallAt(this.wallR, s)); }
     else if (!visibleOnly && s >= s0 && s <= s1 && this.isGap(s)) {
       // Over a gap there is no floor, but the invisible side walls continue:
       // you can fall into a gap, never escape sideways out of the course.

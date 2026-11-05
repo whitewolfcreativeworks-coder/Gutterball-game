@@ -75,3 +75,19 @@ Steering 7.5 m/s² (35 % direct), air steer 2.6 m/s², propulsion levels 0 / 1.6
 - **Spin carried across landings.** The take-off surface normal is kept through a flight. On touchdown the spin is rotated onto the new surface before friction acts. Landing on the far wall of a pipe no longer skids away a third of your speed.
 - **Chain lifts.** `Segment.lift = speed` holds the ball at that speed along the course (hauling a slow ball, reining in a fast one) and keeps it centred, with a clack every 1.2 m.
   - `liftHill()` = chain climb → open-sky crest → near-free-fall tip-over → 55–75° plunge → pull-out.
+
+## Round 4: lips, walls, skate-park features
+
+- **Tiny lip.** The wall tops have a 0.45 m rounded bead. It replaces the 1.4 m flat flange, which popped fast balls riding high. The 110° overhang on built-up corners is retired too.
+- **Raised walls** (built-up corners, vert walls):
+  - They have no bead. As a raised wall tapers back down, a bead would sweep down onto a ball riding high like a ceiling.
+  - Their invisible containment stops 2.6 m above the top. A ball hot enough to clear one flies out for real, and the tractor beam brings it home.
+  - Corner walls are sized for thumb-push speeds: v = 68 m/s, up to +12 m.
+- **Continuity rule.** Every per-sample quantity that shapes the collision surface (tube curl, wall heights, floor width) is interpolated linearly along the course. A value looked up by nearest sample changes in steps. To the finite-difference collision normal each step is a small wall across the track, and at 30+ m/s it stops the ball dead.
+  - This was found when the funnel bowl's width steps knocked a 34 m/s ball down to 4 m/s.
+  - Stepped wall heights may also have added to the "pop" high on built-up walls.
+- **Vert wall** (`vertWall`): a 60° kink with a 28 m outside wall. The ball climbs as high as its speed allows, then drops back in. It climbs 10–40 m and keeps 70–80% of its speed.
+- **Funnel bowl** (`funnelBowl`):
+  - The floor widens 2.2× (per-segment `widen`, eased over ~30 m). Two long, steady banked sweeps follow.
+  - A single segment per sweep matters: the turtle's easing makes the middle of a segment about 1.9× tighter than its average. That must stay well clear of the widened half-width, or the inside edge pinches.
+  - Then a long unwinding curve, back to a normal gutter, and a 58° tube plunge "down the hole".

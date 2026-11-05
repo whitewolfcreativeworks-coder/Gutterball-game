@@ -1,5 +1,5 @@
 import type { CourseLayout, HintSpec, ObstacleSpec, Segment } from '../track/track';
-import { armSpan, branch, liftHill, pipeCorner, tubeRun, camel, cascade, corkscrew, drop, field, hairpin, helix, hops, jump, koch, kreisel, labyrinth, loop, outerbank, pretzel, roll, run, sideArm, sweeper, terraces, tunnelRun, turn, vortex, wave } from './elements';
+import { armSpan, branch, funnelBowl, liftHill, vertWall, pipeCorner, tubeRun, camel, cascade, corkscrew, drop, field, hairpin, helix, hops, jump, koch, kreisel, labyrinth, loop, outerbank, pretzel, roll, run, sideArm, sweeper, terraces, tunnelRun, turn, vortex, wave } from './elements';
 
 /**
  * Hand-composed courses for the eleven purchasable worlds. Each follows its
@@ -42,9 +42,9 @@ function concrete(): CourseLayout {
     ...step(), ...step(),
     // ACT II — TREATMENT WORKS: the drain funnel, the sewer main, the weir
     ...L(drop(40, -24, -6), 'works'),
-    ...L(vortex(2, 40, 18, 55, -9, -1, { tube: true }), 'drainFunnel'),
+    ...L(funnelBowl(-1), 'drainFunnel'),
     ...run(30, -7),
-    ...L(run(130, -6, { fx: { flow: 1 } }), 'filterBeds'),
+    ...L(run(130, -6, { fx: { flow: 1 } }), 'filterBeds'), ...L(vertWall(1), 'skate1'), ...L(vertWall(-1), 'skate2'),
     ...L(tubeRun(220, 40, -7), 'sewerMain'),
     ...L(pipeCorner(150, -100, -7), 'weir'),
     ...L(terraces(5, 14, -30, 16), 'longSpill'),
@@ -60,7 +60,7 @@ function concrete(): CourseLayout {
   const arm = (dir: number) => sideArm(dir, 32, legs, mid, -7, [{ len: 22, pitch: -7, tube: true }, { len: 10, pitch: -8, gap: true }, { len: 18, pitch: -7, tube: true }], { tube: true });
   return {
     id: 'concrete', name: 'Storm Drain', checkpointEvery: 200, segments: segs, obstacles: [...ob, ...field('filterBeds', 'sliders', 4, 16, 28), ...field('outfall', 'gates', 3, 20, 34),],
-    hints: [firstHint, H('works', 0, 'Act II: the Treatment Works'), H('drainFunnel', 0, 'THE DRAIN FUNNEL'), H('sewerMain', 0, 'Sewer main'), H('weir', 0, 'The weir: ride the high wall'), H('longSpill', 0, 'Long spillway'), H('spillway', 0, 'Spillway steps: each one bleeds speed'), H('corner1', -10, 'Box corner: turn in early'), H('tumble', 0, 'Square tumble'),
+    hints: [firstHint, H('works', 0, 'Act II: the Treatment Works'), H('drainFunnel', 0, 'THE BOWL: roll round, drop down the drain'), H('skate1', 0, 'Vert wall: ride it up!'), H('sewerMain', 0, 'Sewer main'), H('weir', 0, 'The weir: ride the high wall'), H('longSpill', 0, 'Long spillway'), H('spillway', 0, 'Spillway steps: each one bleeds speed'), H('corner1', -10, 'Box corner: turn in early'), H('tumble', 0, 'Square tumble'),
       H('shaft', 0, 'Shaft drop!'), H('sponge', -30, 'THE SPONGE: left, centre or right'), H('aqueduct', 0, 'Aqueduct')],
     branches: [branch('spongeL', 'Left Void', 'sponge', arm(1)), branch('spongeR', 'Right Void', 'sponge', arm(-1))],
   };
@@ -95,7 +95,7 @@ function metal(): CourseLayout {
     ...L(pretzel(36, 60, -10, { tube: true }), 'pretzel'),
     ...L(run(60, -6, { tube: true, fx: { flow: -3 } }), 'boost2'),
     ...liftHill(80, -72, 0, { label: 'liftMill' }), ...run(30, -6),
-    ...L(pipeCorner(160, 110, -6), 'conveyor'),
+    ...L(pipeCorner(160, 110, -6), 'conveyor'), ...L(funnelBowl(-1), 'sheetFunnel'),
     ...L(roll(80, -6, 2, { tube: true }), 'doubleRoll'), ...run(30, -6, { tube: true }),
     ...drop(50, -24, -3), ...loop(90, -13),
     ...FINISH(),
@@ -104,7 +104,7 @@ function metal(): CourseLayout {
   const twinMid = (dir: number): Seg[] => [{ len: 20, pitch: -6 }, { len: 70, loop: true, shift: -12 * dir, pitch: -6 }, { len: 20, pitch: -6 }, { len: 70, loop: true, shift: 12 * dir, pitch: -6 }, { len: 20, pitch: -6 }];
   return {
     id: 'metal', name: 'Foundry Loops', checkpointEvery: 220, segments: segs, obstacles: [...field('relaunch', 'sliders', 2, 18, 24)],
-    hints: [firstHint, H('mill', 0, 'Act II: the Rolling Mill. Wave turns'), H('rollers', 0, 'Loop rollers'), H('pretzel', 0, 'The pretzel'), H('liftMill', 0, 'Lift hill... hold on'), H('doubleRoll', 0, 'Double roll'), H('launch', 0, 'Magnetic launch!'), H('tophat', 0, 'Top hat: MAGNET at the crest'), H('pair', 0, 'Paired loops'),
+    hints: [firstHint, H('mill', 0, 'Act II: the Rolling Mill. Wave turns'), H('rollers', 0, 'Loop rollers'), H('pretzel', 0, 'The pretzel'), H('sheetFunnel', 0, 'Sheet-metal funnel'), H('liftMill', 0, 'Lift hill... hold on'), H('doubleRoll', 0, 'Double roll'), H('launch', 0, 'Magnetic launch!'), H('tophat', 0, 'Top hat: MAGNET at the crest'), H('pair', 0, 'Paired loops'),
       H('ceiling', 0, 'Inverted: hold the MAGNET'), H('twins', -20, 'DUELLING TWINS: pick a mirror'), H('relaunch', 0, 'Relaunch!'), H('zeroG', 0, 'Zero-g roll')],
     branches: [branch('twinL', 'Mirror Left', 'twins', sideArm(1, 30, legs, 0, -6, twinMid(1))), branch('twinR', 'Mirror Right', 'twins', sideArm(-1, 30, legs, 0, -6, twinMid(-1)))],
   };
@@ -132,7 +132,7 @@ function ice(): CourseLayout {
     ...L(pipeCorner(160, -90, -8), 'crevasse'),
     ...L(vortex(1.75, 36, 18, 60, -9, 1, { tube: true }), 'iceFunnel'),
     ...run(30, -7),
-    ...L(hops(5, 24, 4, -7), 'seracs'),
+    ...L(hops(5, 24, 4, -7), 'seracs'), ...L(funnelBowl(1), 'iceBowl'),
     ...L(labyrinth(5, 34, 40, 34, -8), 'labyrinth3'),
     ...L([{ len: 60, yaw: -45, bank: -30, pitch: -7 }, { len: 230, yaw: 270, bank: 72, pitch: -8, fx: { twist: 2 } }, { len: 60, yaw: -45, bank: -30, pitch: -7 }, { len: 24, bank: 0, pitch: -7 }], 'omega2'),
     ...L(sweeper(140, 80, -7), 'moraine'), ...sweeper(140, -80, -7),
@@ -142,7 +142,7 @@ function ice(): CourseLayout {
   const needle = (dir: number, yaw: number, l: number, m: number, p: number) => sideArm(dir, yaw, l, m, p, [{ len: m * 0.4, pitch: p - 6 }, { len: m * 0.6, pitch: p }]);
   return {
     id: 'ice', name: 'Glacier Bobsleigh', checkpointEvery: 220, segments: segs, obstacles: [],
-    hints: [firstHint, H('crevasse', 0, 'Act II: the Crevasse'), H('iceFunnel', 0, 'ICE FUNNEL'), H('seracs', 0, 'Seracs'), H('omega2', 0, 'Reverse omega'), H('blueTunnel', 0, 'Blue tunnel'), H('labyrinth', 0, 'Labyrinth: drift through the S-curves'), H('omega', 0, 'Omega curve'), H('dendrite', -10, 'Frost needle: break right'),
+    hints: [firstHint, H('crevasse', 0, 'Act II: the Crevasse'), H('iceFunnel', 0, 'ICE FUNNEL'), H('seracs', 0, 'Seracs'), H('iceBowl', 0, 'Ice bowl'), H('omega2', 0, 'Reverse omega'), H('blueTunnel', 0, 'Blue tunnel'), H('labyrinth', 0, 'Labyrinth: drift through the S-curves'), H('omega', 0, 'Omega curve'), H('dendrite', -10, 'Frost needle: break right'),
       H('iceCave', 0, 'Ice cave'), H('kreisel', 0, 'THE KREISEL: ride the wall'), H('fan', -10, 'Dendrite fan: three lines')],
     branches: [branch('needle', 'Frost Needle', 'dendrite', needle(-1, 30, legs, 60, -7)), branch('fanL', 'Left Arm', 'fan', needle(1, 30, 34, 40, -8)), branch('fanR', 'Right Arm', 'fan', needle(-1, 30, 34, 40, -8))],
   };
@@ -173,7 +173,7 @@ function water(): CourseLayout {
     ...L(tubeRun(220, 45, -6), 'cave'),
     ...L(pipeCorner(150, -90, -6), 'bend'),
     ...L(terraces(4, 18, -32, 20), 'cascades'),
-    ...L(vortex(1.5, 34, 20, 45, -8, -1, { tube: true }), 'whirlpool'),
+    ...L(funnelBowl(-1), 'whirlpool'),
     ...L(run(100, -4, { fx: { flow: 2 } }), 'estuary'),
     ...liftHill(70, -70, 0, { label: 'bigFalls' }),
     ...FINISH(),
@@ -182,7 +182,7 @@ function water(): CourseLayout {
   return {
     id: 'water', name: 'River Run', checkpointEvery: 220, segments: segs,
     obstacles: [...field('estuary', 'sliders', 3, 20, 26), { at: 'basin', s: 40, x: 0, ls: 2, w: 5, h: 1.6, kind: 'barrier' }],
-    hints: [firstHint, H('delta', 0, 'Act II: the delta'), H('rapids2', 0, 'White water!'), H('flumes', 0, 'Flume pretzel'), H('cave', 0, 'The cave'), H('cascades', 0, 'Cascades'), H('whirlpool', 0, 'WHIRLPOOL'), H('bigFalls', 0, 'Up to the big falls...'), H('source', 0, 'Ride the current'), H('meanders', 0, 'Meanders: the flow pushes you wide'), H('rapids', 0, 'Rapids!'),
+    hints: [firstHint, H('delta', 0, 'Act II: the delta'), H('rapids2', 0, 'White water!'), H('flumes', 0, 'Flume pretzel'), H('cave', 0, 'The cave'), H('cascades', 0, 'Cascades'), H('whirlpool', 0, 'WHIRLPOOL: round and round and down'), H('bigFalls', 0, 'Up to the big falls...'), H('source', 0, 'Ride the current'), H('meanders', 0, 'Meanders: the flow pushes you wide'), H('rapids', 0, 'Rapids!'),
       H('braids', -10, 'Braided channels: find the fast one'), H('flume', 0, 'Flume'), H('waterfall', 0, 'Waterfall!')],
     branches: [branch('braidL', 'West Channel', 'braids', braid(1, -6)), branch('braidR', 'East Channel', 'braids', braid(-1, -6))],
   };
@@ -207,7 +207,7 @@ function glass(): CourseLayout {
     // ACT II — PRISM HEIGHTS: high floaters, a second gasket, the crystal pretzel
     ...run(30, -6),
     ...L([...camel(90, 12, -14), ...camel(84, 11, -14), ...camel(78, 10, -14)], 'floaters'),
-    ...L(pipeCorner(170, 100, -6), 'prismBend'),
+    ...L(pipeCorner(170, 100, -6), 'prismBend'), ...L(funnelBowl(1), 'crystalBowl'),
     ...liftHill(90, -70, 0, { label: 'skyLift' }), ...L(cascade(108, 0.75, 4, 13), 'gasket2'),
     ...L(pretzel(30, 55, -8, { tube: true }), 'crystal'),
     ...L(roll(80, -6, 1, { tube: true }), 'prismRoll'), ...run(30, -6, { tube: true }),
@@ -216,7 +216,7 @@ function glass(): CourseLayout {
   ];
   return {
     id: 'glass', name: 'Apollonian Skyway', checkpointEvery: 230, segments: segs, obstacles: [],
-    hints: [firstHint, H('floaters', 0, 'Act II: Prism Heights. Floaters'), H('skyLift', 0, 'Sky lift: here comes the drop'), H('gasket2', 0, 'The second gasket'), H('crystal', 0, 'Crystal pretzel'), H('prismRoll', 0, 'Prism roll'), H('ridge', 0, 'The skyway: hold your line'), H('bigDrop', 0, 'Big loop'), H('preview', 0, 'Two tangent loops'),
+    hints: [firstHint, H('floaters', 0, 'Act II: Prism Heights. Floaters'), H('skyLift', 0, 'Sky lift: here comes the drop'), H('gasket2', 0, 'The second gasket'), H('crystal', 0, 'Crystal pretzel'), H('crystalBowl', 0, 'Crystal bowl'), H('prismRoll', 0, 'Prism roll'), H('ridge', 0, 'The skyway: hold your line'), H('bigDrop', 0, 'Big loop'), H('preview', 0, 'Two tangent loops'),
       H('gasketDrop', 0, 'THE GASKET: loops inside loops, shrinking'), H('finale', 0, 'Final loop')],
   };
 }
@@ -243,7 +243,7 @@ function rubber(): CourseLayout {
     // ACT II — BOUNCE HOUSE: double trampoline, the bumper colonnade, the spin bowl
     ...L(serp(5), 'worm3'),
     ...L(jump(30, 12, 12), 'tramp2'), ...L(jump(30, 13, 12), 'tramp3'),
-    ...L(run(140, -7), 'bumpers'),
+    ...L(run(140, -7), 'bumpers'), ...L(vertWall(1), 'rampL'), ...L(vertWall(-1), 'rampR'),
     ...L(vortex(1.5, 30, 16, 62, -9, 1, { tube: true }), 'spinBowl'),
     ...L(hops(6, 22, 9, -8), 'ejectors2'),
     ...liftHill(60, -65, 0, { label: 'tower2' }), ...L(wave(1), 'rubberWave'),
@@ -254,7 +254,7 @@ function rubber(): CourseLayout {
   for (let i = 0; i < 6; i++) spots.push({ at: 'spots', s: 14 + i * 15, x: ((i % 3) - 1) * 3.6, ls: 1.4, w: 1.8, h: 2.2, kind: 'post' });
   return {
     id: 'rubber', name: 'Neon Rebound', checkpointEvery: 220, segments: segs, obstacles: [...spots, ...field('bumpers', 'sliders', 5), ...field('slalom', 'posts', 4, 16, 22),],
-    hints: [firstHint, H('worm3', 0, 'Act II: the Bounce House'), H('tramp2', 0, 'Double trampoline!'), H('bumpers', 0, 'Bumpers'), H('spinBowl', 0, 'SPIN BOWL'), H('slalom', 0, 'Post slalom'), H('worm', 0, 'Rebound labyrinth'), H('trampoline', 0, 'Trampoline!'), H('gripWall', 0, 'Grip the wall'),
+    hints: [firstHint, H('worm3', 0, 'Act II: the Bounce House'), H('tramp2', 0, 'Double trampoline!'), H('bumpers', 0, 'Bumpers'), H('rampL', 0, 'Vert ramps!'), H('spinBowl', 0, 'SPIN BOWL'), H('slalom', 0, 'Post slalom'), H('worm', 0, 'Rebound labyrinth'), H('trampoline', 0, 'Trampoline!'), H('gripWall', 0, 'Grip the wall'),
       H('mitosis', -10, 'MITOSIS: the channel divides'), H('spots', 0, 'Bumper field')],
     branches: [branch('cellL', 'Left Cell', 'mitosis', sideArm(1, 28, legs, 50, -8)), branch('cellR', 'Right Cell', 'mitosis', sideArm(-1, 28, legs, 50, -8)),
       branch('cell2L', 'Left Daughter', 'mitosis2', sideArm(1, 30, 24, 30, -8)), branch('cell2R', 'Right Daughter', 'mitosis2', sideArm(-1, 30, 24, 30, -8))],
@@ -283,7 +283,7 @@ function sand(): CourseLayout {
     ...L(drop(60, -30, -5), 'lastFace'),
     // ACT II — SANDSTORM CANYON: slot canyon, sweepers, the second star, the last dunes
     ...L(tubeRun(220, -40, -8), 'slotCanyon'),
-    ...L(pipeCorner(150, 90, -7), 'canyonBend'), ...pipeCorner(150, -90, -7),
+    ...L(pipeCorner(150, 90, -7), 'canyonBend'), ...pipeCorner(150, -90, -7), ...L(vertWall(-1), 'duneWall'),
     ...L(girih([-1, -1, 1, 1, 1, -1]), 'ruins2'),
     ...L([...dune(), ...dune(), ...dune(), ...dune()], 'dunes2'),
     ...L(run(120, -8), 'oasis'),
@@ -295,7 +295,7 @@ function sand(): CourseLayout {
   return {
     id: 'sand', name: 'Dune Run', checkpointEvery: 220, segments: segs,
     obstacles: [...field('oasis', 'posts', 4, 16, 24), { at: 'scour', s: 100, x: 0, ls: 2.1, w: 3.6, h: 1.7, move: { amp: 2.6, period: 3.4 } }, { at: 'scour', s: 40, x: -3.4, ls: 2, w: 5, h: 1.7 }, { at: 'scour', s: 75, x: 3.4, ls: 2, w: 5, h: 1.7 }],
-    hints: [firstHint, H('slotCanyon', 0, 'Act II: the slot canyon'), H('canyonBend', 0, 'Ride the high wall'), H('dunes2', 0, 'Dune sea'), H('minaret', 0, 'Minaret'), H('stepwell', 0, 'Stepwell'), H('dunes', 0, 'Dunes: keep your momentum'), H('ruins', 0, 'Ruins: 36-degree kinks'), H('greatFace', 0, 'The great slip face'),
+    hints: [firstHint, H('slotCanyon', 0, 'Act II: the slot canyon'), H('canyonBend', 0, 'Ride the high wall'), H('dunes2', 0, 'Dune sea'), H('duneWall', 0, 'Dune wall: ride it up'), H('minaret', 0, 'Minaret'), H('stepwell', 0, 'Stepwell'), H('dunes', 0, 'Dunes: keep your momentum'), H('ruins', 0, 'Ruins: 36-degree kinks'), H('greatFace', 0, 'The great slip face'),
       H('courtyard', -10, 'STAR COURTYARD: three exits'), H('horns', -8, 'Dune horns: JUMP')],
     branches: [branch('starL', 'West Exit', 'courtyard', sideArm(1, 36, legs, 50, -8)), branch('starR', 'East Exit', 'courtyard', sideArm(-1, 36, legs, 50, -8))],
   };
@@ -321,7 +321,7 @@ function mud(): CourseLayout {
     // ACT II — LANDSLIDE: terraced paddies, the sinkhole funnel, the long slide
     ...L(terraces(5, 16, -30, 18), 'paddies'),
     ...L(pipeCorner(140, 90, -10), 'gully'), ...pipeCorner(140, -90, -10),
-    ...L(vortex(1.5, 30, 18, 50, -12, 1, { tube: true }), 'sinkFunnel'),
+    ...L(funnelBowl(1), 'sinkFunnel'),
     ...L(run(130, -12), 'boulders'),
     ...L([{ len: 26, pitch: -16 }, { len: 26, pitch: 8, fx: { pulse: 1 } }, { len: 20, pitch: -10 }], 'sump2'),
     ...L(tubeRun(220, 40, -12), 'burrow'),
@@ -331,7 +331,7 @@ function mud(): CourseLayout {
   const fork = (dir: number) => sideArm(dir, 30, legs, mid, -12);
   return {
     id: 'mud', name: 'Crack Delta', checkpointEvery: 200, segments: segs, obstacles: [...field('boulders', 'sliders', 4, 16, 28), { at: 'trench', s: 50, x: 0, ls: 1.8, w: 5, h: 1.5, kind: 'barrier' }],
-    hints: [firstHint, H('paddies', 0, 'Act II: terraces'), H('sinkFunnel', 0, 'SINKHOLE FUNNEL'), H('boulders', 0, 'Boulders'), H('burrow', 0, 'Mud burrow'), H('landslide', 0, 'LANDSLIDE!'), H('fork1', -10, 'Crack fork: pick a side'), H('sinkhole', 0, 'Sinkhole!'), H('sump', 0, 'Sump: break free'),
+    hints: [firstHint, H('paddies', 0, 'Act II: terraces'), H('sinkFunnel', 0, 'SINKHOLE: round and down'), H('boulders', 0, 'Boulders'), H('burrow', 0, 'Mud burrow'), H('landslide', 0, 'LANDSLIDE!'), H('fork1', -10, 'Crack fork: pick a side'), H('sinkhole', 0, 'Sinkhole!'), H('sump', 0, 'Sump: break free'),
       H('mudslide', 0, 'Mudslide'), H('delta1', -10, 'THE CRACK DELTA: fork after fork')],
     branches: [
       branch('f1L', 'Left Crack', 'fork1', sideArm(1, 30, legs, mid, -11)), branch('f1R', 'Right Crack', 'fork1', sideArm(-1, 30, legs, mid, -11)),
@@ -361,7 +361,7 @@ function stone(): CourseLayout {
     ...liftHill(90, -75, 0, { label: 'templeLift' }), ...L(run(150, -5), 'colonnade'),
     ...L(wave(1), 'templeWave'), ...L(wave(-1), 'templeWave2'),
     ...L([{ len: 60, pitch: -60, fx: { flow: -3 } }, { len: 50, pitch: -5 }], 'dive3'),
-    ...L(pipeCorner(200, 140, -5), 'nave'),
+    ...L(pipeCorner(200, 140, -5), 'nave'), ...L(vertWall(1), 'altarWall'),
     ...L(helix(1.5, 36, 50, -10, -1, { tube: true }), 'spiralStair'),
     ...L([...camel(80, 10, -12), ...camel(74, 9, -12)], 'floaters2'),
     ...L(tubeRun(220, -40, -6), 'crypt'),
@@ -371,7 +371,7 @@ function stone(): CourseLayout {
   return {
     id: 'stone', name: 'Temple Dive', checkpointEvery: 230, segments: segs,
     obstacles: [...field('colonnade', 'colonnade', 5, 14, 28), ...field('colonnade', 'sliders', 4, 28, 28, 1.6), ...gate('pinch', 30), ...gate('pinch', 90), ...gate('finalGate', 30)],
-    hints: [firstHint, H('templeLift', 0, 'Act II: the temple lift'), H('colonnade', 0, 'The Colonnade'), H('templeWave', 0, 'Wave turns'), H('dive3', 0, 'THE THIRD DIVE'), H('nave', 0, 'The nave: ride the high wall'), H('spiralStair', 0, 'Spiral stair'), H('crypt', 0, 'The crypt'), H('lip', 0, 'The lip...'), H('radialDive', 0, 'THE RADIAL DIVE'), H('floaters', 0, 'Floater hills'),
+    hints: [firstHint, H('templeLift', 0, 'Act II: the temple lift'), H('colonnade', 0, 'The Colonnade'), H('templeWave', 0, 'Wave turns'), H('dive3', 0, 'THE THIRD DIVE'), H('nave', 0, 'The nave'), H('altarWall', 0, 'Vert wall'), H('spiralStair', 0, 'Spiral stair'), H('crypt', 0, 'The crypt'), H('lip', 0, 'The lip...'), H('radialDive', 0, 'THE RADIAL DIVE'), H('floaters', 0, 'Floater hills'),
       H('pinch', 0, 'Pinch gates, or take the outer lobe'), H('innerSweep', 0, 'Inner sweep'), H('finalGate', 0, 'Final gate')],
     branches: [branch('lobe', 'Outer Lobe', 'pinch', sideArm(-1, 32, legs, 60, -6))],
   };
@@ -401,14 +401,14 @@ function grating(): CourseLayout {
     ...L(terraces(4, 16, -28, 14), 'ladder'),
     ...run(30, -12), ...L(helix(1, 28, 30, -12, 1, { tube: true }), 'stair2'),
     ...L(jump(30, 11, 9), 'hatch2'), ...L(jump(30, 12, 9), 'hatch3'),
-    ...L(pipeCorner(150, -120, -6), 'gantry'),
+    ...L(pipeCorner(150, -120, -6), 'gantry'), ...L(vertWall(-1), 'bulkhead'),
     ...L(run(130, -6, { fx: { flow: 2 } }), 'rattle2'),
     ...FINISH(),
   ];
   return {
     id: 'grating', name: 'Hilbert Works', checkpointEvery: 200, segments: segs,
     obstacles: [...field('catwalk', 'zigzag', 6, 14, 22), ...field('rattle2', 'sliders', 4, 18, 26), { at: 'rattle', s: 50, x: -3.5, ls: 2, w: 5, h: 1.7 }, { at: 'rattle', s: 100, x: 3.5, ls: 2, w: 5, h: 1.7 }],
-    hints: [firstHint, H('mouseLift', 0, 'Act II: the mouse lift'), H('catwalk', 0, 'Catwalks'), H('chain2', 0, 'Switchbacks'), H('ladder', 0, 'Ladder drops'), H('hatch2', -10, 'Double hatch: JUMP, JUMP'), H('gantry', 0, 'Gantry sweep'), H('rhythm', 0, 'Feel the rhythm'), H('hairpin1', -6, 'Hairpin! Ride the outer wall'), H('chain', 0, 'Switchback chain'),
+    hints: [firstHint, H('mouseLift', 0, 'Act II: the mouse lift'), H('catwalk', 0, 'Catwalks'), H('chain2', 0, 'Switchbacks'), H('ladder', 0, 'Ladder drops'), H('hatch2', -10, 'Double hatch: JUMP, JUMP'), H('gantry', 0, 'Gantry sweep'), H('bulkhead', 0, 'Bulkhead: ride it up'), H('rhythm', 0, 'Feel the rhythm'), H('hairpin1', -6, 'Hairpin! Ride the outer wall'), H('chain', 0, 'Switchback chain'),
       H('stack', 0, 'THE HILBERT STACK'), H('hatch', -10, 'Gap: JUMP')],
   };
 }
@@ -434,14 +434,14 @@ function snow(): CourseLayout {
     ...L(tubeRun(220, 40, -9), 'couloir'),
     ...L(pretzel(34, 40, -9, { tube: true }), 'cornice'),
     ...L(hops(6, 22, 4, -7), 'moguls2'), ...liftHill(70, -60, 0, { label: 'chairlift' }),
-    ...L(pipeCorner(160, -100, -8), 'traverse'),
+    ...L(pipeCorner(160, -100, -8), 'traverse'), ...L(vertWall(1), 'halfpipe'),
     ...L([{ len: 60, pitch: -22, fx: { flow: -2 } }, { len: 18, pitch: 8, openSky: true, fx: { pulse: 1 } }, { len: 22, pitch: -20, gap: true, openSky: true }, { len: 50, pitch: -20, fx: { flow: -1 } }, { len: 30, pitch: -6 }], 'kicker'),
     ...FINISH(),
   ];
   return {
     id: 'snow', name: 'Koch Alpine', checkpointEvery: 220, segments: segs,
     obstacles: [...field('trees', 'posts', 6, 14, 22), { at: 'groomed', s: 50, x: -3.3, ls: 2, w: 5, h: 1.6 }],
-    hints: [firstHint, H('trees', 0, 'Act II: backcountry. Tree slalom'), H('couloir', 0, 'The couloir'), H('cornice', 0, 'Cornice pretzel'), H('kicker', 0, 'Kicker: JUMP, then MAGNET'), H('slalom', 0, 'Koch slalom: carve the notches'), H('moguls', 0, 'Moguls'), H('kochCascade', 0, 'Koch cascade: notches inside notches'),
+    hints: [firstHint, H('trees', 0, 'Act II: backcountry. Tree slalom'), H('couloir', 0, 'The couloir'), H('cornice', 0, 'Cornice pretzel'), H('halfpipe', 0, 'Half-pipe wall!'), H('kicker', 0, 'Kicker: JUMP, then MAGNET'), H('slalom', 0, 'Koch slalom: carve the notches'), H('moguls', 0, 'Moguls'), H('kochCascade', 0, 'Koch cascade: notches inside notches'),
       H('skiJump', 0, 'THE SKI JUMP: jump, then MAGNET to land')],
   };
 }

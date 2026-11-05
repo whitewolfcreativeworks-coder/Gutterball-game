@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Track, CourseLayout } from '../src/track/track';
 import { BallPhysics, BallInput } from '../src/physics/ball';
 import { MATERIALS } from '../src/physics/materials';
+import { funnelBowl, run, vertWall } from '../src/courses/elements';
 import { innerSignedDistance, shellSDF, DEFAULT_PROFILE, halfWidth } from '../src/track/profile';
 import type { SensoryEvent } from '../src/core/events';
 
@@ -417,6 +418,36 @@ describe('built-up corners', () => {
     sim(b, 0.9, idle, () => { minVx = Math.min(minVx, b.v.dot(b.proj.R)); if (b.contactSource === 'obstacle') hit = true; });
     expect(hit).toBe(true);
     expect(minVx).toBeLessThan(-2); // knocked toward -x by the block's motion
+  });
+
+  it('vert wall: a fast ball climbs high, drops back in and keeps its speed', () => {
+    const tr = new Track({ id: 't', name: 't', segments: [...run(60, -5), ...vertWall(1), ...run(200, -5)], obstacles: [], hints: [] } as any);
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(40, 45);
+    let maxY = 0;
+    sim(b, 6, idle, () => { if (b.proj.s < 240) maxY = Math.max(maxY, b.proj.y); });
+    expect(maxY).toBeGreaterThan(18);
+    expect(b.proj.s).toBeGreaterThan(220);
+    expect(b.v.length()).toBeGreaterThan(28);
+  });
+
+  it('funnel bowl: round the bowl, down the hole, still rolling fast', () => {
+    const tr = new Track({ id: 't', name: 't', segments: [...run(60, -5), ...funnelBowl(1), ...run(260, -5)], obstacles: [], hints: [] } as any);
+    for (const v0 of [20, 35, 50]) {
+      const b = new BallPhysics(tr, MATERIALS.wood);
+      b.placeAt(40, v0);
+      let minV = 1e9;
+      sim(b, 32, idle, () => { if (b.proj.s > 80 && b.proj.s < tr.length - 200) minV = Math.min(minV, b.v.length()); });
+      expect(b.proj.s, `v0=${v0} got through`).toBeGreaterThan(tr.length - 200);
+      expect(minV).toBeGreaterThan(12);
+    }
+  });
+
+  it('the floor width changes continuously along the course (no ledges for the collision normal)', () => {
+    const tr = new Track({ id: 't', name: 't', segments: [...run(60, -5), ...funnelBowl(1), ...run(100, -5)], obstacles: [], hints: [] } as any);
+    let maxStep = 0;
+    for (let s = 0; s < tr.length - 1; s += 0.05) maxStep = Math.max(maxStep, Math.abs(tr.halfWidthAt(s + 0.05) - tr.halfWidthAt(s)));
+    expect(maxStep).toBeLessThan(0.02);
   });
 
 });

@@ -2,7 +2,6 @@ import { BallInput, BallPhysics, BallTuning } from '../physics/ball';
 import type { MaterialProfile } from '../physics/materials';
 import { Course, Track } from '../track/track';
 import type { SensoryEvent } from '../core/events';
-import { halfWidth } from '../track/profile';
 
 export type RunPhase = 'ready' | 'running' | 'finished' | 'respawning';
 
@@ -113,7 +112,7 @@ export class Run {
       return;
     }
     // failure: left the gutter and fell, or far away from the track
-    const W = halfWidth(tr.profile);
+    const W = b.track.halfWidthAt(pr.s);
     const off = Math.abs(pr.x) > W + 1.5 && pr.y < b.track.profile.H - 1;
     const fell = pr.y < -14 || Math.abs(pr.x) > 40 || Math.abs(pr.along) > 30;
     // outside the gutter (beside it, or underneath after dropping through a gap):
