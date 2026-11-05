@@ -11,7 +11,7 @@ export class Autopilot {
   constructor(private track: Track) {}
 
   decide(ball: BallPhysics): BallInput {
-    const tr = this.track;
+    const tr = ball.track ?? this.track; // the route the ball is on now
     const pr = ball.proj;
     const s = pr.s;
     const speed = Math.max(4, ball.v.length());

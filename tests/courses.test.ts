@@ -28,7 +28,10 @@ describe('courses are completable', () => {
   }
 });
 
-describe('the ball cannot leave the gutter (except by falling into a gap)', () => {
+describe('the ball never passes THROUGH a wall', () => {
+  // Flying out over the top (off a built-up wall, out of a pipe as it opens, a
+  // big air) is part of the game now. What must never happen is the ball going
+  // from inside the gutter to beside it without rising over the wall top.
   const wood = CATALOG.find((c) => c.id === 'wood')!;
   for (const steer of [-1, 0, 1]) {
     it(`steering held at ${steer} through Timberline Run`, () => {
@@ -36,24 +39,23 @@ describe('the ball cannot leave the gutter (except by falling into a gap)', () =
       const run = new Run(tr, MATERIALS.wood);
       const ap = new Autopilot(tr);
       run.launch();
-      const W = tr.profile.a + tr.profile.rc;
       const nearGap = (s: number) => { for (let d = -60; d <= 10; d += 2) if (tr.isGap(s + d)) return true; return false; };
-      let escapes = 0;
+      let throughWall = 0, inside = true, wentOver = false;
       for (let f = 0; f < 60 * 150 && run.phase !== 'finished'; f++) {
         const a = ap.decide(run.ball);
         run.update(1 / 60, { ...a, steer });
         run.pendingEvents.length = 0;
-        const pr = run.ball.proj;
-        // escaping = beside the gutter at or above floor level (a ball that fell through a gap is below it)
-        // (flying above the containment ceiling after a big jump is allowed: that's the beam-rescue mechanic)
-        // (built-up walls are open above their tops by design: clear one and you fly, the
-        // beam brings you home; a NORMAL wall must never let the ball slip out)
-        const Wl = run.ball.track.halfWidthAt(pr.s); void W;
-        const near = (k: number) => { const [l, r] = run.ball.track.wallsAt(pr.s + k); return Math.max(l, r); };
-        const raisedHere = Math.max(near(-40), near(-20), near(0), near(20)) > tr.profile.H + 0.3;
-        if (run.phase === "running" && !nearGap(pr.s) && !raisedHere && pr.y > 0 && pr.y < tr.profile.H + 2.6 && Math.abs(pr.x) > Wl + 0.05) escapes++;
+        if (run.phase !== 'running') { inside = true; wentOver = false; continue; }
+        const b = run.ball, pr = b.proj;
+        const W = b.track.halfWidthAt(pr.s);
+        const top = Math.max(...b.track.wallsAt(pr.s));
+        if (pr.y > top - 0.5 || b.track.tubeAt(pr.s) > 0.05 || b.track.isTunnel(pr.s)) wentOver = true;
+        const nowInside = Math.abs(pr.x) < W - 0.3 && pr.y < top;
+        const beside = Math.abs(pr.x) > W + 0.3 && pr.y > 0 && pr.y < top - 0.5;
+        if (inside && beside && !wentOver && !nearGap(pr.s)) throughWall++;
+        if (nowInside) { inside = true; wentOver = false; } else if (beside) inside = false;
       }
-      expect(escapes).toBe(0);
+      expect(throughWall).toBe(0);
     });
   }
 });
@@ -217,7 +219,7 @@ describe('Launch tube split (Timberline Run)', () => {
   it('holding left takes Daybreak, which merges back into the pipe', () => { const r = go('day'); expect(r.done).toBe(true); expect(r.dayMax).toBeGreaterThan(200); });
 });
 
-describe('every world: branches rejoin cleanly and can be ridden', () => {
+describe('every world: routes can be ridden to their finish (side arms rejoin cleanly)', () => {
   for (const c of CATALOG) {
     if (c.id === 'wood') continue;
     it(`${c.world}: ${c.name}`, () => {
@@ -227,18 +229,33 @@ describe('every world: branches rejoin cleanly and can be ridden', () => {
       for (let bi = 1; bi < course.all.length; bi++) {
         const br = course.all[bi];
         const j = course.junctions.find((x) => x.b === bi)!;
+        const toFinish = !!br.layout.finishLine;
+        if (toFinish) {
+          // a full run down the route with the autopilot (jumps, magnet and all) to its own finish line
+          const run = new Run(course, MATERIALS[c.materialId]);
+          const ap = new Autopilot(course.main);
+          run.launch();
+          run.ball.placeAt(j.bS[1] + 4, 24, 0, bi);
+          for (let f = 0; f < 60 * 300 && run.phase !== 'finished'; f++) { run.update(1 / 60, ap.decide(run.ball)); run.pendingEvents.length = 0; }
+          expect(run.phase, `${br.layout.id} finished`).toBe('finished');
+          expect(run.finishRoute, `${br.layout.id} finished on a route, not the main course`).toBeGreaterThan(0);
+          expect(run.falls, `${br.layout.id} falls`).toBeLessThanOrEqual(2);
+          continue;
+        }
         const b = new BallPhysics(course, MATERIALS[c.materialId]);
         b.placeAt(j.bS[1] + 4, 22, 0, bi);
         let ok = false, minDepth = 1e9;
-        for (let i = 0; i < 240 * 40; i++) {
+        for (let i = 0; i < 240 * (toFinish ? 160 : 40); i++) {
           const steer = Math.max(-1, Math.min(1, -b.proj.x * 0.5 - b.v.dot(b.proj.R) * 0.3));
           b.step(1 / 240, { steer, magnet: false, jump: false, driveLevel: 1 }); b.events.length = 0;
           let dep = -1e9;
           for (let k = 0; k < b.tracks.length; k++) { const p = b.projs[k]; p.project(b.p.x, b.p.y, b.p.z); if (Math.abs(p.along) < 3) dep = Math.max(dep, b.tracks[k].channelDepthLocal(p.s, p.x, p.y)); }
           minDepth = Math.min(minDepth, dep);
-          if (b.activeIndex === 0 && b.mainProj.s > (course.junctions.filter((x) => x.b === bi).pop()!.aS[1] + 20)) { ok = true; break; }
+          // an alternate route runs to its own finish line; a side arm merges back
+          if (toFinish && b.activeIndex === bi && b.proj.s > br.length - 62) { ok = true; break; }
+          if (!toFinish && b.activeIndex === 0 && b.mainProj.s > (course.junctions.filter((x) => x.b === bi).pop()!.aS[1] + 20)) { ok = true; break; }
         }
-        expect(ok, `${br.layout.id} rejoins`).toBe(true);
+        expect(ok, `${br.layout.id} ${toFinish ? 'reaches its finish' : 'rejoins'}`).toBe(true);
         expect(minDepth, `${br.layout.id} stays in the gutter`).toBeGreaterThan(-0.3);
       }
     });
@@ -295,5 +312,27 @@ describe('no obstacle is perfectly still', () => {
         expect(Math.abs(o.move!.amp)).toBeGreaterThan(0.2);
       }
     }
+  });
+});
+
+describe('air transfer between routes', () => {
+  it('from the main gutter you can fly across and land on the route running alongside', () => {
+    const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
+    const RID = course.all.findIndex((t) => t.layout.id === 'ridge');
+    const fork = course.main.segmentStarts.find((g) => g.label === 'woodFork')!.s;
+    let landed = -1;
+    // launch first (a big air), steer across once you're above the wall, then beam down
+    for (const [up, t0, t1] of [[14, 0.45, 1.7], [16, 0.5, 1.8], [18, 0.55, 1.9], [16, 0.4, 2.1]]) {
+      const b = new BallPhysics(course, MATERIALS.wood);
+      b.placeAt(fork + 2 + 140 + 40, 30);
+      b.v.addScaledVector(b.proj.U, up);
+      for (let i = 0; i < 240 * 5 && landed < 0; i++) {
+        const t = i / 240;
+        b.step(1 / 240, { steer: t > t0 && t < t1 ? -1 : 0, magnet: t > t1 - 0.2, jump: false, driveLevel: 0 } as any); b.events.length = 0;
+        if (t > 0.5 && b.contact) { if (b.activeIndex === RID) landed = RID; else break; }
+      }
+      if (landed === RID) break;
+    }
+    expect(landed).toBe(RID);
   });
 });

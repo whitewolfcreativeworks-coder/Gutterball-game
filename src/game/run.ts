@@ -112,7 +112,11 @@ export class Run {
     while (onMain && this.checkpointIndex + 1 < tr.checkpoints.length && mp.s > tr.checkpoints[this.checkpointIndex + 1] + 3) this.checkpointIndex++;
     // finish
     const finishS = tr.length - 62;
-    if (this.phase === 'running' && onMain && mp.s > finishS) {
+    // the finish line of whichever route you're on (the main course or an alternate route)
+    const ft = b.track;
+    const onRoute = onMain || !!ft.layout.finishLine;
+    if (this.phase === 'running' && ((onMain && mp.s > finishS) || (!onMain && onRoute && pr.s > ft.length - 62))) {
+      this.finishRoute = b.activeIndex;
       this.finishTime = this.time;
       this.setPhase('finished');
     }
@@ -160,5 +164,14 @@ export class Run {
     this.setPhase('respawning');
   }
 
-  get progress() { return Math.max(0, Math.min(1, this.ball.mainProj.s / (this.track.length - 62))); }
+  /** Which route the run finished on (0 = main course). */
+  finishRoute = 0;
+  /** Progress to the finish along the route you are on (counting the part of the course before its fork). */
+  get progress() {
+    const b = this.ball;
+    const tr = b.track;
+    if (b.activeIndex === 0 || !tr.layout.finishLine) return Math.max(0, Math.min(1, b.mainProj.s / (this.track.length - 62)));
+    const s0 = this.course.startS?.[b.activeIndex] ?? 0;
+    return Math.max(0, Math.min(1, (s0 + b.proj.s) / (s0 + tr.length - 62)));
+  }
 }

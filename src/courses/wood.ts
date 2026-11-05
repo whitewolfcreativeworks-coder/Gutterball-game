@@ -1,5 +1,5 @@
 import type { CourseLayout } from '../track/track';
-import { rollers, tabletop, vertWall } from './elements';
+import { berm, funnelBowl, gullyJump, liftHill, pipeCorner, rollers, tabletop, tubeRun, vertWall } from './elements';
 
 /**
  * WORLD 1 — WOOD (free). "Timberline Run".
@@ -76,6 +76,8 @@ export const WOOD_COURSE: CourseLayout = {
     // Roll all the way round inside it. Halfway down the pipe splits: stay in
     // the dark (left) or break right for the SKYLIGHT, which bursts out into an
     // open gutter in daylight and dives back into the pipe further down.
+    // THE BIG FORK: drift left for the Ridge Route (its own ride to its own finish)
+    { len: 360, pitch: -7, label: 'woodFork', fx: { flow: 1 } },
     { len: 30, pitch: -7, label: 'burrowIn', fx: { flow: -1 } },
     { len: 45, pitch: -12, tube: true, label: 'burrow', fx: { twist: 1.5, flow: -1.5 } },
     { len: 30, pitch: -12, tube: true, label: 'burrowSplit', fx: { pulse: 1 } },
@@ -162,6 +164,7 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'forkRun', s: 0, text: 'HIGH ROAD ahead: jump off the ramp (double-jump if you are slow)' },
     { at: 'preLoop', s: 10, text: 'Loop — hold MAGNET at the top' },
     { at: 'kicker2', s: -20, text: 'Big jump: JUMP, then MAGNET to pull back in' },
+    { at: 'woodFork', s: 0, text: 'THE BIG FORK: drift LEFT for the Ridge Route, stay for the Burrow' },
     { at: 'burrowIn', s: 0, text: 'The Burrow — the walls close over you' },
     { at: 'burrowIn', s: 22, text: 'Steer hard to roll up the wall and over the top' },
     { at: 'burrow', s: 6, text: 'The pipe splits! Hold RIGHT hard for the Skylight' },
@@ -178,6 +181,7 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'finale', s: 0, text: 'Final run' },
     { at: 'finish', s: 15, text: 'Finish!' },
   ],
+  signs: [{ at: 'woodFork', s: -30, text: '◀ RIDGE ROUTE' }],
   branches: [
     {
       id: 'daybreak',
@@ -240,6 +244,38 @@ export const WOOD_COURSE: CourseLayout = {
         { len: 25, bank: 0, pitch: -16, label: 'dropOff', fx: { flow: -2 } },
       ],
       hints: [],
+    },
+    // RIDGE ROUTE: up on the open ridgeline instead of down the Burrow, all the way to its own finish
+    {
+      id: 'ridge', name: 'Ridge Route', at: 'woodFork', s: 2, offset: [0, 0], junction: 'auto', toFinish: true,
+      segments: [
+        { len: 70, yaw: 22, pitch: -7, fx: { pulse: 0.6 } },
+        { len: 70, yaw: -22, pitch: -9 },
+        { len: 160, pitch: -9, openSky: true, label: 'alongside', fx: { flow: 1 } },
+        { len: 90, yaw: 45, bank: 12, pitch: -10 },
+        { len: 30, bank: 0, pitch: -10 },
+        ...rollers(5, 26, 6).map((g, i) => (i === 0 ? { ...g, label: 'ridgeRollers' } : g)),
+        ...berm(1), ...tabletop(),
+        ...pipeCorner(150, -90, -8),
+        { len: 130, pitch: -7, label: 'ridgeLogs', fx: { flow: 1 } },
+        ...vertWall(-1).map((g, i) => (i === 0 ? { ...g, label: 'ridgeVert' } : g)),
+        ...funnelBowl(1).map((g, i) => (i === 0 ? { ...g, label: 'ridgeBowl' } : g)),
+        ...tubeRun(220, -30, -8), ...gullyJump(13),
+        ...liftHill(70, -64, 0, { label: 'ridgeLift' }),
+        { len: 55, bank: 0, pitch: -4, label: 'finish', fx: { flow: 1 } }, { len: 60, pitch: 3, label: 'runout' },
+      ],
+      obstacles: [
+        { at: 'ridgeLogs', s: 20, x: 0, ls: 2.1, w: 3.6, h: 1.7, move: { amp: 2.6, period: 3.2 } },
+        { at: 'ridgeLogs', s: 60, x: 0, ls: 2.1, w: 3.6, h: 1.7, move: { amp: 2.6, period: 3.8, phase: 2 } },
+        { at: 'ridgeLogs', s: 100, x: 0, ls: 2.1, w: 3.6, h: 1.7, move: { amp: 2.6, period: 3.5, phase: 4 } },
+      ],
+      hints: [
+        { at: 'alongside', s: 0, text: 'RIDGE ROUTE: the high road to the finish' },
+        { at: 'ridgeRollers', s: 0, text: 'Pump the rollers' },
+        { at: 'ridgeLogs', s: 0, text: 'Rolling logs!' },
+        { at: 'ridgeVert', s: 0, text: 'Vert wall' },
+        { at: 'ridgeBowl', s: 0, text: 'The ridge bowl' },
+      ],
     },
   ],
 };

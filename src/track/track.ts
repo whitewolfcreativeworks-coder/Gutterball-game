@@ -75,7 +75,11 @@ export interface CourseLayout {
   /** Open ends have no end wall (branches you jump into / drop out of). */
   openStart?: boolean;
   openEnd?: boolean;
-  /** Alternative routes that leave this course and rejoin it. */
+  /** Signs over the track (fork arches): label text at a segment-relative position. */
+  signs?: { at: string; s: number; text: string }[];
+  /** This gutter ends at its own finish line (the main course, and alternate routes). */
+  finishLine?: boolean;
+  /** Alternative routes that leave this course (and rejoin it, or run to their own finish). */
   branches?: BranchSpec[];
 }
 
@@ -83,7 +87,11 @@ export interface CourseLayout {
 export interface BranchSpec {
   id: string;
   name: string;
-  at: string;               // main segment label
+  at: string;               // segment label on the parent course
+  /** Parent route (branch id) this one forks from; default: the main course. */
+  from?: string;
+  /** An alternate ROUTE: never rejoins, runs all the way to its own finish line. */
+  toFinish?: boolean;
   s: number;                // offset from that segment's start
   offset: [number, number]; // [right, up] metres from the main floor centre
   /** Extra pitch (degrees) at the branch start relative to the main course. */
@@ -580,25 +588,37 @@ export class Course {
   readonly junctions: Junction[] = [];
   /** Distance (m) each rejoining branch had to be nudged to meet the main course exactly. */
   readonly rejoinError: number[] = [];
+  /** Distance along the course from the start to where each gutter begins (0 for the main course). */
+  readonly startS: number[] = [0];
   constructor(layout: CourseLayout) {
-    this.main = new Track(layout);
+    this.main = new Track({ ...layout, finishLine: true });
     for (const b of layout.branches ?? []) {
-      const seg = this.main.segmentStarts.find((g) => g.label === b.at);
+      // the parent gutter: the main course, or another route (splits can split again)
+      const pi = b.from ? this.branches.findIndex((t) => t.layout.id === b.from) + 1 : 0;
+      if (b.from && pi === 0) throw new Error(`Unknown parent route ${b.from} (list parents before their children)`);
+      const parent = pi === 0 ? this.main : this.branches[pi - 1];
+      const seg = parent.segmentStarts.find((g) => g.label === b.at);
       if (!seg) throw new Error(`Unknown branch anchor ${b.at}`);
       const s = seg.s + b.s;
       const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
-      this.main.frameAtS(s, P, T, U, R);
-      const i = Math.round(s / this.main.ds) * 3;
-      const ang = this.main.angles;
+      parent.frameAtS(s, P, T, U, R);
+      const i = Math.round(s / parent.ds) * 3;
+      const ang = parent.angles;
       const start = P.clone().addScaledVector(R, b.offset[0]).addScaledVector(U, b.offset[1]);
       const br = new Track({
         id: b.id, name: b.name, segments: b.segments, obstacles: b.obstacles ?? [], hints: b.hints ?? [],
         startPos: [start.x, start.y, start.z], startAngles: [ang[i], ang[i + 1] + (b.pitchOffset ?? 0), ang[i + 2]],
-        openStart: true, openEnd: true, checkpointEvery: 1e9,
+        openStart: true, openEnd: !b.toFinish, finishLine: !!b.toFinish, checkpointEvery: b.toFinish ? 220 : 1e9,
       });
       const bi = this.branches.length + 1;
+      this.startS.push(this.startS[pi] + s);
+      if (b.toFinish) {
+        // where a route runs alongside, the parent gutter is open above its walls
+        // too, so a big air can carry you across from one to the other
+        for (let i = Math.round(s / parent.ds); i < Math.min(parent.n, Math.round((s + 420) / parent.ds)); i++) if (parent.tubeK[i] === 0 && !parent.tunnel[i]) parent.openSky[i] = 1;
+      }
       let sEnd = -1;
-      if (b.rejoin) {
+      if (b.rejoin && !b.toFinish) {
         // Merge: spread a tiny correction along the branch so its end lands
         // exactly on the main course (the layout is designed to close to within
         // a few metres; the correction is a fraction of a degree of slope).
@@ -606,17 +626,17 @@ export class Course {
           // the main-course point nearest the branch's end (searched downstream of the fork)
           const k0 = (br.n - 1) * 3;
           let bestD = Infinity;
-          for (let i = Math.round(s / this.main.ds) + 20; i < this.main.n; i++) {
-            const d = (this.main.P[i * 3] - br.P[k0]) ** 2 + (this.main.P[i * 3 + 1] - br.P[k0 + 1]) ** 2 + (this.main.P[i * 3 + 2] - br.P[k0 + 2]) ** 2;
-            if (d < bestD) { bestD = d; sEnd = i * this.main.ds; }
+          for (let i = Math.round(s / parent.ds) + 20; i < parent.n; i++) {
+            const d = (parent.P[i * 3] - br.P[k0]) ** 2 + (parent.P[i * 3 + 1] - br.P[k0 + 1]) ** 2 + (parent.P[i * 3 + 2] - br.P[k0 + 2]) ** 2;
+            if (d < bestD) { bestD = d; sEnd = i * parent.ds; }
           }
         } else {
           const rj = b.rejoin;
-          const rs = this.main.segmentStarts.find((g) => g.label === rj.at);
+          const rs = parent.segmentStarts.find((g) => g.label === rj.at);
           if (!rs) throw new Error(`Unknown rejoin anchor ${rj.at}`);
           sEnd = rs.s + rj.s;
         }
-        this.main.frameAtS(sEnd, P, T, U, R);
+        parent.frameAtS(sEnd, P, T, U, R);
         const k = (br.n - 1) * 3;
         const dx = P.x - br.P[k], dy = P.y - br.P[k + 1], dz = P.z - br.P[k + 2];
         this.rejoinError.push(Math.hypot(dx, dy, dz));
@@ -632,20 +652,21 @@ export class Course {
           // share the hollow until the two gutters have fully separated (centrelines > ~15 m apart)
           const sep = (i: number) => {
             let best = Infinity;
-            const k = i * 3, from = Math.max(0, Math.round(s / this.main.ds) - 40);
-            for (let j = from; j < this.main.n; j += 2) {
-              const d = (this.main.P[j * 3] - br.P[k]) ** 2 + (this.main.P[j * 3 + 1] - br.P[k + 1]) ** 2 + (this.main.P[j * 3 + 2] - br.P[k + 2]) ** 2;
+            const k = i * 3, from = Math.max(0, Math.round(s / parent.ds) - 40);
+            for (let j = from; j < parent.n; j += 2) {
+              const d = (parent.P[j * 3] - br.P[k]) ** 2 + (parent.P[j * 3 + 1] - br.P[k + 1]) ** 2 + (parent.P[j * 3 + 2] - br.P[k + 2]) ** 2;
               if (d < best) best = d;
             }
             return Math.sqrt(best);
           };
           let i0 = 0; while (i0 < br.n - 1 && sep(i0) < 15) i0 += 4;
           let i1 = br.n - 1; while (i1 > 0 && sep(i1) < 15) i1 -= 4;
+          if (b.toFinish) i1 = br.n - 1;
           J0 = Math.min(br.length * 0.45, i0 * br.ds + 4);
           J1 = Math.min(br.length * 0.45, (br.n - 1 - i1) * br.ds + 4);
         } else { J0 = J1 = b.junction; }
-        this.junctions.push({ a: 0, b: bi, aS: [s - 2, s + J0 + 2], bS: [0, J0] });
-        if (sEnd >= 0) this.junctions.push({ a: 0, b: bi, aS: [sEnd - J1 - 2, sEnd + 2], bS: [br.length - J1, br.length] });
+        this.junctions.push({ a: pi, b: bi, aS: [s - 2, s + J0 + 2], bS: [0, J0] });
+        if (sEnd >= 0) this.junctions.push({ a: pi, b: bi, aS: [sEnd - J1 - 2, sEnd + 2], bS: [br.length - J1, br.length] });
       }
       this.branches.push(br);
     }

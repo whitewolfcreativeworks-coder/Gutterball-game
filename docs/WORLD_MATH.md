@@ -373,3 +373,33 @@ Every course is checked so that no two passes of the gutter come within each oth
   - Hoop shot: Metal, Mud
   - Chime stairs: Glass, Ice
   - Wishing-well funnel: Water, Snow
+
+## Round 7: splits are routes
+
+- **A split is a choice of a whole different ride to the end.** `BranchSpec.toFinish` makes a route that never rejoins:
+  - it has its own finish line and FINISH arch, and its own finish machine
+  - hints, progress and checkpoints all follow the route you're on
+  - `from` lets a route fork off another route (splits split again)
+- **Easy to choose.** Each route peels off a long straight with a gentle 22° S, under a sign arch, with a hint. Drift toward that side and you're on it.
+- **Air transfers.** Every route runs alongside its parent for ~160 m, about 26 m to the side and roughly level. Both gutters are open above their walls there.
+  - With a big air, steer across, and the beam lands you on the other route. Its finish becomes yours.
+  - The physics picks whichever gutter you touch, and the beam aims at the gutter beneath you.
+- **Routes:**
+
+| World | Route | Fork | Character |
+|---|---|---|---|
+| Wood | Ridge Route | woodFork, before the Burrow | Rollers, berm, tabletop, pipe corner, rolling logs, vert wall, bowl, gully, lift hill |
+| Concrete | Sewer Express | sponge | Pipes, pipe corner, slider yard, twin vert walls, settling bowl, spillway, lift |
+| Metal | Magnet Mile | twins | Loop cascade, double roll, slider yard, pipe corner, gap jump, funnel, loop |
+| Ice | Crevasse Run | dendrite | Tube labyrinth, ice bowl, serac rollers, berm, tabletop, blue tube, vert wall, lift |
+| Water | Whitewater | braids | Rapids rollers, sweepers, log jam, bowl, underground river, cascades, falls |
+| Rubber | Trampoline Park | mitosis | Pump track, berm, trampolines, vert ramps, bumper sliders, spiral, tabletop, gully |
+| Sand | Oasis Road | courtyard | Dunes, berm, wadi jump, tabletop, kasbah tube, bowl, souk posts, dune face |
+| Mud | Mudslide | fork1 | Slide pipe, dirt section, bowl, lift; forks again into **Swamp** (bog rollers, berm, mangrove tube, stump sliders, vert wall, gully) |
+| Stone | Catacombs | pinch | Crypt tubes, spiral stair, ossuary colonnade, vert wall, the well, dive |
+
+- **Tests:**
+  - the autopilot rides every route from its fork to its own finish (at most two falls, finishing on a route)
+  - no route overlaps another gutter
+  - an air transfer from Wood's main gutter lands on the Ridge Route
+  - the ball never passes *through* a wall (flying out over the top is allowed)

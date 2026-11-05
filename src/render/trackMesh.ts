@@ -227,9 +227,10 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   if (chain) { g.add(chain); g.userData.chain = chain.material; }
 
   // ---- Start & finish arches ----
-  if (!isBranch) {
-    g.add(buildArch(track, 3, 'START', mat));
+  if (!isBranch || track.layout.finishLine) {
+    g.add(buildArch(track, isBranch ? 2 : 3, isBranch ? track.layout.name.toUpperCase() : 'START', mat));
     g.add(buildArch(track, track.length - 62, 'FINISH', mat));
+    for (const sg of track.layout.signs ?? []) { const st = track.segmentStarts.find((x) => x.label === sg.at); if (st) g.add(buildArch(track, st.s + sg.s, sg.text, mat)); }
     for (let c = 1; c < track.checkpoints.length; c++) if (track.tubeAt(track.checkpoints[c]) === 0) g.add(buildCheckpointPosts(track, track.checkpoints[c]));
   } else {
     g.add(buildArch(track, 2, track.layout.name.toUpperCase(), mat));

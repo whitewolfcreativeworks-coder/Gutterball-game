@@ -180,7 +180,7 @@ export class Game {
     this.applyCosmetics();
     this.scene.add(this.ballView.group);
     this.autopilot = mode !== 'play' ? new Autopilot(this.track) : undefined;
-    this.hintIndex = 0;
+    this.hintIndex = 0; this.routeHint.clear();
     this.previewTimer = mode === 'preview' ? 18 : 0;
     this.audio.configure(this.material);
     this.haptics.configure(this.material);
@@ -214,7 +214,9 @@ export class Game {
     if (!this.run || !this.track || !this.course || !this.material) return;
     this.endFinale();
     const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood;
-    this.finale = new Finale(this.scene, this.track, this.run.ball, FINALE_FOR_WORLD[this.course.id] ?? 'plinko', this.audio, { a: th.a, b: th.b });
+    // the finish machine waits at the end of whichever route you finished on
+    const ft = this.run.ball.track.layout.finishLine ? this.run.ball.track : this.track;
+    this.finale = new Finale(this.scene, ft, this.run.ball, FINALE_FOR_WORLD[this.course.id] ?? 'plinko', this.audio, { a: th.a, b: th.b });
     this.finaleReported = false;
   }
   private endFinale() { this.finale?.dispose(); this.finale = undefined; }
@@ -226,16 +228,26 @@ export class Game {
     this.endFinale();
     this.camera.cam.fov = 80; this.camera.cam.updateProjectionMatrix();
     this.run.reset();
-    this.hintIndex = 0;
+    this.hintIndex = 0; this.routeHint.clear();
     this.camera.snap();
     this.input.driveLevel = 1;
     this.cb.onPhase?.('ready');
     this.showHints(0);
   }
 
-  private showHints(s: number) {
+  private routeHint = new Map<number, number>();
+  private showHints(s: number, route = 0) {
     if (!this.track || this.mode !== 'play') return;
-    const hints = this.track.hints;
+    // each route has its own hints (the main course's, or an alternate route's)
+    const tr = route === 0 ? this.track : this.courseGeo?.all[route];
+    if (!tr) return;
+    const hints = tr.hints;
+    if (route !== 0) {
+      let k = this.routeHint.get(route) ?? 0;
+      while (k < hints.length && s >= hints[k].s) { this.cb.onHint?.(hints[k].text); k++; }
+      this.routeHint.set(route, k);
+      return;
+    }
     while (this.hintIndex < hints.length && s >= hints[this.hintIndex].s) {
       this.cb.onHint?.(hints[this.hintIndex].text);
       this.hintIndex++;
@@ -295,7 +307,7 @@ export class Game {
     if (this.finale) this.audio.quiet();
     if (b.boosting && !this.paused) this.camera.punch(7 * this.speedFx); // booster widens the view
     else this.audio.quiet();
-    if (b.activeIndex === 0) this.showHints(b.mainProj.s);
+    this.showHints(b.activeIndex === 0 ? b.mainProj.s : b.proj.s, b.activeIndex);
     this.ballView.update(b, dt, this.time);
     if (this.trackGroup) updateMovingObstacles(this.trackGroup, this.track);
     this.branchGroups.forEach((g, k) => updateMovingObstacles(g, this.courseGeo!.branches[k]));
