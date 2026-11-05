@@ -6,7 +6,7 @@ import { Autopilot } from './autopilot';
 import { buildWorld, World } from '../render/world';
 import { buildTrackGroup, updateMovingObstacles } from '../render/trackMesh';
 import { Finale, FINALE_FOR_WORLD } from '../finale/finale';
-import { PinballIntro } from '../finale/pinball';
+import { PlungerLauncher, launchSpeed } from '../finale/launcher';
 import { TubeStreaks } from '../render/streaks';
 import { FogExp2, Color } from 'three';
 import { FRACTAL_THEMES } from '../render/fractal';
@@ -166,7 +166,7 @@ export class Game {
     this.run.onPhase = (p) => {
       this.cb.onPhase?.(p);
       if (p === 'respawning') this.camera.shake = 0.3;
-      if (p === 'running') this.camera.snap();
+      if (p === 'running' && !this.noSnap) this.camera.snap();
       // across the line: hands off, the finish contraption takes over
       if (p === 'finished' && this.mode === 'play' && !this.replay) {
         this.lastRun = this.ghostRec.finish(course.id, this.run!.finishTime, this.run!.falls);
@@ -313,26 +313,35 @@ export class Game {
     this.run?.launch();
   }
   stopReplay() { this.replay = null; }
-  // ---- pinball intro ----
-  /** The pinball table every race starts on (null once you're in the cave, or when it's off). */
-  intro: PinballIntro | null = null;
+  // ---- the plunger ----
+  /** The pinball-style launcher every race starts with (null once you're away, or when it's off). */
+  intro: PlungerLauncher | null = null;
+  private noSnap = false;
   introEnabled = true;
   private startIntro() {
     this.endIntro();
     if (!this.introEnabled || this.mode !== 'play' || !this.run || !this.courseGeo || !this.material) return;
     const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood;
-    this.intro = new PinballIntro(this.scene, this.courseGeo, this.run.ball, this.audio, th.a);
+    this.intro = new PlungerLauncher(this.scene, this.courseGeo, this.run.ball, this.audio, this.haptics, th.a);
   }
   private endIntro() { this.intro?.dispose(); this.intro = null; }
-  /** Out of the cave (or skipped): onto the course, and the race begins. */
+  /** The plunger fired (or it was skipped): away down the gutter, and the race begins. */
   skipIntro() {
     if (!this.intro || !this.run) return;
+    const it = this.intro;
+    const power = it.done ? it.power : 0.7;
+    const fromPlunger = it.done;
     this.endIntro();
     this.run.reset();
-    this.camera.snap();
     this.input.calibrate();
+    this.noSnap = fromPlunger;
     this.run.launch();
-    this.run.ball.v.addScaledVector(this.run.ball.proj.T, 6); // out of the cave with a little speed
+    this.noSnap = false;
+    const b = this.run.ball;
+    b.v.addScaledVector(b.proj.T, launchSpeed(power) - 7); // (launch() already gave it 7 m/s)
+    b.w.copy(b.n).cross(b.v).multiplyScalar(1 / b.tune.radius);
+    // the chase camera carries on from the plunger's view instead of jumping
+    if (fromPlunger) this.camera.adopt(this.camera.cam.position, it.camLook, b.v); else this.camera.snap();
     this.ghostRec.reset();
   }
   private static padHintShown = false;
@@ -359,7 +368,7 @@ export class Game {
     if (this.mode === 'play') input = this.input.sample(dt);
     else input = this.autopilot!.decide(this.run.ball);
     if (this.intro) {
-      if (!this.paused) this.intro.update(dt, input.steer);
+      if (!this.paused) this.intro.update(dt);
       if (this.intro.done) this.skipIntro();
     } else if (this.finale) {
       if (!this.paused) this.finale.update(dt);

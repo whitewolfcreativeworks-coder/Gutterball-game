@@ -93,6 +93,9 @@ export class HapticEngine {
 
   get tier() { return this.enabled ? this.driver.tier : 'none'; }
 
+  /** A one-off pulse from game code (the plunger's ratchet and release). */
+  tap(ms: number, intensity: number, priority = 2) { this.fire(ms, intensity, priority); }
+
   private fire(ms: number, intensity: number, priority: number) {
     if (!this.enabled || this.driver.tier === 'none') return;
     const now = performance.now();

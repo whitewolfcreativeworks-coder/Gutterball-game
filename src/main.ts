@@ -144,8 +144,7 @@ hud.innerHTML = `
   <div class="musicdock"><button class="musicbtn" data-act="musicMenu" aria-label="Music">♪</button><div class="musicmenu"></div></div>
   <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div><button class="ghostbtn" data-act="ghostToggle" style="display:none"></button></div>
   <div class="replaytag" style="display:none">▶ REPLAY</div>
-  <div class="flippers" style="display:none"><button class="flip l" data-flip="left">PUSH</button><button class="flip r" data-flip="right">PUSH</button></div>
-  <button class="introskip" data-act="skipIntro" style="display:none">Skip intro ›</button>
+
   <div class="bottom">
     <div><div class="speed">0<small>KM/H</small></div><div class="combo"><i></i><i></i><i></i><span class="turbo"></span></div></div>
     <div class="magring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="5"/><circle class="arc" cx="32" cy="32" r="27" fill="none" stroke="#47e6ff" stroke-width="5" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="0"/></svg><div class="lbl">MAG</div></div>
@@ -168,18 +167,54 @@ game.cb.onHint = (text) => {
   hintTimer = window.setTimeout(() => h.classList.remove('show'), 3200);
 };
 let lastHud = 0;
-let assistHinted = false;
-// the PUSH buttons: hold to raise that flipper (they never start a swipe)
-hud.querySelectorAll<HTMLElement>('.flip').forEach((b) => {
-  const side = b.dataset.flip as 'left' | 'right';
-  const set = (down: boolean) => (e: Event) => { e.preventDefault(); e.stopPropagation(); if (game.intro) game.intro.buttons[side] = down; b.classList.toggle('down', down); };
-  b.addEventListener('touchstart', set(true), { passive: false });
-  b.addEventListener('touchend', set(false), { passive: false });
-  b.addEventListener('touchcancel', set(false), { passive: false });
-  b.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') set(true)(e); });
-  b.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') set(false)(e); });
-  b.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') set(false)(e); });
-});
+// ----- The plunger: drag down to pull the knob back, let go to fire -----
+const plungerPad = el('div', 'plungerpad');
+hud.prepend(plungerPad); // under every HUD button
+const powerMeter = el('div', 'powermeter');
+powerMeter.innerHTML = '<i></i><span>POWER</span>';
+hud.appendChild(powerMeter);
+{
+  let y0 = -1, t0 = 0, moved = false;
+  const range = () => Math.max(160, innerHeight * 0.3);
+  const setMeter = (p: number) => { (powerMeter.firstChild as HTMLElement).style.height = `${Math.round(p * 100)}%`; };
+  const start = (y: number) => { if (!game.intro || game.paused) return; y0 = y; t0 = performance.now(); moved = false; };
+  const move = (y: number) => {
+    if (y0 < 0 || !game.intro) return;
+    const dy = y - y0;
+    if (dy > 4) moved = true;
+    const p = Math.max(0, Math.min(1, dy / range()));
+    game.intro.setPull(p); setMeter(p);
+  };
+  const end = (y: number) => {
+    if (y0 < 0 || !game.intro) return;
+    const dy = y - y0, dt = performance.now() - t0;
+    if (dy < -40 && dt < 400 && !moved) game.intro.fire();                  // a quick swipe up: fire it for me
+    else if (game.intro.pull < 0.04) game.cb.onHint?.('DRAG DOWN TO PULL THE PLUNGER BACK, THEN LET GO');
+    else game.intro.release();
+    y0 = -1;
+  };
+  plungerPad.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); start(e.touches[0].clientY); }, { passive: false });
+  plungerPad.addEventListener('touchmove', (e) => { e.preventDefault(); e.stopPropagation(); move(e.touches[0].clientY); }, { passive: false });
+  plungerPad.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); end(e.changedTouches[0].clientY); }, { passive: false });
+  plungerPad.addEventListener('touchcancel', (e) => { e.stopPropagation(); if (game.intro) game.intro.release(); y0 = -1; });
+  plungerPad.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') return; e.stopPropagation(); start(e.clientY); });
+  window.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') move(e.clientY); });
+  window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') end(e.clientY); });
+  // keyboard: hold Space or ↓ to wind it back, let go to fire
+  const isPull = (e: KeyboardEvent) => e.code === 'Space' || e.key === 'ArrowDown' || e.key === 's';
+  window.addEventListener('keydown', (e) => {
+    if (!game.intro || game.paused || !isPull(e) || screen !== 'hud') return;
+    e.stopImmediatePropagation(); e.preventDefault();
+    if (!e.repeat) game.intro.holdKey(true);
+  }, true);
+  window.addEventListener('keyup', (e) => {
+    if (!game.intro || !isPull(e)) return;
+    e.stopImmediatePropagation(); e.preventDefault();
+    game.intro.holdKey(false);
+  }, true);
+  const meterLoop = () => { if (game.intro) setMeter(game.intro.pull); requestAnimationFrame(meterLoop); };
+  meterLoop();
+}
 game.cb.onHud = (s: HudState) => {
   const now = performance.now();
   if (now - lastHud < 66) return; // ~15 Hz DOM updates
@@ -198,12 +233,12 @@ game.cb.onHud = (s: HudState) => {
   $('.magring', hud).classList.toggle('active', s.magnetActive);
   const launchEl = $('.launch', hud);
   const ip = game.intro?.phase;
-  launchEl.style.display = s.phase === 'ready' && s.mode === 'play' && (!game.intro || ip === 'plunger') ? 'block' : 'none';
-  $('.launch .txt', hud).textContent = game.intro ? 'Swipe up to fire!' : 'Swipe up to launch';
-  $('.flippers', hud).style.display = game.intro && ip !== 'cave' ? 'flex' : 'none';
-  $('.introskip', hud).style.display = game.intro && ip !== 'cave' ? 'block' : 'none';
-  if (game.intro?.sim.assist && !assistHinted) { assistHinted = true; game.cb.onHint?.('TRACTOR BEAM ON — IT’LL GUIDE YOU INTO THE CAVE'); }
-  if (!game.intro) assistHinted = false;
+  launchEl.style.display = s.phase === 'ready' && s.mode === 'play' && (!game.intro || ip === 'ready') ? 'block' : 'none';
+  $('.launch .txt', hud).textContent = game.intro ? 'Pull back and let go' : 'Swipe up to launch';
+  $('.launch .arrow', hud).textContent = game.intro ? '↓' : '↑';
+  launchEl.classList.toggle('plunger', !!game.intro);
+  plungerPad.style.display = game.intro && s.mode === 'play' && (ip === 'ready' || ip === 'pulling') ? 'block' : 'none';
+  powerMeter.style.display = game.intro && s.mode === 'play' && ip !== 'done' ? 'flex' : 'none';
   {
     // before the race: race the ghost of your last run (or a saved one), or not
     const gb = $('.ghostbtn', hud);
@@ -491,7 +526,7 @@ function renderSettings() {
       <label class="set"><span>Keep view steady if the screen rotates</span><input id="set-keep" class="toggle" type="checkbox" ${s.keepView ? 'checked' : ''} data-set="keepView"></label>
       <label class="set"><span>Jump flick threshold</span><input type="range" min="8" max="30" step="1" value="${s.jumpThreshold}" data-set="jumpThreshold"></label>
       <label class="set"><span>Magnet tilt threshold</span><input type="range" min="6" max="25" step="1" value="${s.magnetThreshold}" data-set="magnetThreshold"></label>
-      <label class="set"><span>Pinball intro before each race</span><input class="toggle" type="checkbox" ${settings.pinballIntro !== false ? 'checked' : ''} data-set="pinballIntro"></label>
+      <label class="set"><span>Pinball plunger launch</span><input class="toggle" type="checkbox" ${settings.pinballIntro !== false ? 'checked' : ''} data-set="pinballIntro"></label>
       <label class="set"><span>Invert steering</span><input class="toggle" type="checkbox" ${s.invertSteer ? 'checked' : ''} data-set="invertSteer"></label>
       <div class="calib" style="margin-top:10px"><div class="dot-area"><div class="dot"></div></div><div style="flex:1"><div class="note" style="margin:0 0 6px">Hold the device the way you like to play, then set neutral. Tilt like a steering wheel.</div><div class="meter" style="margin:0 0 8px;position:relative"><i class="steer-bar" style="position:absolute;left:50%;width:0"></i></div><button class="btn" data-act="enableTilt">Enable tilt sensors</button><button class="btn" style="margin-top:8px;width:100%" data-act="calibrate">Set neutral here</button></div></div>
     </div>
@@ -617,7 +652,6 @@ ui.addEventListener('click', async (e) => {
     case 'musicMenu': { const d = $('.musicdock', hud); d.classList.toggle('open'); renderMusicMenu(); break; }
     case 'genre': { settings.musicGenre = id as Genre; audio.setGenre(id as Genre); saveSettings(); renderMusicMenu(); break; }
     case 'resume': resume(); break;
-    case 'skipIntro': game.skipIntro(); break;
     case 'ghostToggle': game.ghostOn = !game.ghostOn; break;
     case 'saveRun': {
       const r = game.lastRun;

@@ -54,6 +54,12 @@ export class ChaseCamera {
   }
 
   snap() { this.initialised = false; }
+  /** Carry on smoothly from wherever the camera is now (e.g. after the plunger's view). */
+  adopt(pos: Vector3, look: Vector3, v: Vector3) {
+    this.pos.copy(pos); this.look.copy(look); this.up.set(0, 1, 0); this.lastV.copy(v);
+    this.latG = 0; this.vertG = 0; this.freeK = 0;
+    this.initialised = true;
+  }
   punch(amount: number) { this.fovPunch = Math.max(this.fovPunch, amount); }
 
   update(b: BallPhysics, track: Track, dt: number) {

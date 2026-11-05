@@ -394,6 +394,57 @@ export class AudioEngine {
     setTimeout(() => { this.voices--; out.disconnect(); }, (longest + 0.1) * 1000);
   }
 
+  /**
+   * The plunger's ratchet as you pull the knob back: a bright metal tick and
+   * a little spring creak that rises with the pull.
+   */
+  plungerTick(pull: number) {
+    if (!this.ctx || !this.noise) return;
+    const c = this.ctx, t = c.currentTime;
+    const n = c.createBufferSource(); n.buffer = this.noise;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600 + pull * 1800; f.Q.value = 8;
+    const g = c.createGain(); g.gain.setValueAtTime(0.16, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+    n.connect(f).connect(g); this.send(g, 0.25); n.start(t, Math.random() * 2, 0.04);
+    const o = c.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(420 + pull * 520, t); o.frequency.exponentialRampToValueAtTime(380 + pull * 480, t + 0.06);
+    const og = c.createGain(); og.gain.setValueAtTime(0.035, t); og.gain.exponentialRampToValueAtTime(0.0008, t + 0.07);
+    o.connect(og); this.send(og, 0.2); o.start(t); o.stop(t + 0.08);
+  }
+
+  /**
+   * Letting go of the plunger: the rod's THWACK into the ball, a metal clang,
+   * and the spring's boing, all bigger the further you pulled.
+   */
+  plungerRelease(power: number) {
+    if (!this.ctx || !this.noise) return;
+    const c = this.ctx, t = c.currentTime;
+    const amp = 0.3 + 0.7 * power;
+    const out = c.createGain(); out.gain.value = amp; this.send(out, 0.5);
+    // thwack: a short low noise burst plus a knock
+    const n = c.createBufferSource(); n.buffer = this.noise;
+    const nf = c.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 1400;
+    const ng = c.createGain(); ng.gain.setValueAtTime(0.7, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    n.connect(nf).connect(ng).connect(out); n.start(t, Math.random() * 2, 0.1);
+    const k = c.createOscillator(); k.type = 'sine'; k.frequency.setValueAtTime(160, t); k.frequency.exponentialRampToValueAtTime(55, t + 0.14);
+    const kg = c.createGain(); kg.gain.setValueAtTime(0.6, t); kg.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    k.connect(kg).connect(out); k.start(t); k.stop(t + 0.18);
+    // clang: a few inharmonic metal partials
+    for (const [f, d, a] of [[1240, 0.35, 0.12], [1873, 0.28, 0.08], [2731, 0.2, 0.05], [3610, 0.14, 0.03]]) {
+      const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f * (0.98 + Math.random() * 0.04);
+      const g = c.createGain(); g.gain.setValueAtTime(a, t); g.gain.exponentialRampToValueAtTime(0.0005, t + d);
+      o.connect(g).connect(out); o.start(t); o.stop(t + d + 0.02);
+    }
+    // spring boing: a falling twang with a fast wobble
+    const sp = c.createOscillator(); sp.type = 'triangle';
+    sp.frequency.setValueAtTime(300 + power * 120, t); sp.frequency.exponentialRampToValueAtTime(95, t + 0.55);
+    const lfo = c.createOscillator(); lfo.frequency.value = 26;
+    const lg = c.createGain(); lg.gain.setValueAtTime(40, t); lg.gain.exponentialRampToValueAtTime(1, t + 0.55);
+    lfo.connect(lg).connect(sp.frequency);
+    const sg = c.createGain(); sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(0.12, t + 0.01); sg.gain.exponentialRampToValueAtTime(0.0005, t + 0.6);
+    const sf = c.createBiquadFilter(); sf.type = 'lowpass'; sf.frequency.value = 1800;
+    sp.connect(sf).connect(sg).connect(out); sp.start(t); lfo.start(t); sp.stop(t + 0.62); lfo.stop(t + 0.62);
+    setTimeout(() => out.disconnect(), 900);
+  }
+
   /** Chain-lift ratchet: a short dry click with a metallic body. */
   private clack() {
     const c = this.ctx!;

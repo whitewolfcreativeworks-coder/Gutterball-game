@@ -122,16 +122,23 @@ Every obstacle stretch has a glowing pad high on one wall before it:
 - **Guide arrows:** three chevrons on the surface trace the line from the floor up to the pad.
 - **Reset:** a new run makes everything solid again.
 
-## Pinball intro
+## The plunger launch
 
-Each race starts on a small pinball table parked behind the course start, with its cave lined up with the gutter (`src/finale/pinballSim.ts` for the physics, `pinball.ts` for the table).
-- **Physics:** 2-D physics in table coordinates, 480 Hz substeps:
-  - walls are line segments, with a one-way gate at the top of the plunger lane
-  - flippers are rotating capsules whose surface velocity goes into the bounce
-  - pop bumpers kick the ball away
-  - the cave has a peaked roof, so nothing can rest on top of it
-- **Controls:** swipe up fires the plunger. Flippers use the on-screen PUSH buttons, tilt or the arrow keys.
-- **Help:** a drained ball comes back to the plunger. After two drains or 40 s, a tractor beam guides the ball into the cave.
-- **Into the race:** the cave starts the race. The run clock starts there, so ghosts stay fair.
-- **Placement:** if another part of the course passes through where the table would sit, the table is lifted clear.
-- **Opting out:** skippable, and can be turned off in Settings.
+Every race starts with a pinball-style plunger built into the start of the gutter (`src/finale/launcher.ts`). It has a rubber-tipped rod against the ball, a spring, a chrome housing on the gutter floor, and a red knob sticking out the back.
+
+| Input | What it does |
+|---|---|
+| Drag down | Pulls the knob back (the ball comes back with the rod, up to 3 m) |
+| Hold Space or ↓ | Winds it back on desktop |
+| Quick swipe up | Fires a strong shot for you |
+| Let go | Fires |
+
+- **Feedback while pulling:**
+  - a ratchet click on each of 14 notches (sound and haptic tick)
+  - the spring compresses
+  - a row of floor lights and an on-screen power meter fill up
+- **Release:** the rod snaps home in 0.06 s and plays a thwack, a metal clang and a spring boing, scaled by the pull.
+- **Launch speed:** 10 m/s for a tap up to 36 m/s at full pull, straight down the gutter into the first section.
+- **Camera:** behind the knob, and it tightens as the spring winds. The chase camera carries on from that view instead of jumping.
+- **Run clock:** starts at the launch.
+- **Opting out:** can be turned off in Settings, which brings back the plain swipe-up launch.
