@@ -8,3 +8,4 @@ screenshots/*.tmp.png
 ios/App/Pods/
 android/.gradle/
 android/app/build/
+screenshots/finale-*.png
