@@ -1,0 +1,39 @@
+# XcodeGen spec for Gutterball on Apple Watch.
+# On a Mac:  brew install xcodegen && cd watch && xcodegen generate && open Gutterball.xcodeproj
+name: Gutterball
+options:
+  bundleIdPrefix: com.whitewolfcreativeworks
+  deploymentTarget:
+    watchOS: "10.0"
+packages:
+  GutterCore:
+    path: GutterCore
+targets:
+  GutterballWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - App
+    dependencies:
+      - package: GutterCore
+    settings:
+      base:
+        PRODUCT_NAME: Gutterball
+        PRODUCT_BUNDLE_IDENTIFIER: com.whitewolfcreativeworks.gutterball.watchkitapp
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Gutterball
+        INFOPLIST_KEY_WKWatchOnly: YES
+        INFOPLIST_KEY_WKApplication: YES
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "4"
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  GutterballWatch:
+    build:
+      targets:
+        GutterballWatch: all
+    run:
+      config: Debug

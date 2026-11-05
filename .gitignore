@@ -14,3 +14,6 @@ screenshots/pinball-*.png
 screenshots/plunger-*.png
 screenshots/theme-*.png
 screenshots/net-*.png
+watch/Gutterball.xcodeproj/
+watch/build/
+watch/GutterCore/.build/

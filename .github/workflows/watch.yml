@@ -1,0 +1,29 @@
+name: Apple Watch app
+
+on:
+  push:
+    branches: [main]
+    paths: ['watch/**', '.github/workflows/watch.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: xcodebuild -version && swift --version
+      - name: Test the physics core
+        working-directory: watch/GutterCore
+        run: swift test 2>&1 | tail -60
+      - name: Generate the Xcode project
+        working-directory: watch
+        run: brew install xcodegen && xcodegen generate
+      - name: Build for the watch simulator
+        working-directory: watch
+        run: |
+          set -o pipefail
+          xcodebuild -project Gutterball.xcodeproj -scheme GutterballWatch \
+            -destination 'generic/platform=watchOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error|warning: unre|BUILD" | head -80
