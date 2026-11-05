@@ -217,8 +217,9 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
                 let tubePos = fb.P + fb.R * (pr.x + dx * 3) + fb.U * (pr.y + dy * 3)
                 pos = pos.lerp(tubePos, tk)
             }
-            // off the gutter (flying, in the net, on the beam): follow the ball itself
-            let off = abs(pr.x) > tr.profile.halfWidth + 0.5 || pr.y < -0.5 || (!b.contact && pr.y > tr.profile.H + 4)
+            // off the gutter (flying, in the net, on the beam), or rolling backwards: follow the ball itself
+            let backwards = b.v.dot(f.T) < -3
+            let off = backwards || abs(pr.x) > tr.profile.halfWidth + 0.5 || pr.y < -0.5 || (!b.contact && pr.y > tr.profile.H + 4)
             if off {
                 let vh = Vec3(b.v.x, 0, b.v.z)
                 let dir = vh.lengthSquared > 4 ? vh.normalized : Vec3(f.T.x, 0, f.T.z).normalized

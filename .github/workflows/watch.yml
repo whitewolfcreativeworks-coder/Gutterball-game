@@ -50,7 +50,7 @@ jobs:
           xcrun simctl launch "$UDID" $BID -autoplay -at 1300; sleep 7; shot d-tube2
           xcrun simctl terminate "$UDID" $BID
           # too slow for the gap: into the safety net, and the beam lifting you back
-          xcrun simctl launch "$UDID" $BID -autoplay -at 738 -speed 9; sleep 6.5; shot e-net; sleep 2; shot f-lift; sleep 2; shot g-back
+          xcrun simctl launch "$UDID" $BID -autoplay -at 735 -speed 12; sleep 5; shot e-net; sleep 1.5; shot f-lift; sleep 2; shot g-back
           xcrun simctl terminate "$UDID" $BID
           ls -la shots
           # print each screenshot (shrunk) into the log as base64, so it can be read back without artifact storage

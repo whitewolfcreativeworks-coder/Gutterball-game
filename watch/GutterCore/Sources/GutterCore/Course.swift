@@ -21,7 +21,7 @@ public enum WatchCourse {
         add(Segment(40, pitch: -5, bank: 0))
         add(Segment(40, pitch: -6, tube: true), "tube1")                    // TUBE ONE
         add(Segment(200, yaw: 75, pitch: -7, tube: true))
-        add(Segment(60, yaw: -25, pitch: -6, tube: true))
+        add(Segment(60, pitch: -6, tube: true))                            // straight before the exit: you settle to the floor
         add(Segment(50, pitch: -3))
         add(Segment(30, pitch: 5), "kicker")                                // a kicker...
         add(Segment(14, pitch: 0, gap: true, openSky: true), "gap")         // ...over the gap (net below)
