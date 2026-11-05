@@ -37,6 +37,8 @@ export class ChaseCamera {
   shake = 0;
   fx = 0.8;              // speed-effects strength 0..1
   private baseFov = 80;
+  private freeK = 0;     // 0 = ride the track, 1 = follow the ball freely (it has left the channel)
+  private freeDir = new Vector3(0, 0, -1);
 
   constructor(aspect: number) {
     this.cam = new PerspectiveCamera(80, aspect, 0.1, 6000);
@@ -112,6 +114,37 @@ export class ChaseCamera {
       aheadPt.lerp(tubeAhead, tk);
     }
     const desiredLook = b.p.clone().lerp(aheadPt, 0.5);
+
+    // --- the ball is always the centrepiece ---
+    // When it leaves the channel (riding a roof or the outside of a pipe, beside
+    // the gutter, or flying high above it) the track-relative view could leave
+    // it hidden behind a wall or roof. Then the camera follows the BALL itself:
+    // behind it along its motion, a little above, looking at it.
+    {
+      const pr = b.proj, tr = b.track;
+      const prof = tr.profileAt(pr.s);
+      const W = prof.a + prof.rc;
+      const [wl, wr] = tr.wallsAt(pr.s);
+      const top = Math.max(wl, wr);
+      const onRoof = tr.isTunnel(pr.s) && pr.y > prof.H - 0.2;
+      const outsidePipe = tr.tubeAt(pr.s) > 0.85 && tr.channelDepthLocal(pr.s, pr.x, pr.y) < -0.05;
+      const beside = Math.abs(pr.x) > W + 0.3;
+      const highAir = !b.contact && pr.y > top + 5;
+      const lost = Math.abs(pr.along) > 2.5;
+      const want = onRoof || outsidePipe || beside || highAir || lost ? 1 : 0;
+      this.freeK += (want - this.freeK) * Math.min(1, dt * (want ? 6 : 2.5));
+      if (this.freeK > 0.001) {
+        const vh = new Vector3(b.v.x, 0, b.v.z);
+        if (vh.lengthSq() > 4) this.freeDir.lerp(vh.normalize(), Math.min(1, dt * 3)).normalize();
+        else this.freeDir.lerp(new Vector3(this.T.x, 0, this.T.z).normalize(), Math.min(1, dt * 2)).normalize();
+        const freePos = b.p.clone().addScaledVector(this.freeDir, -(8 + Math.min(4, speed * 0.06))).add(new Vector3(0, 3.6, 0));
+        const freeLook = b.p.clone().addScaledVector(this.freeDir, 3);
+        const e = this.freeK * this.freeK * (3 - 2 * this.freeK);
+        desiredPos.lerp(freePos, e);
+        desiredLook.lerp(freeLook, e);
+        desiredUp.lerp(new Vector3(0, 1, 0), e).normalize();
+      }
+    }
 
     if (!this.initialised) {
       this.pos.copy(desiredPos); this.look.copy(desiredLook); this.up.copy(desiredUp);
