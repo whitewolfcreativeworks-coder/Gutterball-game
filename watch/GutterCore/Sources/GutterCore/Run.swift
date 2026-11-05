@@ -128,7 +128,8 @@ public struct Autopilot {
             }
         }
         let vLat = b.v.dot(pr.R)
-        let steer = max(-1, min(1, (target - pr.x) * 0.35 - vLat * 0.15))
+        // in tubes, leave it to the tube's current
+        let steer = tr.tubeAt(pr.s) > 0.7 ? 0 : max(-1, min(1, (target - pr.x) * 0.35 - vLat * 0.15))
         let magnet = !b.contact && (b.airborneTime > 0.8 || pr.y < -1)
         return BallInput(steer: steer, jump: false, magnet: magnet)
     }

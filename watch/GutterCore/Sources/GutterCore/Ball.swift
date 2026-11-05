@@ -14,7 +14,7 @@ public struct BallTuning {
     public var jumpSpeed = 8.6, jumpCooldown = 0.55, coyoteTime = 0.12
     public var magnetPressG = 4.2, magnetAccel = 95.0, magnetRange = 60.0
     public var magnetDrain = 0.12, magnetRegen = 0.45
-    public var tubeFlowAccel = 22.0, tubeFlowCap = 60.0, cruise = 42.0
+    public var tubeFlowAccel = 22.0, tubeFlowCap = 48.0, cruise = 42.0, tubeSettle = 1.6
     public var airDrag = 0.0006
     // wood-like surface
     public var restitution = 0.3, restitutionThreshold = 2.5
@@ -111,6 +111,15 @@ public final class BallPhysics {
             acc += pr.T * (tu.tubeFlowAccel * min(1, (tu.tubeFlowCap - vf) / 10) * min(1, (tk - 0.3) / 0.5))
         } else if tk <= 0.3 && vf > tu.cruise {
             acc += pr.T * (-(vf - tu.cruise) * 1.2)
+        }
+        // in a tube, when you're not steering, the current settles you back toward the bottom
+        // of the pipe (on the watch: no wild laps round the roof unless you ask for them)
+        if tk > 0.7 && abs(input.steer) < 0.3 && !netLift {
+            let off = pr.R * (-pr.x) + pr.U * (tu.radius - pr.y)
+            let d = off.length
+            if d > 0.3 { acc += off.normalized * min(14, d * tu.tubeSettle * 1.6) * (tk - 0.7) / 0.3 }
+            // and damps the side-to-side swing a little
+            acc -= pr.R * (v.dot(pr.R) * 0.6 * (tk - 0.7) / 0.3)
         }
         acc -= v * (v.length * tu.airDrag)
         let nowTube = tk > 0.7
