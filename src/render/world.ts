@@ -192,7 +192,7 @@ export function buildWorld(scene: Scene, renderer: WebGLRenderer, tracksIn: Trac
   group.add(terrain);
 
   // ---- Scenery instances ----
-  group.add(buildScenery(vis.scenery, groundHeight, nearest, [minX - 500, maxX + 500, minZ - 500, maxZ + 500], quality));
+  { const sc = buildScenery(vis.scenery, groundHeight, nearest, [minX - 500, maxX + 500, minZ - 500, maxZ + 500], quality); sc.name = 'scenery'; group.add(sc); }
 
   scene.add(group);
   return { group, sun, envMap, groundHeight, sunDir, sky, hemi };

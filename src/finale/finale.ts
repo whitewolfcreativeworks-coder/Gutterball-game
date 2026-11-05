@@ -52,6 +52,7 @@ export class Finale {
   private confetti: Confetti;
   private r: number;
   private st: any = {};
+  private confettiMesh?: InstancedMesh;
 
   constructor(private scene: Scene, private track: Track, private ball: BallPhysics, readonly kind: FinaleKind, private audio: AudioEngine, private colors: { a: number; b: number }) {
     this.r = ball.tune.radius;
@@ -64,9 +65,46 @@ export class Finale {
     this.s = ball.mainProj.s;
     this.v = Math.max(16, Math.min(26, ball.v.length()));
     this.confetti = new Confetti(this.group);
+    this.confettiMesh = this.confetti.mesh;
     this.group.name = 'finale';
     scene.add(this.group);
     this.build();
+    this.clearGround();
+  }
+
+  /**
+   * The machines hang well below the end of the course; make sure the ground
+   * (and any trees) doesn't swallow them: dig a valley under the contraption.
+   */
+  private clearGround() {
+    const centre = this.W(0, 0, 32);
+    const floorY = this.O.y - 75, R0 = 55, R1 = 110;
+    const m4 = new Matrix4(), pos = new Vector3(), q = new Quaternion(), sc = new Vector3();
+    this.scene.traverse((o) => {
+      const mesh = o as Mesh;
+      if (mesh.name === 'terrain' && mesh.geometry) {
+        const p = mesh.geometry.attributes.position;
+        let changed = false;
+        for (let i = 0; i < p.count; i++) {
+          const d = Math.hypot(p.getX(i) - centre.x, p.getZ(i) - centre.z);
+          if (d > R1) continue;
+          const k = d < R0 ? 1 : 1 - (d - R0) / (R1 - R0);
+          const target = floorY;
+          const y = p.getY(i);
+          if (y > target) { p.setY(i, y + (target - y) * k * k * (3 - 2 * k)); changed = true; }
+        }
+        if (changed) { p.needsUpdate = true; mesh.geometry.computeVertexNormals(); }
+      } else if ((o as InstancedMesh).isInstancedMesh) {
+        const im = o as InstancedMesh;
+        if (im.parent?.name !== 'scenery') return; // trees and rocks only (never the track's ribs)
+        let changed = false;
+        for (let i = 0; i < im.count; i++) {
+          im.getMatrixAt(i, m4); m4.decompose(pos, q, sc);
+          if (Math.hypot(pos.x - centre.x, pos.z - centre.z) < R1 && pos.y > floorY - 5 && pos.y < this.O.y + 5) { m4.compose(pos, q, sc.set(0, 0, 0)); im.setMatrixAt(i, m4); changed = true; }
+        }
+        if (changed) im.instanceMatrix.needsUpdate = true;
+      }
+    });
   }
 
   // ----------------------------------------------------------------- helpers
@@ -539,9 +577,10 @@ export class Finale {
     const bp = this.ballPos;
     switch (this.kind) {
       case 'plinko': {
-        const mid = st.top - 17;
-        const fy = Math.max(st.floor + 6, Math.min(st.top - 4, bp.y));
-        this.W(0, (mid + fy) / 2 + 2, st.zb - 44, pos); this.W(0, (mid + fy) / 2, st.zb, look); break;
+        // in front of the end of the gutter (so it never cuts across the view), following the ball
+        const fy = Math.max(st.floor + 4, Math.min(st.top - 3, bp.y));
+        const fx = Math.max(-12, Math.min(12, bp.x * 0.85));
+        this.W(fx, fy + 3, st.zb - 26, pos); this.W(fx, fy - 1, st.zb, look); break;
       }
       case 'dominoes': {
         const doms = st.dominoes as { m: Group; t0: number }[];
@@ -588,7 +627,7 @@ export class Finale {
 
 /** Confetti and firework sparks: one instanced mesh of little tumbling cards. */
 class Confetti {
-  private mesh: InstancedMesh;
+  readonly mesh: InstancedMesh;
   private parts: { p: Vector3; v: Vector3; r: Vector3; w: Vector3; life: number; spark: boolean }[] = [];
   private m = new Matrix4(); private q = new Quaternion(); private s = new Vector3();
   private readonly max = 900;
