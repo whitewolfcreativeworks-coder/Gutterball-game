@@ -549,7 +549,7 @@ export class Finale {
         const p = st.launched >= 0 && st.goldLocal ? st.goldLocal as Vector3 : (st.pts as Vector3[])[Math.min(idx + 2, st.pts.length - 1)];
         this.W(p.x - 14, st.y + 12, p.z - 14, pos); this.W(p.x, st.y + 1, p.z, look); break;
       }
-      case 'hoop': this.W(-26, st.y + 12, (st.piv.z + st.basket.z) / 2 - 6, pos); this.W(0, st.y + 8, (st.piv.z + st.basket.z) / 2, look); break;
+      case 'hoop': this.W(-17, st.y + 14, st.piv.z - 10, pos); this.W(0, st.y + 10, (st.piv.z + st.basket.z) / 2 + 2, look); break; // three-quarter view: see the shot go through the hoop
       case 'chimes': this.W(-16, bp.y + 7, bp.z - 12, pos); this.W(0, bp.y - 2, bp.z + 4, look); break;
       case 'funnel': this.W(0, st.c.y + 24, st.c.z - 26, pos); this.W(0, st.c.y - 3, st.c.z, look); break;
     }
