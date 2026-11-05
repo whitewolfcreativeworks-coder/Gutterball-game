@@ -99,7 +99,17 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
         if autoplay && run.phase == .plunger {
             // demo: wind the plunger back, then let it go
             if clock > 0.8 { run.setPull(min(0.85, (clock - 0.8) * 0.8)) }
-            if clock > 2.2 { run.fire() }
+            if clock > 2.2 {
+                run.fire()
+                // -at <metres> [-speed <m/s>]: start further down the course (screenshots of a tube, the gap, the net)
+                let args = ProcessInfo.processInfo.arguments
+                if let i = args.firstIndex(of: "-at"), i + 1 < args.count, let at = Double(args[i + 1]) {
+                    var sp = 26.0
+                    if let j = args.firstIndex(of: "-speed"), j + 1 < args.count, let v = Double(args[j + 1]) { sp = v }
+                    run.ball.placeAt(s: at, speed: sp)
+                    camInit = false
+                }
+            }
         }
         let wrist = motion.read()
         var input = BallInput(steer: wrist.steer, jump: wrist.jump || touchJump, magnet: wrist.magnet || touchMagnet)

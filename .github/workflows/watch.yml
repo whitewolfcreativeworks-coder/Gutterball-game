@@ -38,13 +38,20 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           APP=$(find build/Build/Products -name "Gutterball.app" -maxdepth 3 | head -1)
           xcrun simctl install "$UDID" "$APP"
-          xcrun simctl launch "$UDID" com.whitewolfcreativeworks.gutterball.watchkitapp -autoplay
+          BID=com.whitewolfcreativeworks.gutterball.watchkitapp
           mkdir -p shots
-          for t in 2 6 12 20 30 42 56; do
-            sleep $([ $t = 2 ] && echo 2 || echo $((t - prev)))
-            prev=$t
-            xcrun simctl io "$UDID" screenshot "shots/t$(printf %02d $t).png"
-          done
+          shot() { xcrun simctl io "$UDID" screenshot "shots/$1.png"; }
+          # the plunger being pulled, then the race
+          xcrun simctl launch "$UDID" $BID -autoplay; sleep 3; shot a-plunger; sleep 7; shot b-race
+          xcrun simctl terminate "$UDID" $BID
+          # inside tube one and tube two
+          xcrun simctl launch "$UDID" $BID -autoplay -at 500; sleep 7; shot c-tube1
+          xcrun simctl terminate "$UDID" $BID
+          xcrun simctl launch "$UDID" $BID -autoplay -at 1300; sleep 7; shot d-tube2
+          xcrun simctl terminate "$UDID" $BID
+          # too slow for the gap: into the safety net, and the beam lifting you back
+          xcrun simctl launch "$UDID" $BID -autoplay -at 738 -speed 9; sleep 6.5; shot e-net; sleep 2; shot f-lift; sleep 2; shot g-back
+          xcrun simctl terminate "$UDID" $BID
           ls -la shots
           # print each screenshot (shrunk) into the log as base64, so it can be read back without artifact storage
           set +x
