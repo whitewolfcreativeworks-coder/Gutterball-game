@@ -59,6 +59,21 @@ export interface ObstacleSpec {
   move?: { amp: number; period: number; phase?: number };
 }
 
+/**
+ * A trigger pad: a glowing panel high on one wall. Roll over it and the
+ * obstacles in the stretch just after it turn into holograms, which you can
+ * roll straight through for a speed boost. The pad itself has no physical
+ * effect (no bump, no drag), just a sound.
+ */
+export interface TriggerPad {
+  s: number;          // arc length of the pad's centre
+  side: 1 | -1;       // +1 right wall, -1 left wall
+  y: number;          // centre height above the floor (on the vertical part of the wall)
+  len: number;        // length along the course
+  tall: number;       // height up the wall
+  obs: number[];      // indices of the obstacles it turns into holograms
+}
+
 export interface HintSpec { at?: string; s: number; text: string; }
 
 export interface CourseLayout {
@@ -145,6 +160,11 @@ export class Track {
   /** Per-sample fractal motion [flow, pulse, twist], smoothed between sections. */
   readonly fxMode: Float32Array;
   readonly obstacles: Obstacle[];
+  /** Trigger pads, and per-obstacle hologram state (1 = hologram; holoUsed: its boost has been taken). */
+  readonly pads: TriggerPad[] = [];
+  readonly padHit: Uint8Array;
+  readonly ghost: Uint8Array;
+  readonly holoUsed: Uint8Array;
   readonly hints: HintSpec[];
   readonly checkpoints: number[];
   readonly segmentStarts: { s: number; label?: string }[] = [];
@@ -217,6 +237,10 @@ export class Track {
       ...o, s: base(o.at) + o.s, y: o.y ?? 0, kind: o.kind ?? 'block',
       move: o.move ?? { amp: 0.35, period: 9 + (k % 5) * 1.3, phase: k * 1.7 },
     }));
+    this.ghost = new Uint8Array(this.obstacles.length);
+    this.holoUsed = new Uint8Array(this.obstacles.length);
+    this.placePads();
+    this.padHit = new Uint8Array(this.pads.length);
     this.hints = layout.hints.map((h) => ({ ...h, s: base(h.at) + h.s })).sort((a, b) => a.s - b.s);
     const every = layout.checkpointEvery ?? 160;
     this.checkpoints = [6];
@@ -226,6 +250,83 @@ export class Track {
       while (c < this.length - 40 && (this.gap[this.idx(c)] || this.isSteepOrInverted(c))) c += 5;
       if (c < this.length - 40) this.checkpoints.push(c);
     }
+  }
+
+  /**
+   * One trigger pad before every stretch of obstacles. Obstacles closer than
+   * 90 m together form one stretch; the pad sits 20-300 m (ideally 60-140 m) before its first
+   * obstacle, on an ordinary open stretch of wall (no tubes, tunnels, gaps,
+   * loops or bowls), high on the vertical part of the wall, so reaching it
+   * takes a deliberate climb. Side and height vary from stretch to stretch.
+   */
+  private placePads() {
+    const order = this.obstacles.map((_, k) => k).sort((a, b) => this.obstacles[a].s - this.obstacles[b].s);
+    const groups: number[][] = [];
+    for (const k of order) {
+      const g = groups[groups.length - 1];
+      if (g && this.obstacles[k].s - this.obstacles[g[g.length - 1]].s < 90) g.push(k); else groups.push([k]);
+    }
+    let prevEnd = -1e9;
+    const p = this.profile;
+    for (let gi = 0; gi < groups.length; gi++) {
+      const g = groups[gi];
+      const first = this.obstacles[g[0]].s, last = this.obstacles[g[g.length - 1]].s;
+      const hash = Math.abs(Math.sin((first + 1) * 12.9898) * 43758.5453) % 1;
+      const side: 1 | -1 = (gi + (hash > 0.5 ? 1 : 0)) % 2 === 0 ? 1 : -1;
+      const y = p.rc + 0.7 + hash * 1.1;
+      const len = 5, tall = 2.2;
+      const ok = (c: number) => {
+        if (c < 15 || c - len < prevEnd + 10) return false;
+        for (let q = c - len; q <= c + len; q += this.ds) {
+          const i = this.idx(q);
+          if (this.tubeK[i] > 0 || this.tunnel[i] || this.gap[i] || this.widen[i] > 1.001 || this.isSteepOrInverted(q)) return false;
+          const wall = side > 0 ? this.wallR[i] : this.wallL[i];
+          if (wall < y + tall / 2 + 0.3) return false;
+        }
+        return true;
+      };
+      // best 60-140 m ahead (time to see the holograms coming), else as close
+      // as 20 m or as far back as 300 m (past a tube or a drop)
+      let at = -1;
+      for (let d = 70; d <= 140 && at < 0; d += 5) if (ok(first - d)) at = first - d;
+      for (let d = 65; d >= 40 && at < 0; d -= 5) if (ok(first - d)) at = first - d;
+      for (let d = 145; d <= 300 && at < 0; d += 5) if (ok(first - d)) at = first - d;
+      for (let d = 35; d >= 20 && at < 0; d -= 5) if (ok(first - d)) at = first - d;
+      prevEnd = last + 5;
+      if (at < 0) continue;
+      this.pads.push({ s: at, side, y, len, tall, obs: g });
+    }
+  }
+
+  /** Back to solid obstacles and unlit pads (a new run). */
+  resetHolograms() { this.ghost.fill(0); this.holoUsed.fill(0); this.padHit.fill(0); }
+
+  /** The pad the ball (local s, x, y, radius r) is rolling over, or -1. */
+  padAt(s: number, x: number, y: number, r: number): number {
+    for (let k = 0; k < this.pads.length; k++) {
+      const pd = this.pads[k];
+      if (Math.abs(s - pd.s) > pd.len / 2 + r) continue;
+      if (x * pd.side <= 0 || Math.abs(y - pd.y) > pd.tall / 2 + r * 0.5) continue;
+      if (Math.abs(Math.abs(x) - (this.halfWidthAt(s) - r)) > 0.7) continue;
+      return k;
+    }
+    return -1;
+  }
+  /** Light a pad: its obstacles become holograms. */
+  triggerPad(k: number) {
+    this.padHit[k] = 1;
+    for (const o of this.pads[k].obs) this.ghost[o] = 1;
+  }
+  /** An untaken hologram the ball is passing through, or -1. */
+  hologramAt(s: number, x: number, y: number, r: number): number {
+    for (let o = 0; o < this.obstacles.length; o++) {
+      if (!this.ghost[o] || this.holoUsed[o]) continue;
+      const ob = this.obstacles[o];
+      const ds = s - ob.s;
+      if (ds > ob.ls + 2 || ds < -ob.ls - 2) continue;
+      if (boxSDF(ds, x - this.obstacleX(ob), y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06) < r) return o;
+    }
+    return -1;
   }
 
   /**
@@ -460,7 +561,9 @@ export class Track {
   /** Lateral velocity of the obstacle nearest a local point (0 for static ones). */
   nearestObstacleVX(s: number, x: number, y: number): number {
     let d = 1e6, vx = 0;
-    for (const ob of this.obstacles) {
+    for (let o = 0; o < this.obstacles.length; o++) {
+      if (this.ghost[o]) continue;
+      const ob = this.obstacles[o];
       const ds = s - ob.s;
       if (Math.abs(ds) > ob.ls + 3) continue;
       const dd = boxSDF(ds, x - this.obstacleX(ob), y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06);
@@ -486,6 +589,7 @@ export class Track {
     if (!this.layout.openEnd && s > this.length - 0.5) d = Math.min(d, Math.max(this.length - 0.5 - s, s - this.length - 2, Math.abs(x) - W0, y - 4));
     if (includeObstacles) {
       for (let o = 0; o < this.obstacles.length; o++) {
+        if (this.ghost[o]) continue; // a hologram: no collision
         const ob = this.obstacles[o];
         const ds = s - ob.s;
         if (ds > ob.ls + 2 || ds < -ob.ls - 2) continue;
@@ -498,7 +602,9 @@ export class Track {
   /** Index of the obstacle the local point is closest to (for material/audio). */
   nearestObstacleDist(s: number, x: number, y: number): number {
     let d = 1e6;
-    for (const ob of this.obstacles) {
+    for (let o = 0; o < this.obstacles.length; o++) {
+      if (this.ghost[o]) continue;
+      const ob = this.obstacles[o];
       const ds = s - ob.s;
       if (Math.abs(ds) > ob.ls + 3) continue;
       d = Math.min(d, boxSDF(ds, x - this.obstacleX(ob), y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06));

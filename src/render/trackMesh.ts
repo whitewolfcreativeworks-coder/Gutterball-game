@@ -1,6 +1,6 @@
 import {
   BoxGeometry, BackSide, Object3D, ShaderMaterial, UniformsLib, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
-  Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry,
+  Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry, AdditiveBlending, EdgesGeometry, LineSegments, LineBasicMaterial,
 } from 'three';
 import { TrackProjector, type Track } from '../track/track';
 import { profileRing, halfWidth } from '../track/profile';
@@ -222,6 +222,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
 
   // ---- Obstacles ----
   g.add(buildObstacles(track, mat));
+  if (track.pads.length) g.add(buildPads(track));
   // ---- Chain-lift strips ----
   const chain = buildLiftChains(track);
   if (chain) { g.add(chain); g.userData.chain = chain.material; }
@@ -586,11 +587,18 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
   const movers: Mesh[] = [];
   const slotMat = new MeshBasicMaterial({ color: 0x050505, fog: false });
-  for (const o of track.obstacles) {
+  // hologram look (after a trigger pad): see-through glowing cyan with bright edges
+  const holo = new MeshBasicMaterial({ color: 0x33e8ff, transparent: true, opacity: 0.28, blending: AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+  const holoUsed = new MeshBasicMaterial({ color: 0x33e8ff, transparent: true, opacity: 0.08, blending: AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+  const holoEdge = new LineBasicMaterial({ color: 0xaaffff, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+  const all: Mesh[] = [];
+  const solid = [face, face, top, face, face, face];
+  for (let k = 0; k < track.obstacles.length; k++) {
+    const o = track.obstacles[k];
     track.frameAtS(o.s, P, T, U, R);
     const geo = new BoxGeometry(o.w, o.h, o.ls);
     // box face order: +x, -x, +y (top), -y, +z, -z
-    const mesh = new Mesh(geo, [face, face, top, face, face, face]);
+    const mesh = new Mesh(geo, solid);
     const basis = new Matrix4().makeBasis(R, U, T.clone().negate());
     mesh.quaternion.setFromRotationMatrix(basis);
     mesh.position.copy(P).addScaledVector(R, o.x).addScaledVector(U, o.y + o.h / 2);
@@ -599,6 +607,11 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
     // thick black outline (inverted hull)
     const hull = new Mesh(new BoxGeometry(o.w + 0.36, o.h + 0.36, o.ls + 0.36), outline);
     mesh.add(hull);
+    const edges = new LineSegments(new EdgesGeometry(geo), holoEdge);
+    edges.visible = false;
+    mesh.add(edges);
+    mesh.userData.holo = { k, hull, edges, state: 0 };
+    all.push(mesh);
     g.add(mesh);
     if (o.move) {
       mesh.userData.mover = { ob: o, base: mesh.position.clone(), R: R.clone() };
@@ -622,7 +635,58 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
     }
   }
   g.userData.movers = movers;
+  g.userData.holo = { meshes: all, solid, holo, holoUsed, holoEdge };
   return g;
+}
+
+/**
+ * Trigger pads: glowing diamond panels high on the wall. Amber and pulsing
+ * while they wait; cyan once you've rolled over them.
+ */
+function buildPads(track: Track) {
+  const g = new Group();
+  const tex = padTexture();
+  const idle = new MeshBasicMaterial({ map: tex, color: 0xffb020, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false, side: DoubleSide, fog: false, toneMapped: false });
+  const lit = new MeshBasicMaterial({ map: tex, color: 0x40f0ff, transparent: true, opacity: 1, blending: AdditiveBlending, depthWrite: false, side: DoubleSide, fog: false, toneMapped: false });
+  const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+  const meshes: Mesh[] = [];
+  track.pads.forEach((pd, k) => {
+    track.frameAtS(pd.s, P, T, U, R);
+    const W = track.halfWidthAt(pd.s);
+    const m = new Mesh(new PlaneGeometry(pd.len, pd.tall), idle);
+    // faces into the channel: x along the course, y up the wall
+    const basis = new Matrix4().makeBasis(T.clone().multiplyScalar(-pd.side), U, R.clone().multiplyScalar(-pd.side));
+    m.quaternion.setFromRotationMatrix(basis);
+    m.position.copy(P).addScaledVector(R, pd.side * (W - 0.05)).addScaledVector(U, pd.y);
+    m.userData.pad = k;
+    m.renderOrder = 2;
+    meshes.push(m);
+    g.add(m);
+  });
+  g.userData.pads = { meshes, idle, lit };
+  return g;
+}
+
+function padTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 128;
+  const c = cv.getContext('2d')!;
+  c.fillStyle = '#000'; c.fillRect(0, 0, 256, 128);
+  c.strokeStyle = '#fff'; c.lineJoin = 'round';
+  // outer frame
+  c.lineWidth = 8; c.strokeRect(10, 10, 236, 108);
+  // centre diamond
+  c.lineWidth = 10;
+  c.beginPath(); c.moveTo(128, 22); c.lineTo(172, 64); c.lineTo(128, 106); c.lineTo(84, 64); c.closePath(); c.stroke();
+  c.fillStyle = '#fff'; c.beginPath(); c.moveTo(128, 44); c.lineTo(150, 64); c.lineTo(128, 84); c.lineTo(106, 64); c.closePath(); c.fill();
+  // chevrons both sides
+  c.lineWidth = 8;
+  for (const [x, d] of [[40, 1], [62, 1], [216, -1], [194, -1]] as const) {
+    c.beginPath(); c.moveTo(x - 10 * d, 40); c.lineTo(x + 10 * d, 64); c.lineTo(x - 10 * d, 88); c.stroke();
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  return t;
 }
 
 /**
@@ -676,6 +740,27 @@ export function updateMovingObstacles(root: Object3D, track: Track) {
   if (wtr) wtr.uniforms.uTime.value = track.time;
   if (ch) ch.uniforms.uScroll.value = track.time * 20; // the chain runs at lift speed
   root.traverse((o) => {
+    const h = o.userData?.holo;
+    if (h && h.meshes) {
+      const t = track.time;
+      h.holo.opacity = 0.22 + 0.08 * Math.sin(t * 9) + 0.05 * Math.sin(t * 23.7);
+      h.holoEdge.opacity = 0.75 + 0.25 * Math.sin(t * 13);
+      for (const m of h.meshes as Mesh[]) {
+        const st = m.userData.holo;
+        const want = track.ghost[st.k] ? (track.holoUsed[st.k] ? 2 : 1) : 0;
+        if (want === st.state) continue;
+        st.state = want;
+        m.material = want === 0 ? h.solid : want === 1 ? h.holo : h.holoUsed;
+        st.hull.visible = want === 0;
+        st.edges.visible = want === 1;
+        m.castShadow = want === 0;
+      }
+    }
+    const pd = o.userData?.pads;
+    if (pd) {
+      pd.idle.opacity = 0.6 + 0.35 * (0.5 + 0.5 * Math.sin(track.time * 5));
+      for (const m of pd.meshes as Mesh[]) m.material = track.padHit[m.userData.pad] ? pd.lit : pd.idle;
+    }
     const ms = o.userData?.movers as Mesh[] | undefined;
     if (!ms) return;
     for (const m of ms) {

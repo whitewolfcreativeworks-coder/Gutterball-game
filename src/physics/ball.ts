@@ -590,6 +590,26 @@ export class BallPhysics {
     if (impactSpeed > 1.0) this.emit('COLLISION_IMPACT', Math.min(1, impactSpeed / 12), impactSpeed, impactSource);
     this.contact = touched;
 
+    // ---- Trigger pads and holograms ----
+    // A pad high on the wall has no physical effect at all: rolling over it
+    // just lights it (with a chime) and turns the obstacles just after it into
+    // holograms. Rolling through a hologram gives a short speed boost.
+    {
+      const tr = this.track, pq = this.proj;
+      if (tr.pads.length) {
+        const k = tr.padAt(pq.s, pq.x, pq.y, r);
+        if (k >= 0 && !tr.padHit[k]) { tr.triggerPad(k); this.emit('TRIGGER_PAD', 1, tr.pads[k].obs.length); }
+        const o = tr.hologramAt(pq.s, pq.x, pq.y, r);
+        if (o >= 0) {
+          tr.holoUsed[o] = 1;
+          const vf = this.v.dot(pq.T);
+          if (vf > 0) this.v.addScaledVector(pq.T, Math.max(0, Math.min(6, tu.gutterCruise * 2 - vf)));
+          this.turboTime = Math.max(this.turboTime, 2.2);
+          this.emit('HOLO_BOOST', 1, vf);
+        }
+      }
+    }
+
     // ---- Rolling state from contact-point slip ----
     let state: RollingState = 'airborne';
     if (touched) {

@@ -342,6 +342,8 @@ export class AudioEngine {
         break;
       }
       case 'LIFT_CLACK': this.clack(); break;
+      case 'TRIGGER_PAD': this.chime(1318.5, 0.16); setTimeout(() => this.chime(1975.5, 0.12), 70); break;
+      case 'HOLO_BOOST': this.whoosh(0.9); this.sweep(300, 1400, 0.3, 0.12, 'triangle'); this.sweep(600, 2800, 0.22, 0.05, 'sine'); break;
       case 'TURBO_ARMED': this.sweep(400, 1600, 0.35, 0.16, 'triangle'); this.sweep(800, 2400, 0.3, 0.1, 'sine'); break;
       case 'TURBO_START': this.sweep(80, 1800, 0.6, 0.28, 'sawtooth'); this.sweep(50, 30, 0.6, 0.3, 'sine'); break;
       case 'TURBO_END': this.sweep(900, 200, 0.4, 0.1, 'triangle'); break;

@@ -27,7 +27,9 @@ export type SensoryEventType =
   | 'TURBO_END'
   | 'TUNNEL_ENTER'
   | 'TUNNEL_EXIT'
-  | 'LIFT_CLACK';
+  | 'LIFT_CLACK'
+  | 'TRIGGER_PAD'
+  | 'HOLO_BOOST';
 
 export interface SensoryEvent {
   type: SensoryEventType;

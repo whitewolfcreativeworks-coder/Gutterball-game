@@ -42,6 +42,7 @@ export class Run {
     this.time = 0;
     this.falls = 0;
     this.checkpointIndex = 0;
+    for (const tr of this.course.all) tr.resetHolograms();
     this.ball.placeAt(this.track.checkpoints[0], 0);
     this.lastGood = { track: 0, s: this.track.checkpoints[0], v: 0 };
   }

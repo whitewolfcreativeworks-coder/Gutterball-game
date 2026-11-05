@@ -22,7 +22,9 @@ export class Autopilot {
     let jump = false;
     const look = Math.min(45, speed * 1.6);
     const blocked = (x: number) => {
-      for (const o of tr.obstacles) {
+      for (let oi = 0; oi < tr.obstacles.length; oi++) {
+        if (tr.ghost[oi]) continue; // holograms: ride straight through
+        const o = tr.obstacles[oi];
         const ds = o.s - s;
         if (ds < -1 || ds > look) continue;
         // where a moving block will be when we get there

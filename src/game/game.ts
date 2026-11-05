@@ -265,10 +265,13 @@ export class Game {
       if (e.type === 'JUMP') this.camera.punch(4);
       if (e.type === 'DOUBLE_JUMP') this.camera.punch(8);
       if (e.type === 'TURBO_ARMED') { this.camera.punch(6); if (this.mode === 'play') this.cb.onHint?.('TURBO READY — FLICK!'); }
+      if (e.type === 'TRIGGER_PAD') { this.camera.punch(3); if (this.mode === 'play') this.cb.onHint?.('HOLOGRAMS! ROLL THROUGH THEM FOR A BOOST'); }
+      if (e.type === 'HOLO_BOOST') { this.camera.punch(10); this.camera.shake = Math.max(this.camera.shake, 0.3 * this.speedFx); }
       if (e.type === 'TURBO_START') { this.camera.punch(16); this.camera.shake = Math.max(this.camera.shake, 0.6 * this.speedFx); }
     }
   }
   private dtLast = 1 / 60;
+  private static padHintShown = false;
 
   private frame = (now: number) => {
     requestAnimationFrame(this.frame);
@@ -308,6 +311,18 @@ export class Game {
     if (b.boosting && !this.paused) this.camera.punch(7 * this.speedFx); // booster widens the view
     else this.audio.quiet();
     this.showHints(b.activeIndex === 0 ? b.mainProj.s : b.proj.s, b.activeIndex);
+    // the first trigger pad of the session gets a pointer
+    if (this.mode === 'play' && !Game.padHintShown) {
+      const tr = b.track;
+      for (let k = 0; k < tr.pads.length; k++) {
+        const ahead = tr.pads[k].s - b.proj.s;
+        if (ahead > 20 && ahead < 75 && !tr.padHit[k]) {
+          Game.padHintShown = true;
+          this.cb.onHint?.(tr.pads[k].side > 0 ? 'CLIMB THE RIGHT WALL ▶ HIT THE GLOWING PAD' : '◀ CLIMB THE LEFT WALL — HIT THE GLOWING PAD');
+          break;
+        }
+      }
+    }
     this.ballView.update(b, dt, this.time);
     if (this.trackGroup) updateMovingObstacles(this.trackGroup, this.track);
     this.branchGroups.forEach((g, k) => updateMovingObstacles(g, this.courseGeo!.branches[k]));
