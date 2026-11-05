@@ -23,22 +23,23 @@ export interface FractalTheme {
   strength: number;    // per-world base strength
   c: [number, number]; // fractal parameter
   psy: number;         // how far colours cycle through the spectrum (0 = keep the world's palette, 1 = full rainbow)
+  edge?: number;       // contrast: dark contour lines, passing bands and floor glow (light worlds need more)
 }
 
 export const FRACTAL_THEMES: Record<string, FractalTheme> = {
   // kind = the world's mathematical substrate (docs/WORLD_MATH.md)
   wood:     { kind: 0,  a: 0xffc060, b: 0xff5a10, scale: 0.12,  flow: 0.55, strength: 0.55, c: [0.52, 0.62], psy: 0.55 },   // Kali set
-  concrete: { kind: 1,  a: 0x7ff3ff, b: 0x2a5cff, scale: 0.10,  flow: 0.5,  strength: 1.1, c: [0, 0], psy: 0.12 },         // Menger / Sierpinski carpet
+  concrete: { kind: 1,  a: 0x7ff3ff, b: 0x2a5cff, scale: 0.10,  flow: 0.5,  strength: 1.1, c: [0, 0], psy: 0.12, edge: 0.5 },         // Menger / Sierpinski carpet
   metal:    { kind: 2,  a: 0x9fdcff, b: 0xb04cff, scale: 0.13,  flow: 0.8,  strength: 0.8,  c: [0.12, -0.08], psy: 0.35 },  // Mandelbox
-  ice:      { kind: 3,  a: 0x3fe0ff, b: 0x6a2cff, scale: 0.14,  flow: 0.45, strength: 0.7,   c: [0, 0], psy: 0.25 },         // hexagonal frost
+  ice:      { kind: 3,  a: 0x3fe0ff, b: 0x6a2cff, scale: 0.14,  flow: 0.45, strength: 0.7,   c: [0, 0], psy: 0.25, edge: 1.0 },         // hexagonal frost
   water:    { kind: 4,  a: 0x9ffcff, b: 0x1a6dff, scale: 0.11,  flow: 0.9,  strength: 0.6,  c: [0, 0], psy: 0.25 },         // caustic flow
-  glass:    { kind: 5,  a: 0xff5cc8, b: 0x2affc4, scale: 0.12,  flow: 0.6,  strength: 1.0, c: [0, 0], psy: 0.85 },         // Apollonian gasket
+  glass:    { kind: 5,  a: 0xff5cc8, b: 0x2affc4, scale: 0.12,  flow: 0.6,  strength: 1.0, c: [0, 0], psy: 0.85, edge: 0.65 },         // Apollonian gasket
   rubber:   { kind: 6,  a: 0xff2bd6, b: 0x2bf0ff, scale: 0.12,  flow: 0.8,  strength: 0.5,  c: [0, 0], psy: 1.0 },         // Turing labyrinth
-  sand:     { kind: 7,  a: 0xffd36b, b: 0xff6a1b, scale: 0.11,  flow: 0.4,  strength: 0.65, c: [0, 0], psy: 0.12 },         // girih + dunes
+  sand:     { kind: 7,  a: 0xffd36b, b: 0xff6a1b, scale: 0.11,  flow: 0.4,  strength: 0.65, c: [0, 0], psy: 0.12, edge: 0.6 },         // girih + dunes
   mud:      { kind: 8,  a: 0x8dff5a, b: 0x1d8f6a, scale: 0.12,  flow: 0.5,  strength: 0.75, c: [0, 0], psy: 0.15 },         // Voronoi cracks
-  stone:    { kind: 9,  a: 0xffe7a8, b: 0xb8862a, scale: 0.11,  flow: 0.4,  strength: 1.05,  c: [-0.745, 0.113], psy: 0.08 },// Julia marble
+  stone:    { kind: 9,  a: 0xffe7a8, b: 0xb8862a, scale: 0.11,  flow: 0.4,  strength: 1.05,  c: [-0.745, 0.113], psy: 0.08, edge: 0.7 },// Julia marble
   grating:  { kind: 10, a: 0xffb03a, b: 0xff4a1a, scale: 0.10,  flow: 0.9,  strength: 0.85, c: [0, 0], psy: 0.12 },         // Hilbert circuits
-  snow:     { kind: 11, a: 0x7fb4ff, b: 0x6a4cff, scale: 0.12,  flow: 0.5,  strength: 0.55,  c: [0, 0], psy: 0.2 },         // Koch snowflake
+  snow:     { kind: 11, a: 0x7fb4ff, b: 0x6a4cff, scale: 0.12,  flow: 0.5,  strength: 0.55,  c: [0, 0], psy: 0.2, edge: 1.0 },         // Koch snowflake
 };
 
 export interface FractalUniforms {
@@ -63,8 +64,20 @@ uniform float uFxTravel;
 uniform float uFxRing; // distance all the way round the closed pipe
 uniform float uFxPsy;
 uniform float uFxBallDark;
+uniform float uFxEdge;
 varying vec2 vFxUv;
 varying vec4 vFxMode;
+// CONTRAST (light worlds): contour lines where the floor meets the curve and the
+// curve meets the wall, a soft shadow in the curve, and thin bands across the
+// gutter every 8 m so you feel the surface rushing by. Returns (lines, bands, shade).
+vec3 fxEdges() {
+  float ac = abs(vFxUv.x - uFxCenter);
+  float l1 = 1.0 - smoothstep(0.0, 0.22, abs(ac - 2.8));
+  float l2 = 1.0 - smoothstep(0.0, 0.22, abs(ac - 8.45));
+  float bands = 1.0 - smoothstep(0.0, 0.3, abs(fract(vFxUv.y / 8.0) - 0.5) * 8.0 - 3.7);
+  float shade = smoothstep(2.8, 5.5, ac) * (1.0 - smoothstep(6.5, 8.45, ac));
+  return vec3(max(l1, l2), bands, shade);
+}
 
 vec2 fxMirror(vec2 p) { return abs(mod(p, 4.0) - 2.0) - 1.0; }
 
@@ -366,8 +379,11 @@ vec3 fxColor() {
   vec3 ringCol = fxHue(mix(uFxA, uFxB, 0.3), (uFxTime * 1.3 + vFxUv.y * 0.05) * uFxPsy);
 
   float pulse = (0.85 + 0.15 * sin(uFxTime * 2.0 + vFxUv.y * 0.6)) * (1.0 + push * 0.45 * breathe);
-  float k = (0.04 + 0.96 * wall) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 0.9 * tube);
-  vec3 em = (col * k + ringCol * ring * (0.4 + 0.6 * uFxSpeed) * (0.3 + 0.7 * wall)) * uFxIntensity * 2.2;
+  float wallLit = max(wall, uFxEdge * 0.45);   // light worlds: the fractal lights the floor too
+  float k = (0.04 + 0.96 * wallLit) * f * pulse * (0.75 + 0.5 * uFxSpeed) * (1.0 + 0.9 * tube);
+  vec3 fxE2 = fxEdges();
+  float core = pow(fxE2.x, 6.0);  // a thin neon core inside each dark contour line
+  vec3 em = (col * k + ringCol * ring * (0.4 + 0.6 * uFxSpeed) * (0.3 + 0.7 * wall) + mix(uFxA, uFxB, 0.4) * core * uFxEdge * 0.35) * uFxIntensity * 2.2;
   // soft ceiling: bright features stay saturated colour instead of blowing out to white
   float pk = max(em.r, max(em.g, em.b));
   return em / (1.0 + pk * 0.8);
@@ -384,12 +400,12 @@ export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: n
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, {
       uFxA: { value: a }, uFxB: { value: b }, uFxScale: { value: theme.scale }, uFxFlow: { value: theme.flow },
-      uFxC: { value: theme.c }, uFxCenter: { value: centerAcross }, uFxRing: { value: ring }, uFxPsy: { value: theme.psy },
+      uFxC: { value: theme.c }, uFxCenter: { value: centerAcross }, uFxRing: { value: ring }, uFxPsy: { value: theme.psy }, uFxEdge: { value: theme.edge ?? 0.25 },
     });
     sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec4 fxmode;\nvarying vec2 vFxUv;\nvarying vec4 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
     // inside a tube the wood itself goes dark so the projection owns the walls (dome-screen look)
     sh.fragmentShader = GLSL + sh.fragmentShader
-      .replace('#include <map_fragment>', '#include <map_fragment>\n float fxLum = max(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)), 1e-3); diffuseColor.rgb *= mix(1.0, min(1.0, 0.045 / fxLum), vFxMode.w);\n diffuseColor.a = mix(diffuseColor.a, 1.0, vFxMode.w); // see-through gutters become projection screens inside tubes')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n float fxLum = max(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)), 1e-3); diffuseColor.rgb *= mix(1.0, min(1.0, 0.045 / fxLum), vFxMode.w);\n diffuseColor.a = mix(diffuseColor.a, 1.0, vFxMode.w); // see-through gutters become projection screens inside tubes\n vec3 fxE = fxEdges(); diffuseColor.rgb *= 1.0 - uFxEdge * (0.55 * fxE.x + 0.3 * fxE.y + 0.22 * fxE.z);')
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n reflectedLight.indirectSpecular *= 1.0 - 0.9 * vFxMode.w; reflectedLight.directSpecular *= 1.0 - 0.7 * vFxMode.w;')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();')
       // real-glass gutters stop being see-through inside tubes (the projection owns the walls)

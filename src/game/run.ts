@@ -130,7 +130,9 @@ export class Run {
     // failure: left the gutter and fell, or far away from the track
     const W = b.track.halfWidthAt(pr.s);
     const off = Math.abs(pr.x) > W + 1.5 && pr.y < b.track.profile.H - 1;
-    const fell = pr.y < -14 || Math.abs(pr.x) > 40 || Math.abs(pr.along) > 30;
+    // (v5) flying is part of the game: only reset when you are truly lost, far
+    // below the course or very far from it, not while you're in the air steering back
+    const fell = pr.y < -40 || Math.abs(pr.x) > 60 || Math.abs(pr.along) > 60;
     // outside the gutter (beside it, or underneath after dropping through a gap):
     // the tractor beam gets a few seconds to haul you back in, then you respawn
     const outside = Math.abs(pr.x) > W + 0.6 && pr.y < b.track.profile.H;
@@ -141,7 +143,8 @@ export class Run {
     const under = !insideAny && (pr.y < -2.5 || (pr.y < -0.8 && !b.track.isGap(pr.s)));
     this.underTimer = under ? this.underTimer + this.fixedDt : 0;
     if (this.underTimer > 0.25) { this.underTimer = 0; this.fail(); return; }
-    if ((off && b.airborneTime > 0.9 && !b.magnetActive) || fell || (b.airborneTime > 6) || this.outsideTimer > 2.5) {
+    const sinking = b.v.dot(pr.U) < -1; // coming down beside the gutter, not flying
+    if ((off && sinking && b.airborneTime > 3.5 && !b.magnetActive) || fell || (b.airborneTime > 12) || (this.outsideTimer > 5 && b.contact)) {
       this.outsideTimer = 0;
       this.fail();
       return;

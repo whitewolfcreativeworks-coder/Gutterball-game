@@ -450,4 +450,22 @@ describe('built-up corners', () => {
     expect(maxStep).toBeLessThan(0.02);
   });
 
+  it('aerial control: in the air you can steer a long way either side, without gaining speed', () => {
+    const tr = new Track({ id: 't', name: 't', segments: [{ len: 400, pitch: -4, openSky: true }], obstacles: [], hints: [] } as any);
+    const xs: number[] = [];
+    for (const steer of [1, -1]) {
+      const b = new BallPhysics(tr, MATERIALS.wood);
+      b.placeAt(60, 30);
+      b.p.addScaledVector(b.proj.U, 15); b.v.addScaledVector(b.proj.U, 10);
+      b.proj.project(b.p.x, b.p.y, b.p.z);
+      const v0 = b.v.length();
+      sim(b, 1.6, { ...idle, steer });
+      xs.push(b.proj.x);
+      expect(b.v.length()).toBeLessThan(v0 + 3);
+    }
+    expect(xs[0]).toBeGreaterThan(20);
+    expect(xs[1]).toBeLessThan(-20);
+    expect(Math.abs(xs[0] + xs[1])).toBeLessThan(2); // symmetric
+  });
+
 });

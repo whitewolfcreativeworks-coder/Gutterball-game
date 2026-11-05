@@ -1,5 +1,5 @@
 import type { CourseLayout } from '../track/track';
-import { vertWall } from './elements';
+import { rollers, tabletop, vertWall } from './elements';
 
 /**
  * WORLD 1 — WOOD (free). "Timberline Run".
@@ -111,6 +111,8 @@ export const WOOD_COURSE: CourseLayout = {
     { len: 34, pitch: -36, openSky: true, fx: { pulse: 1, flow: -2 } },
     { len: 55, pitch: -66, openSky: true, fx: { flow: -3, twist: 0.5 } },
     { len: 60, pitch: -6, fx: { flow: -1.5 } },
+    // the logging trail: rollers and a tabletop to pump and jump
+    ...[...rollers(4, 26, 6), ...tabletop(22, 11, -18)].map((g, i) => (i === 0 ? { ...g, label: 'trail' } : g)),
     { len: 30, pitch: 11, label: 'camels', fx: { pulse: 1 } }, { len: 36, pitch: -16 },
     { len: 28, pitch: 10, fx: { pulse: 1 } }, { len: 34, pitch: -15 },
     { len: 26, pitch: 9, fx: { pulse: 1 } }, { len: 40, pitch: -12 },
@@ -171,6 +173,7 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'funnel', s: 0, text: 'Sawdust funnel' },
     { at: 'shed', s: 0, text: 'Drying shed' },
     { at: 'bigLift', s: 0, text: 'The Big One: up the lift hill...' },
+    { at: 'trail', s: 0, text: 'Logging trail: pump the rollers, jump the tabletop' },
     { at: 'camels', s: 0, text: 'Camelbacks: airtime!' },
     { at: 'finale', s: 0, text: 'Final run' },
     { at: 'finish', s: 15, text: 'Finish!' },

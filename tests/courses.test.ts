@@ -46,7 +46,12 @@ describe('the ball cannot leave the gutter (except by falling into a gap)', () =
         const pr = run.ball.proj;
         // escaping = beside the gutter at or above floor level (a ball that fell through a gap is below it)
         // (flying above the containment ceiling after a big jump is allowed: that's the beam-rescue mechanic)
-        if (run.phase === "running" && !nearGap(pr.s) && pr.y > 0 && pr.y < tr.profile.H + 2.6 && Math.abs(pr.x) > W + 0.05) escapes++;
+        // (built-up walls are open above their tops by design: clear one and you fly, the
+        // beam brings you home; a NORMAL wall must never let the ball slip out)
+        const Wl = run.ball.track.halfWidthAt(pr.s); void W;
+        const near = (k: number) => { const [l, r] = run.ball.track.wallsAt(pr.s + k); return Math.max(l, r); };
+        const raisedHere = Math.max(near(-40), near(-20), near(0), near(20)) > tr.profile.H + 0.3;
+        if (run.phase === "running" && !nearGap(pr.s) && !raisedHere && pr.y > 0 && pr.y < tr.profile.H + 2.6 && Math.abs(pr.x) > Wl + 0.05) escapes++;
       }
       expect(escapes).toBe(0);
     });

@@ -91,3 +91,23 @@ Steering 7.5 m/s² (35 % direct), air steer 2.6 m/s², propulsion levels 0 / 1.6
   - The floor widens 2.2× (per-segment `widen`, eased over ~30 m). Two long, steady banked sweeps follow.
   - A single segment per sweep matters: the turtle's easing makes the middle of a segment about 1.9× tighter than its average. That must stay well clear of the widened half-width, or the inside edge pinches.
   - Then a long unwinding curve, back to a normal gutter, and a 58° tube plunge "down the hole".
+
+## Round 5: flying is part of the game
+
+- **Aerial control.** In the air, steering carves your heading like a glider: it turns the horizontal velocity at full speed, at up to 0.7 rad/s × the boost.
+  - It also pushes sideways at 13 m/s², and only across your motion, so steering never adds speed.
+  - The tractor beam adds 40%.
+  - A 1.6 s flight can be steered about 34 m to either side.
+- **Patient reset.** The quick reset fires only when you are truly lost:
+  - more than 60 m to the side, more than 60 m off along the course, or 40 m below it
+  - airborne for more than 12 s
+  - outside the gutter on the ground for more than 5 s
+  - sinking beside it for more than 3.5 s without the beam
+  - stuck, or a numerical glitch
+- **BMX / motocross elements:** `rollers` (pump track), `berm`, `tabletop`, `gullyJump`, and the combined `dirtSection`.
+  - Placed as Mud's motocross section, Sand's dune BMX, Snow's boardercross, Rubber's pump track and Wood's logging trail.
+- **Contrast** (`FractalTheme.edge`) adds, on every gutter, scaled per world (Ice and Snow 1.0, Stone 0.7, Glass 0.65, Sand 0.6, Concrete 0.5, others 0.25):
+  - dark contour lines with a neon core where the floor meets the curve and the curve meets the wall
+  - a soft shadow in the curve
+  - cross bands every 8 m, so you feel the surface rushing by
+  - fractal glow on the floor

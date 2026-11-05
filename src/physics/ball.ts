@@ -69,7 +69,7 @@ export const DEFAULT_TUNING: BallTuning = {
   gravity: 9.81,
   steerAccel: 20,
   steerDirectFrac: 0.72,
-  airSteerAccel: 7.5,
+  airSteerAccel: 13,
   driveAccel: [0, 2.6, 3.6],
   driveCap: [0, 30, 38],
   airDrag: 0.0006,
@@ -353,7 +353,37 @@ export class BallPhysics {
     } else {
       // In the air you can still steer; holding the magnet gives extra authority
       // so you can line up your landing while the beam pulls you down.
-      acc.addScaledVector(this.track.tubeAt(pr.s) > 0.5 ? Rt : pr.R, input.steer * (this.magnetActive ? tu.airSteerAccel * 1.8 : tu.airSteerAccel) * (1 + Math.max(0, Math.min(0.8, (sp - 18) / 40))));
+      // AERIAL CONTROL (v5): flying is part of the game. Steering in the air
+      // carves your heading like a glider (turns the horizontal velocity at
+      // full speed) AND pushes sideways, so you can send it off a wall and fly
+      // it back down onto the course. The beam adds a little more.
+      const inTubeAir = this.track.tubeAt(pr.s) > 0.5;
+      const k = (this.magnetActive ? 1.4 : 1) * (1 + Math.max(0, Math.min(0.6, (sp - 18) / 40)));
+      {
+        // the push only bends your path (across your motion), it never adds speed
+        const ax = inTubeAir ? Rt : pr.R;
+        const vl = this.v.length();
+        const px = ax.x, py = ax.y, pz = ax.z;
+        const along = vl > 1e-3 ? (px * this.v.x + py * this.v.y + pz * this.v.z) / vl : 0;
+        const kk = input.steer * tu.airSteerAccel * k;
+        acc.x += (px - (vl > 1e-3 ? along * this.v.x / vl : 0)) * kk;
+        acc.y += (py - (vl > 1e-3 ? along * this.v.y / vl : 0)) * kk;
+        acc.z += (pz - (vl > 1e-3 ? along * this.v.z / vl : 0)) * kk;
+      }
+      if (!inTubeAir && Math.abs(input.steer) > 0.02) {
+        const vx = this.v.x, vz = this.v.z;
+        const hs = Math.hypot(vx, vz);
+        if (hs > 2) {
+          // yaw the horizontal velocity: positive steer = toward the track's right
+          // (own scalars only: shared scratch vectors may hold gravity at this point)
+          const sideSign = Math.sign(pr.R.x * -vz + pr.R.z * vx) || 1;
+          const vh = { x: vx, z: vz };
+          const ang = input.steer * 0.7 * k * dt * sideSign;
+          const c = Math.cos(ang), sn = Math.sin(ang);
+          const nx = vh.x * c - vh.z * sn, nz = vh.x * sn + vh.z * c;
+          this.v.x = nx; this.v.z = nz;
+        }
+      }
     }
 
     // ---- Pneumatic tubes: an air current carries you along inside a pipe ----

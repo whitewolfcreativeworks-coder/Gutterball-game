@@ -283,3 +283,45 @@ export const funnelBowl = (dir = 1, widen = 2.2): Seg[] => [
   { len: 40, pitch: -8, tube: true, fx: { flow: -2 } },
   { len: 30, pitch: -6 },
 ];
+
+// ---------------------------------------------------------------------------
+// BMX / motocross elements (v5): pump it, carve the berms, jump the gaps
+// ---------------------------------------------------------------------------
+
+/** Pump-track rollers: a rhythm of humps you can pump for speed (press into the backsides). */
+export const rollers = (n: number, len = 26, amp = 7, base = -7): Seg[] => {
+  const out: Seg[] = [];
+  for (let i = 0; i < n; i++) out.push({ len: len / 2, pitch: base + amp, fx: { pulse: 1 } }, { len: len / 2, pitch: base - amp, fx: { flow: -0.5 } });
+  out.push({ len: 18, pitch: base });
+  return out;
+};
+
+/** Berm: a high-banked turn you can carve at speed (the flow limits keep it a smooth arc). */
+export const berm = (dir: number, yaw = 120, bank = 62, pitch = -6): Seg[] => [
+  { len: 20, bank: bank * 0.5 * dir, pitch },
+  { len: 140, yaw: yaw * dir, bank: bank * dir, pitch, fx: { twist: 1.5 * dir } },
+  { len: 26, bank: 0, pitch },
+];
+
+/** Tabletop: kicker, a flat top you can land on or clear, and a landing ramp. */
+export const tabletop = (top = 26, kick = 13, land = -20): Seg[] => [
+  { len: 22, pitch: -8, fx: { flow: -1 } },
+  { len: 16, pitch: kick, fx: { pulse: 1 } },
+  { len: top, pitch: 0, openSky: true, fx: { pulse: 0.6 } },
+  { len: 24, pitch: land, openSky: true, fx: { flow: -1.5 } },
+  { len: 26, pitch: -7 },
+];
+
+/** Gully jump: a kicker over an open gap (a gully) to a lower landing. */
+export const gullyJump = (gap = 14, kick = 11): Seg[] => [
+  { len: 22, pitch: -9 },
+  { len: 16, pitch: kick, openSky: true, fx: { pulse: 1 } },
+  { len: gap, pitch: -14, gap: true, openSky: true },
+  { len: 30, pitch: -12, openSky: true, fx: { flow: -1 } },
+  { len: 24, pitch: -7 },
+];
+
+/** A whole dirt section: rollers, berm, rollers, tabletop, berm, gully. */
+export const dirtSection = (dir = 1): Seg[] => [
+  ...rollers(6), ...berm(dir), ...rollers(4, 24, 6), ...tabletop(), ...berm(-dir), ...gullyJump(),
+];
