@@ -405,7 +405,7 @@ export function applyFractal(mat: Material, theme: FractalTheme, centerAcross: n
     sh.vertexShader = 'attribute vec2 fxuv;\nattribute vec4 fxmode;\nvarying vec2 vFxUv;\nvarying vec4 vFxMode;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vFxUv = fxuv; vFxMode = fxmode;');
     // inside a tube the wood itself goes dark so the projection owns the walls (dome-screen look)
     sh.fragmentShader = GLSL + sh.fragmentShader
-      .replace('#include <map_fragment>', '#include <map_fragment>\n float fxLum = max(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)), 1e-3); diffuseColor.rgb *= mix(1.0, min(1.0, 0.045 / fxLum), vFxMode.w);\n diffuseColor.a = mix(diffuseColor.a, 1.0, vFxMode.w); // see-through gutters become projection screens inside tubes\n vec3 fxE = fxEdges(); diffuseColor.rgb *= 1.0 - uFxEdge * (0.55 * fxE.x + 0.3 * fxE.y + 0.22 * fxE.z);')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n float fxLum = max(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)), 1e-3); diffuseColor.rgb *= mix(1.0, min(1.0, 0.045 / fxLum), vFxMode.w);\n diffuseColor.a = mix(diffuseColor.a, 1.0, vFxMode.w); // see-through gutters become projection screens inside tubes\n vec3 fxE = fxEdges(); diffuseColor.rgb *= 1.0 - uFxEdge * (0.7 * fxE.x + 0.35 * fxE.y + 0.28 * fxE.z);')
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n reflectedLight.indirectSpecular *= 1.0 - 0.9 * vFxMode.w; reflectedLight.directSpecular *= 1.0 - 0.7 * vFxMode.w;')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += fxColor();')
       // real-glass gutters stop being see-through inside tubes (the projection owns the walls)

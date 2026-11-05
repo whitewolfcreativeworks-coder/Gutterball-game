@@ -210,7 +210,7 @@ export const MATERIALS: Record<string, MaterialProfile> = {
       seamGain: 0.45, reverb: 0.45,
     },
     haptic: { rollTexture: 0.15, seamPulse: 6, impactScale: 1.2 },
-    visual: { surface: 'marble', tint: 0xece6dc, roughness: 0.12, metalness: 0, sky: sky(3, 1.4, 30, 130), fog: 0xe6dcc8, fogDensity: 0.0032, ground: 0xb8a888, scenery: 'temple' },
+    visual: { surface: 'marble', tint: 0xcfc3ae, roughness: 0.12, metalness: 0, sky: sky(3, 1.4, 30, 130), fog: 0xe6dcc8, fogDensity: 0.0032, ground: 0xb8a888, scenery: 'temple' },
   },
   grating: {
     id: 'grating', name: 'Steel Grating',
@@ -240,7 +240,7 @@ export const MATERIALS: Record<string, MaterialProfile> = {
       seamGain: 0, reverb: 0.2,
     },
     haptic: { rollTexture: 0.3, seamPulse: 0, impactScale: 0.5 },
-    visual: { surface: 'snow', tint: 0xcdd6e0, roughness: 0.92, metalness: 0, sky: sky(3, 2.2, 20, 150), fog: 0xe6edf3, fogDensity: 0.005, ground: 0xf0f4f8, scenery: 'alpine' },
+    visual: { surface: 'snow', tint: 0xa3b4ca, roughness: 0.92, metalness: 0, sky: sky(3, 2.2, 20, 150), fog: 0xe6edf3, fogDensity: 0.005, ground: 0xf0f4f8, scenery: 'alpine' },
   },
 };
 

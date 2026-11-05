@@ -25,7 +25,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
     ? new MeshPhysicalMaterial({
       color: 0xffffff, roughness: 0.04, metalness: 0, transmission: 1, thickness: 0.9, ior: 1.5,
       attenuationColor: new Color(vis.tint).multiplyScalar(0.55), attenuationDistance: 2.2,
-      clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 1, iridescence: 0.35, iridescenceIOR: 1.3,
+      clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 1,
       side: DoubleSide, normalMap: maps.normalMap, envMapIntensity: 1.4,
     })
     : glass
