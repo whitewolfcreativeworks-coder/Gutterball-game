@@ -226,3 +226,10 @@ select { font: inherit; color: var(--ink); background: rgba(255,255,255,0.08); b
 :root[data-screen=mini] .savedrow .t { font-size: 16px; min-width: 60px; }
 :root[data-screen=mini] .savedrow .d { font-size: 10px; }
 :root[data-screen=mini] .preview-tag .d { font-size: 12px; }
+
+/* pinball intro */
+.flippers { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-b) + 14px); display: flex; justify-content: space-between; padding: 0 14px; pointer-events: none; }
+.flip { pointer-events: auto !important; width: 34vw; max-width: 170px; height: 92px; border-radius: 22px; border: 2px solid rgba(255,80,110,0.8); background: rgba(255,42,74,0.22); color: #fff; font: 800 20px var(--font); letter-spacing: 0.08em; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); touch-action: none; user-select: none; -webkit-user-select: none; }
+.flip.down { background: rgba(255,42,74,0.6); transform: scale(0.96); }
+.introskip { pointer-events: auto !important; position: absolute; top: calc(var(--safe-t) + 54px); right: 14px; padding: 7px 12px; border-radius: 999px; background: rgba(0,0,0,0.45); color: #fff; font: 600 13px var(--font); border: 1px solid rgba(255,255,255,0.25); }
+:root[data-screen=mini] .flip { height: 72px; font-size: 16px; }

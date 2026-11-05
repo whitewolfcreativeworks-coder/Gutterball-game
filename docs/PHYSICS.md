@@ -111,3 +111,27 @@ Steering 7.5 m/s² (35 % direct), air steer 2.6 m/s², propulsion levels 0 / 1.6
   - a soft shadow in the curve
   - cross bands every 8 m, so you feel the surface rushing by
   - fractal glow on the floor
+
+## Trigger pads and holograms
+
+Every obstacle stretch has a glowing pad high on one wall before it:
+- **Where:** usually 60–140 m ahead of the stretch, but anywhere from 20 to 300 m when a tube or drop is in the way.
+- **What it is:** a panel on the vertical part of the wall. It is not in the collision field, so rolling over it adds no bump or drag, just a chime.
+- **What it does:** it lights up and turns that stretch's obstacles (`Track.ghost`) into see-through cyan holograms that are skipped by `sdfLocal`.
+- **The boost:** rolling through a hologram gives up to +6 m/s and a 2.2 s turbo. Each hologram boosts once.
+- **Guide arrows:** three chevrons on the surface trace the line from the floor up to the pad.
+- **Reset:** a new run makes everything solid again.
+
+## Pinball intro
+
+Each race starts on a small pinball table parked behind the course start, with its cave lined up with the gutter (`src/finale/pinballSim.ts` for the physics, `pinball.ts` for the table).
+- **Physics:** 2-D physics in table coordinates, 480 Hz substeps:
+  - walls are line segments, with a one-way gate at the top of the plunger lane
+  - flippers are rotating capsules whose surface velocity goes into the bounce
+  - pop bumpers kick the ball away
+  - the cave has a peaked roof, so nothing can rest on top of it
+- **Controls:** swipe up fires the plunger. Flippers use the on-screen PUSH buttons, tilt or the arrow keys.
+- **Help:** a drained ball comes back to the plunger. After two drains or 40 s, a tractor beam guides the ball into the cave.
+- **Into the race:** the cave starts the race. The run clock starts there, so ghosts stay fair.
+- **Placement:** if another part of the course passes through where the table would sit, the table is lifted clear.
+- **Opting out:** skippable, and can be turned off in Settings.

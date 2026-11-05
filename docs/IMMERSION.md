@@ -79,3 +79,10 @@ After the line the player lets go. The ball rolls off the end of the run-out int
 - **Wishing-well funnel:** a conserved-angular-momentum spiral.
 
 Results appear when the machine finishes (Skip › jumps straight to them).
+
+## Ghost runs
+
+- **Recording:** each run is recorded as the ball's world position 20 times a second, interpolated to the exact tick. A ghost therefore follows whichever route you took.
+- **Racing:** "Run again" races the ghost of your last finished run. A toggle before launch turns it off.
+- **Saving:** "Save run" keeps your 10 fastest runs per course on the device, as int16 deltas in 2 cm units with an escape for respawn jumps (about 8 base64 characters a sample).
+- **Saved runs:** from the list you can Race one or Watch it. When watching, the recording drives the ball (`BallPhysics.followGhost`), so the camera and sound behave as they did on the run.

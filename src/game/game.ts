@@ -6,6 +6,7 @@ import { Autopilot } from './autopilot';
 import { buildWorld, World } from '../render/world';
 import { buildTrackGroup, updateMovingObstacles } from '../render/trackMesh';
 import { Finale, FINALE_FOR_WORLD } from '../finale/finale';
+import { PinballIntro } from '../finale/pinball';
 import { TubeStreaks } from '../render/streaks';
 import { FogExp2, Color } from 'three';
 import { FRACTAL_THEMES } from '../render/fractal';
@@ -203,6 +204,8 @@ export class Game {
       this.run.ball.placeAt(startS, 16);
     }
     this.paused = false;
+    this.intro = null;
+    if (mode === 'play') this.startIntro();
   }
 
   applyCosmetics() {
@@ -215,6 +218,7 @@ export class Game {
   /** Returns true if this call launched the ball. */
   launch(): boolean {
     if (this.mode !== 'play' || !this.run || this.run.phase !== 'ready' || this.paused) return false;
+    if (this.intro) { this.intro.fire(); return true; } // the plunger
     this.input.calibrate();
     this.run.launch();
     this.ghostRec.reset();
@@ -248,6 +252,7 @@ export class Game {
     this.input.driveLevel = 1;
     this.cb.onPhase?.('ready');
     this.showHints(0);
+    this.startIntro();
   }
 
   private routeHint = new Map<number, number>();
@@ -303,10 +308,33 @@ export class Game {
   /** Watch a saved run play back. */
   watch(g: GhostRun) {
     this.restart(true);
+    this.endIntro();
     this.replay = g; this.replayT = 0;
     this.run?.launch();
   }
   stopReplay() { this.replay = null; }
+  // ---- pinball intro ----
+  /** The pinball table every race starts on (null once you're in the cave, or when it's off). */
+  intro: PinballIntro | null = null;
+  introEnabled = true;
+  private startIntro() {
+    this.endIntro();
+    if (!this.introEnabled || this.mode !== 'play' || !this.run || !this.courseGeo || !this.material) return;
+    const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood;
+    this.intro = new PinballIntro(this.scene, this.courseGeo, this.run.ball, this.audio, th.a);
+  }
+  private endIntro() { this.intro?.dispose(); this.intro = null; }
+  /** Out of the cave (or skipped): onto the course, and the race begins. */
+  skipIntro() {
+    if (!this.intro || !this.run) return;
+    this.endIntro();
+    this.run.reset();
+    this.camera.snap();
+    this.input.calibrate();
+    this.run.launch();
+    this.run.ball.v.addScaledVector(this.run.ball.proj.T, 6); // out of the cave with a little speed
+    this.ghostRec.reset();
+  }
   private static padHintShown = false;
 
   private frame = (now: number) => {
@@ -330,7 +358,10 @@ export class Game {
     let input: BallInput;
     if (this.mode === 'play') input = this.input.sample(dt);
     else input = this.autopilot!.decide(this.run.ball);
-    if (this.finale) {
+    if (this.intro) {
+      if (!this.paused) this.intro.update(dt, input.steer);
+      if (this.intro.done) this.skipIntro();
+    } else if (this.finale) {
       if (!this.paused) this.finale.update(dt);
       if (this.finale.done && !this.finaleReported) { this.finaleReported = true; this.cb.onFinaleDone?.(this.finale.score, this.finale.kind); }
     } else if (!this.paused && this.replay) {
@@ -352,7 +383,7 @@ export class Game {
     {
       const g = this.ghost;
       const t = this.run.phase === 'ready' ? 0 : this.run.time;
-      const show = g && this.ghostOn && this.mode === 'play' && !this.replay && !this.finale && t < g.time + 1.5;
+      const show = g && this.ghostOn && this.mode === 'play' && !this.replay && !this.finale && !this.intro && t < g.time + 1.5;
       this.ghostView?.update(show ? ghostPos(g!, t, this.ghostP) : null, this.time, this.camera.cam.position);
     }
     const events = this.run.pendingEvents.splice(0);
@@ -389,7 +420,8 @@ export class Game {
       }
     }
     this.camera.fx = this.speedFx;
-    if (this.finale) this.finale.applyCamera(this.camera.cam);
+    if (this.intro) this.intro.applyCamera(this.camera.cam);
+    else if (this.finale) this.finale.applyCamera(this.camera.cam);
     else this.camera.update(b, b.track, dt);
     this.streaks?.update(b.track, b.proj.s, b.v.length(), dt, this.time, 0.5 + 0.5 * this.speedFx);
     // depth: inside a tube the far end falls away into darkness (fog to near-black in the world's colour)

@@ -30,3 +30,15 @@ Native-only work:
 3. **Orientation lock** to portrait in the native project; keep the screen awake during runs.
 
 Requirements not available in this build environment: macOS/Xcode, an Apple Developer account and signing identity, App Store Connect products, Android SDK/keystore, Play Console products. Nothing was signed, uploaded or purchased.
+
+## Screen sizes
+
+The game was tuned on a tablet. `screenClass()` in `main.ts` sets `data-screen` on the root element:
+
+| Class | Screen | What changes |
+|---|---|---|
+| tablet | narrow side ≥ 500 px | Full HUD and effects |
+| phone | narrow side < 500 px | Smaller speedo and magnet ring; calmer default fractal and speed effects |
+| mini | narrow side < 380 px, or long side < 700 px (iPhone mini / SE) | HUD trimmed further; the controls line is hidden; the camera is 5° tighter and a little closer, so the ball and obstacles read bigger |
+
+These are defaults only. Settings still override them.

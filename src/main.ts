@@ -144,6 +144,8 @@ hud.innerHTML = `
   <div class="musicdock"><button class="musicbtn" data-act="musicMenu" aria-label="Music">♪</button><div class="musicmenu"></div></div>
   <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div><button class="ghostbtn" data-act="ghostToggle" style="display:none"></button></div>
   <div class="replaytag" style="display:none">▶ REPLAY</div>
+  <div class="flippers" style="display:none"><button class="flip l" data-flip="left">PUSH</button><button class="flip r" data-flip="right">PUSH</button></div>
+  <button class="introskip" data-act="skipIntro" style="display:none">Skip intro ›</button>
   <div class="bottom">
     <div><div class="speed">0<small>KM/H</small></div><div class="combo"><i></i><i></i><i></i><span class="turbo"></span></div></div>
     <div class="magring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="5"/><circle class="arc" cx="32" cy="32" r="27" fill="none" stroke="#47e6ff" stroke-width="5" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="0"/></svg><div class="lbl">MAG</div></div>
@@ -166,6 +168,18 @@ game.cb.onHint = (text) => {
   hintTimer = window.setTimeout(() => h.classList.remove('show'), 3200);
 };
 let lastHud = 0;
+let assistHinted = false;
+// the PUSH buttons: hold to raise that flipper (they never start a swipe)
+hud.querySelectorAll<HTMLElement>('.flip').forEach((b) => {
+  const side = b.dataset.flip as 'left' | 'right';
+  const set = (down: boolean) => (e: Event) => { e.preventDefault(); e.stopPropagation(); if (game.intro) game.intro.buttons[side] = down; b.classList.toggle('down', down); };
+  b.addEventListener('touchstart', set(true), { passive: false });
+  b.addEventListener('touchend', set(false), { passive: false });
+  b.addEventListener('touchcancel', set(false), { passive: false });
+  b.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') set(true)(e); });
+  b.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') set(false)(e); });
+  b.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') set(false)(e); });
+});
 game.cb.onHud = (s: HudState) => {
   const now = performance.now();
   if (now - lastHud < 66) return; // ~15 Hz DOM updates
@@ -183,7 +197,13 @@ game.cb.onHud = (s: HudState) => {
   ($('.magring .arc', hud) as unknown as SVGCircleElement).style.strokeDashoffset = String(169.6 * (1 - s.magnetEnergy));
   $('.magring', hud).classList.toggle('active', s.magnetActive);
   const launchEl = $('.launch', hud);
-  launchEl.style.display = s.phase === 'ready' && s.mode === 'play' ? 'block' : 'none';
+  const ip = game.intro?.phase;
+  launchEl.style.display = s.phase === 'ready' && s.mode === 'play' && (!game.intro || ip === 'plunger') ? 'block' : 'none';
+  $('.launch .txt', hud).textContent = game.intro ? 'Swipe up to fire!' : 'Swipe up to launch';
+  $('.flippers', hud).style.display = game.intro && ip !== 'cave' ? 'flex' : 'none';
+  $('.introskip', hud).style.display = game.intro && ip !== 'cave' ? 'block' : 'none';
+  if (game.intro?.sim.assist && !assistHinted) { assistHinted = true; game.cb.onHint?.('TRACTOR BEAM ON — IT’LL GUIDE YOU INTO THE CAVE'); }
+  if (!game.intro) assistHinted = false;
   {
     // before the race: race the ghost of your last run (or a saved one), or not
     const gb = $('.ghostbtn', hud);
@@ -194,7 +214,7 @@ game.cb.onHud = (s: HudState) => {
   }
   $('.pausebtn', hud).style.display = s.mode === 'play' ? 'grid' : 'none';
   $('.skipbtn', hud).style.display = s.mode === 'play' && s.phase === 'finished' && screen === 'hud' ? 'block' : 'none';
-  $('.bottom', hud).style.opacity = s.mode === 'play' ? (s.phase === 'finished' ? '0' : '1') : '0.7'; // the finish contraption plays clean
+  $('.bottom', hud).style.opacity = s.mode === 'play' ? (s.phase === 'finished' || game.intro ? '0' : '1') : '0.7'; // the finish contraption plays clean
 };
 game.cb.onFinaleDone = (score: number, kind: string) => { if (game.mode === 'play') showResults(score, kind); };
 game.cb.onPhase = (p: RunPhase) => {
@@ -471,6 +491,7 @@ function renderSettings() {
       <label class="set"><span>Keep view steady if the screen rotates</span><input id="set-keep" class="toggle" type="checkbox" ${s.keepView ? 'checked' : ''} data-set="keepView"></label>
       <label class="set"><span>Jump flick threshold</span><input type="range" min="8" max="30" step="1" value="${s.jumpThreshold}" data-set="jumpThreshold"></label>
       <label class="set"><span>Magnet tilt threshold</span><input type="range" min="6" max="25" step="1" value="${s.magnetThreshold}" data-set="magnetThreshold"></label>
+      <label class="set"><span>Pinball intro before each race</span><input class="toggle" type="checkbox" ${settings.pinballIntro !== false ? 'checked' : ''} data-set="pinballIntro"></label>
       <label class="set"><span>Invert steering</span><input class="toggle" type="checkbox" ${s.invertSteer ? 'checked' : ''} data-set="invertSteer"></label>
       <div class="calib" style="margin-top:10px"><div class="dot-area"><div class="dot"></div></div><div style="flex:1"><div class="note" style="margin:0 0 6px">Hold the device the way you like to play, then set neutral. Tilt like a steering wheel.</div><div class="meter" style="margin:0 0 8px;position:relative"><i class="steer-bar" style="position:absolute;left:50%;width:0"></i></div><button class="btn" data-act="enableTilt">Enable tilt sensors</button><button class="btn" style="margin-top:8px;width:100%" data-act="calibrate">Set neutral here</button></div></div>
     </div>
@@ -527,7 +548,7 @@ function screenClass(): 'tablet' | 'phone' | 'mini' {
 }
 function loadSettings() {
   const sc = screenClass();
-  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, musicGenre: 'ambient' as Genre, musicLevel: 0.5, fractal: sc === 'tablet' ? 0.6 : sc === 'phone' ? 0.5 : 0.42, speedFx: sc === 'tablet' ? 0.8 : sc === 'phone' ? 0.7 : 0.6, input: undefined as any, mode: undefined as any, inputVersion: 0 };
+  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, musicGenre: 'ambient' as Genre, musicLevel: 0.5, fractal: sc === 'tablet' ? 0.6 : sc === 'phone' ? 0.5 : 0.42, speedFx: sc === 'tablet' ? 0.8 : sc === 'phone' ? 0.7 : 0.6, pinballIntro: true, input: undefined as any, mode: undefined as any, inputVersion: 0 };
   try { return { ...def, ...JSON.parse(localStorage.getItem('gb.settings') ?? '{}') }; } catch { return def; }
 }
 function saveSettings() {
@@ -544,6 +565,7 @@ function applySettings() {
   haptics.enabled = settings.haptics;
   game.fractalLevel = settings.fractal;
   game.speedFx = settings.speedFx;
+  game.introEnabled = settings.pinballIntro !== false;
   haptics.intensity = settings.hapticStrength;
   audio.setVolume(settings.volume);
   if (settings.music === false && settings.musicGenre === 'ambient') settings.musicGenre = 'off'; // older saves
@@ -595,6 +617,7 @@ ui.addEventListener('click', async (e) => {
     case 'musicMenu': { const d = $('.musicdock', hud); d.classList.toggle('open'); renderMusicMenu(); break; }
     case 'genre': { settings.musicGenre = id as Genre; audio.setGenre(id as Genre); saveSettings(); renderMusicMenu(); break; }
     case 'resume': resume(); break;
+    case 'skipIntro': game.skipIntro(); break;
     case 'ghostToggle': game.ghostOn = !game.ghostOn; break;
     case 'saveRun': {
       const r = game.lastRun;
@@ -652,6 +675,7 @@ ui.addEventListener('input', (e) => {
     if (k === 'quality') game.setQuality(v as any);
     if (k === 'fractal') { settings.fractal = Number(v); game.fractalLevel = Number(v); }
     if (k === 'speedFx') { settings.speedFx = Number(v); game.speedFx = Number(v); }
+    if (k === 'pinballIntro') { settings.pinballIntro = !!v; game.introEnabled = !!v; }
     saveSettings();
   }
   const cos = t.dataset.cos;
@@ -712,9 +736,9 @@ entitlements.onChange(() => { if (screen === 'menu') renderMenu(); });
   if (q.get('play')) {
     input.mode = (q.get('mode') as any) ?? input.mode;
     startPlay(courseById(q.get('play')!));
-    if (q.get('launch')) setTimeout(() => game.launch(), 600);
+    if (q.get('launch')) setTimeout(() => { if (q.get('intro') !== '1') game.skipIntro(); game.launch(); }, 600);
     const at = Number(q.get('at'));
-    if (at > 0) setTimeout(() => { game.launch(); game.run?.ball.placeAt(at, Number(q.get('v') ?? 18), 0, Number(q.get('branch') ?? 0)); game.camera.snap(); }, 700);
+    if (at > 0) setTimeout(() => { game.skipIntro(); game.launch(); game.run?.ball.placeAt(at, Number(q.get('v') ?? 18), 0, Number(q.get('branch') ?? 0)); game.camera.snap(); }, 700);
   }
   else if (q.get('preview')) openDetail(courseById(q.get('preview')!));
   else if (q.get('screen') === 'adroom') { renderAdRoom(); show('adroom'); adLoop(); }
