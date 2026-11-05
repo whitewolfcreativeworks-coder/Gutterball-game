@@ -11,6 +11,24 @@ import type { BranchSpec, Segment } from '../track/track';
 type Fx = Segment['fx'];
 type Seg = Segment;
 
+/**
+ * Coaster LIFT HILL and stomach drop: a chain hauls you up a steep climb,
+ * you float over a short crest (open sky: pure airtime), then plunge almost
+ * vertically and pull out at the bottom. `climb` is the length of the climb.
+ */
+export const liftHill = (climb: number, dropPitch = -68, dropLen = 0, extra: Partial<Seg> = {}): Seg[] => {
+  const height = climb * Math.sin((26 * Math.PI) / 180);
+  const dl = dropLen || Math.max(50, height * 1.15);
+  return [
+    { len: 26, pitch: 26, lift: 20, label: extra.label, fx: { pulse: 0.5 } },
+    { len: climb, pitch: 26, lift: 20, fx: { pulse: 0.5 } },
+    { len: 22, pitch: -4, lift: 16, openSky: true, fx: { pulse: 1 } },        // the crest: hang there...
+    { len: 34, pitch: -36, openSky: true, fx: { pulse: 1, flow: -2 } },       // ...tip over on a near free-fall curve (weightless)...
+    { len: dl, pitch: dropPitch, openSky: true, fx: { flow: -3, twist: 0.5 } }, // ...then drop
+    { len: 60, pitch: -6, fx: { flow: -1.5 } },
+  ];
+};
+
 /** A straight run. */
 export const run = (len: number, pitch: number, extra: Partial<Seg> = {}): Seg[] => [{ len, pitch, ...extra }];
 
@@ -34,7 +52,7 @@ export const hops = (n: number, len: number, amp: number, base = -6): Seg[] => {
 
 /** A banked turn (yaw degrees; + = left), returning to bank 0. */
 export const turn = (len: number, yaw: number, bank: number, pitch: number, extra: Partial<Seg> = {}): Seg[] => [
-  { len, yaw, bank: Math.sign(yaw) * Math.abs(bank), pitch, ...extra }, { len: 24, bank: 0, pitch },
+  { len, yaw, bank: Math.sign(yaw) * Math.abs(bank), pitch, ...extra }, { len: 24, bank: 0, pitch, ...(extra.tube ? { tube: true } : {}) },
 ];
 
 /** An outward-banked turn: the bank tilts AWAY from the turn (the ball is flung toward the lip). */
@@ -45,7 +63,7 @@ export const outerbank = (len: number, yaw: number, bank: number, pitch: number)
 /** Helix: turns x 360 degrees at constant bank and slope. */
 export const helix = (turns: number, radius: number, bank: number, pitch: number, dir = 1, extra: Partial<Seg> = {}): Seg[] => [
   { len: 2 * Math.PI * radius * turns, yaw: 360 * turns * dir, bank: bank * dir, pitch, fx: { twist: 1.5 * dir, flow: -1 }, ...extra },
-  { len: 30, bank: 0, pitch },
+  { len: 30, bank: 0, pitch, ...(extra.tube ? { tube: true } : {}) },
 ];
 
 /** Wild-mouse hairpin: a tight 180 with little bank (the ball rides the outer wall). */
@@ -54,12 +72,12 @@ export const hairpin = (dir: number, len = 52, bank = 14, pitch = -6, extra: Par
 ];
 
 /** Bobsleigh "labyrinth": fast alternating S-curves. */
-export const labyrinth = (n: number, amp: number, len: number, bank: number, pitch: number, startDir = 1): Seg[] => {
+export const labyrinth = (n: number, amp: number, len: number, bank: number, pitch: number, startDir = 1, extra: Partial<Seg> = {}): Seg[] => {
   const out: Seg[] = [];
   let d = startDir;
   // turns of +amp, -2amp, +2amp, ..., ending with an amp turn back to the original heading
-  for (let i = 0; i < n; i++) { out.push({ len, yaw: amp * d * (i === 0 || i === n - 1 ? 1 : 2), bank: bank * d, pitch, fx: { twist: d } }); d = -d; }
-  out.push({ len: 20, bank: 0, pitch });
+  for (let i = 0; i < n; i++) { out.push({ len, yaw: amp * d * (i === 0 || i === n - 1 ? 1 : 2), bank: bank * d, pitch, fx: { twist: d }, ...extra }); d = -d; }
+  out.push({ len: 20, bank: 0, pitch, ...extra });
   return out;
 };
 
@@ -153,13 +171,24 @@ export const vortex = (turns: number, r0: number, r1: number, bank: number, pitc
     const t = turns / steps;
     out.push({ len: 2 * Math.PI * r * t, yaw: 360 * t * dir, bank: bank * dir * (0.8 + 0.2 * i / (steps - 1)), pitch: pitch - i * 0.6, fx: { twist: (1.5 + i * 0.3) * dir, flow: -1 - i * 0.2 }, ...extra });
   }
-  out.push({ len: 30, bank: 0, pitch });
+  out.push({ len: 30, bank: 0, pitch, ...(extra.tube ? { tube: true } : {}) });
   return out;
 };
 
 /** Sweeper: a fast, lightly banked bend. The built-up outer wall carries you round at speed. */
-export const sweeper = (len: number, yaw: number, pitch: number, bank = 12): Seg[] => [
-  { len, yaw, bank: Math.sign(yaw) * bank, pitch, fx: { twist: Math.sign(yaw) * 0.8, flow: -0.5 } }, { len: 20, bank: 0, pitch },
+export const sweeper = (len: number, yaw: number, pitch: number, bank = 12, extra: Partial<Seg> = {}): Seg[] => [
+  { len, yaw, bank: Math.sign(yaw) * bank, pitch, fx: { twist: Math.sign(yaw) * 0.8, flow: -0.5 }, ...extra }, { len: 20, bank: 0, pitch, ...extra },
+];
+
+/**
+ * Pipe corner: a fast bend where the walls close into a full pipe. Carry
+ * enough speed and you ride up the outside wall, over the top and down the
+ * other side. Pipes run in from a short straight and out to one.
+ */
+export const pipeCorner = (len: number, yaw: number, pitch: number): Seg[] => [
+  { len: 24, pitch, tube: true, fx: { flow: -1.5 } },
+  { len, yaw, bank: Math.sign(yaw) * 8, pitch, tube: true, fx: { twist: Math.sign(yaw) * 2.2, flow: -2 } },
+  { len: 26, bank: 0, pitch, tube: true, fx: { flow: -1 } },
 ];
 
 /** Wave turn: climb steeply into a high-banked turn, stall, and fall out of it. */
@@ -174,7 +203,7 @@ export const pretzel = (radius: number, bank: number, pitch: number, extra: Part
   { len: 2 * Math.PI * radius * 0.75, yaw: 270, bank, pitch, fx: { twist: 1.5, flow: -1 }, ...extra },
   { len: 28, bank: 0, pitch, ...extra },
   { len: 2 * Math.PI * radius * 0.75, yaw: -270, bank: -bank, pitch, fx: { twist: -1.5, flow: -1 }, ...extra },
-  { len: 30, bank: 0, pitch },
+  { len: 30, bank: 0, pitch, ...(extra.tube ? { tube: true } : {}) },
 ];
 
 /** Terraces: a staircase of short steep drops and flats. */
@@ -191,14 +220,24 @@ export const tunnelRun = (len: number, yaw: number, pitch: number, bank = 20): S
   { len: 20, bank: 0, pitch, tunnel: true },
 ];
 
-type Ob = { at: string; s: number; x: number; ls: number; w: number; h: number; kind?: 'block' | 'barrier' | 'post' | 'gate' };
+/** A long winding fractal tube (the signature experience): gentle S-bends, a twist and a pulse. */
+export const tubeRun = (len: number, yaw: number, pitch: number, extra: Partial<Seg> = {}): Seg[] => [
+  { len: len * 0.35, yaw: yaw, bank: 0, pitch, tube: true, fx: { twist: 1.5, flow: -2 }, ...extra },
+  { len: len * 0.3, pitch: pitch - 3, tube: true, fx: { pulse: 1, flow: -2.5 }, ...extra },
+  { len: len * 0.35, yaw: -yaw, bank: 0, pitch, tube: true, fx: { twist: -1.5, flow: -2 }, ...extra },
+  { len: 20, pitch, tube: true },
+];
+
+type Ob = { at: string; s: number; x: number; ls: number; w: number; h: number; kind?: 'block' | 'barrier' | 'post' | 'gate'; move?: { amp: number; period: number; phase?: number } };
 /** Obstacle fields for a labelled straight: zigzag blocks, post slalom, gate pairs. */
-export const field = (at: string, pattern: 'zigzag' | 'posts' | 'gates' | 'colonnade', n: number, start = 14, gap = 22): Ob[] => {
+export const field = (at: string, pattern: 'zigzag' | 'posts' | 'gates' | 'colonnade' | 'sliders', n: number, start = 14, gap = 22, amp = 2.6): Ob[] => {
   const out: Ob[] = [];
   for (let i = 0; i < n; i++) {
     const s = start + i * gap, side = i % 2 ? 1 : -1;
     if (pattern === 'zigzag') out.push({ at, s, x: 3.5 * side, ls: 2.1, w: 5.2, h: 1.7 });
     else if (pattern === 'posts') out.push({ at, s, x: 2.4 * side, ls: 1.3, w: 2.0, h: 2.3, kind: 'post' });
+    // sliders: blocks gliding side to side across the floor, out of step with each other
+    else if (pattern === 'sliders') out.push({ at, s, x: 0, ls: 2.1, w: 3.6, h: 1.7, move: { amp, period: 3.0 + 0.5 * (i % 3), phase: i * 2.1 } });
     else if (pattern === 'gates') out.push({ at, s, x: -4.2, ls: 2, w: 4.4, h: 2.0, kind: 'gate' }, { at, s, x: 4.2, ls: 2, w: 4.4, h: 2.0, kind: 'gate' });
     else out.push({ at, s, x: -4.6, ls: 1.4, w: 1.8, h: 2.6, kind: 'post' }, { at, s, x: 4.6, ls: 1.4, w: 1.8, h: 2.6, kind: 'post' });
   }

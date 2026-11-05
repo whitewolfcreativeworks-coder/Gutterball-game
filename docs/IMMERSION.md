@@ -57,3 +57,25 @@ The ridge bases melt into the fog colour, so the real terrain fades into the pai
 - Lakes flood the lowest valleys in the forest, tropical, jungle and glacier worlds.
 
 On low quality the noise drops from 5 octaves to 3.
+
+## Soundtrack picker
+
+`src/audio/music.ts` is our own step sequencer and synths: kick, snare, clap, rim, hats, bass, acid, reese, stabs, pads, leads, a reggae skank and organ bubble, and distorted guitar.
+
+- **Genres:** Techno 128, House 124, Rave/drum & bass 172, Reggae (one-drop) 76, Rock 124, plus Ambient (the original pad) and Off (physical sounds only).
+- **Structure:** 32-bar phrases with a 4-bar breakdown and a fill every 8 bars.
+- **Speed-reactive:** the master low-pass opens with the ball's speed.
+- **Mix:** low, about 0.22 × the user's music level, under the physical sounds.
+- **Controls:** the ♪ button at the top left of the HUD (outside the thumb-tap zones), plus a genre and volume setting in Settings.
+- No samples or third-party audio, so there is nothing to license.
+
+## Finish contraptions
+
+After the line the player lets go. The ball rolls off the end of the run-out into one of five machines, each with its own camera move, sounds and confetti or fireworks:
+- **Plinko:** 2-D peg physics, landing in a points slot from 100 to 10K.
+- **Dominoes:** a 30-piece S-curve, a seesaw, a gold ball into a bucket and a bell.
+- **Hoop shot.**
+- **Chime stairs:** plays "Mary Had a Little Lamb", a traditional, public-domain tune.
+- **Wishing-well funnel:** a conserved-angular-momentum spiral.
+
+Results appear when the machine finishes (Skip › jumps straight to them).

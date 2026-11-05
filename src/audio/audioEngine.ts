@@ -1,5 +1,6 @@
 import type { SensoryEvent, SensoryState } from '../core/events';
 import type { MaterialProfile } from '../physics/materials';
+import { MusicBox, type Genre } from './music';
 
 /**
  * Physics-driven procedural audio (Web Audio API).
@@ -23,6 +24,9 @@ export class AudioEngine {
   ctx?: AudioContext;
   enabled = true;
   musicOn = true;
+  genre: Genre = 'ambient';
+  musicLevel = 0.5;
+  private box?: MusicBox;
   volume = 0.9;
   private master!: GainNode;
   private muffle!: BiquadFilterNode;
@@ -69,6 +73,9 @@ export class AudioEngine {
     this.reverb = c.createConvolver();
     this.reverb.buffer = this.makeIR(2.4);
     this.wet.connect(this.reverb).connect(this.master);
+    this.box = new MusicBox(c, this.master);
+    this.box.setLevel(this.musicLevel);
+    this.box.setGenre(this.genre);
     // ~3 s of pinkish noise
     const len = c.sampleRate * 3;
     this.noise = c.createBuffer(1, len, c.sampleRate);
@@ -198,7 +205,7 @@ export class AudioEngine {
 
   private startMusic() {
     const c = this.ctx!;
-    const gain = c.createGain(); gain.gain.value = this.musicOn ? 0.05 : 0;
+    const gain = c.createGain(); gain.gain.value = this.genre === 'ambient' ? 0.05 : 0;
     const filt = c.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 900; filt.Q.value = 0.7;
     const voices: OscillatorNode[] = [];
     for (let i = 0; i < 4; i++) {
@@ -224,10 +231,15 @@ export class AudioEngine {
     this.music.voices.forEach((o, k) => o.frequency.setTargetAtTime(ch[k], t, 1.2));
   }
 
-  setMusic(on: boolean) {
-    this.musicOn = on;
-    if (this.music && this.ctx) this.music.gain.gain.setTargetAtTime(on ? 0.05 : 0, this.ctx.currentTime, 0.4);
+  setMusic(on: boolean) { this.setGenre(on ? 'ambient' : 'off'); }
+  /** Soundtrack: off (physical sounds only), the ambient pad, or a genre. */
+  setGenre(g: Genre) {
+    this.genre = g;
+    this.musicOn = g !== 'off';
+    if (this.music && this.ctx) this.music.gain.gain.setTargetAtTime(g === 'ambient' ? 0.05 : 0, this.ctx.currentTime, 0.4);
+    this.box?.setGenre(g);
   }
+  setMusicLevel(v: number) { this.musicLevel = v; this.box?.setLevel(v); }
   setVolume(v: number) {
     this.volume = v;
     if (this.master && this.ctx) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
@@ -264,6 +276,7 @@ export class AudioEngine {
     const tc = 0.03; // ~30 ms smoothing to avoid zipper noise
     const sp = st.speed;
     const sp01 = Math.min(1, sp / 28);
+    this.box?.setIntensity(sp / 55);
     const load = Math.max(0, Math.min(2.5, st.normalAccel / 9.81));
     const loadF = Math.sqrt(load);
     const contact = st.contact ? 1 : 0;
@@ -328,6 +341,7 @@ export class AudioEngine {
         if (now - this.lastSeam > 0.025) { this.lastSeam = now; this.seam(e.intensity); }
         break;
       }
+      case 'LIFT_CLACK': this.clack(); break;
       case 'TURBO_ARMED': this.sweep(400, 1600, 0.35, 0.16, 'triangle'); this.sweep(800, 2400, 0.3, 0.1, 'sine'); break;
       case 'TURBO_START': this.sweep(80, 1800, 0.6, 0.28, 'sawtooth'); this.sweep(50, 30, 0.6, 0.3, 'sine'); break;
       case 'TURBO_END': this.sweep(900, 200, 0.4, 0.1, 'triangle'); break;
@@ -376,6 +390,23 @@ export class AudioEngine {
     }
     this.voices++;
     setTimeout(() => { this.voices--; out.disconnect(); }, (longest + 0.1) * 1000);
+  }
+
+  /** Chain-lift ratchet: a short dry click with a metallic body. */
+  private clack() {
+    const c = this.ctx!;
+    const t = c.currentTime;
+    const n = c.createBufferSource(); n.buffer = this.noise;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2200 + Math.random() * 300; f.Q.value = 6;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+    n.connect(f).connect(g);
+    this.send(g, 0.3);
+    n.start(t, Math.random() * 2, 0.05);
+    const o = c.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(180, t);
+    const og = c.createGain(); og.gain.setValueAtTime(0.05, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+    o.connect(og); this.send(og, 0.2); o.start(t); o.stop(t + 0.04);
   }
 
   private seam(intensity: number) {
@@ -469,6 +500,57 @@ export class AudioEngine {
   }
 
   /** Short UI click */
+  // ---------------------------------------------------------------- finale sounds
+  /** A hit in the finish contraption: the ball's own material voice. */
+  clink(intensity: number) { if (this.ctx && this.mat) this.impact(Math.min(1, intensity), 0.9); }
+  /** Wooden domino clack (short, dry, slightly random pitch). */
+  clack2(intensity = 0.6) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = 900 + Math.random() * 500;
+    const g = c.createGain(); g.gain.setValueAtTime(0.16 * intensity, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    o.connect(g); this.send(g, 0.3); o.start(t); o.stop(t + 0.06);
+  }
+  /** A tuned chime bar (xylophone/glockenspiel): fundamental plus inharmonic partials. */
+  chime(freq: number, amp = 0.25) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    for (const [mul, a, d] of [[1, 1, 1.4], [2.76, 0.35, 0.5], [5.4, 0.15, 0.25]] as const) {
+      const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = freq * mul;
+      const g = c.createGain(); g.gain.setValueAtTime(amp * a, t); g.gain.exponentialRampToValueAtTime(0.0005, t + d);
+      o.connect(g); this.send(g, 0.6); o.start(t); o.stop(t + d + 0.05);
+    }
+  }
+  /** A big bell: long inharmonic ring. */
+  bell(freq = 330) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    for (const [mul, a, d] of [[0.5, 0.5, 4], [1, 0.8, 3.5], [1.19, 0.4, 2.8], [1.56, 0.3, 2.2], [2.0, 0.35, 2], [2.66, 0.2, 1.5], [3.0, 0.15, 1.2]] as const) {
+      const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = freq * mul;
+      const g = c.createGain(); g.gain.setValueAtTime(0.2 * a, t); g.gain.exponentialRampToValueAtTime(0.0005, t + d);
+      o.connect(g); this.send(g, 0.9); o.start(t); o.stop(t + d + 0.05);
+    }
+  }
+  /** Rising whir of a coin funnel (call repeatedly with 0..1 progress). */
+  whir(k: number) {
+    if (!this.ctx || Math.random() > 0.5) return;
+    this.sweep(200 + 900 * k, 220 + 1000 * k, 0.08, 0.03 + 0.04 * k, 'triangle');
+  }
+  /** Fireworks / confetti pop. */
+  pop(big = false) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    const n = c.createBufferSource(); n.buffer = this.noise;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = big ? 1200 : 3000;
+    const g = c.createGain(); g.gain.setValueAtTime(big ? 0.5 : 0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + (big ? 0.8 : 0.15));
+    n.connect(f).connect(g); this.send(g, 0.8); n.start(t, Math.random(), 1);
+  }
+  /** A short victory arpeggio. */
+  fanfare() {
+    if (!this.ctx) return;
+    [523.3, 659.3, 784, 1046.5].forEach((f, i) => setTimeout(() => this.chime(f, 0.22), i * 110));
+  }
+
   ui(kind: 'tap' | 'confirm' | 'reward' = 'tap') {
     if (!this.ctx) return;
     if (kind === 'reward') { this.sweep(440, 1320, 0.35, 0.12, 'triangle'); return; }

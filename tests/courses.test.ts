@@ -84,6 +84,22 @@ describe('High Road branch (Timberline Run)', () => {
   });
 });
 
+describe('tractor beam picks the track beneath you', () => {
+  it('a toss above the High Road comes down onto the High Road, not the main gutter far below', () => {
+    const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
+    const HR = course.all.findIndex((t) => t.layout.id === 'highroad');
+    const b = new BallPhysics(course, MATERIALS.wood);
+    b.placeAt(60, 20, 0, HR);
+    b.p.addScaledVector(b.proj.U, 12); b.v.addScaledVector(b.proj.U, 6);
+    let landedOn = -1;
+    for (let i = 0; i < 240 * 3 && landedOn < 0; i++) {
+      b.step(1 / 240, { steer: 0, magnet: true, jump: false, driveLevel: 0 }); b.events.length = 0;
+      if (i > 20 && b.contact) landedOn = b.activeIndex;
+    }
+    expect(landedOn).toBe(HR);
+  });
+});
+
 describe('The Burrow: full tube with a split (Timberline Run)', () => {
   const lay = CATALOG.find((c) => c.id === 'wood')!.layout();
   const course = new Course(lay);

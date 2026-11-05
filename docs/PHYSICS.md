@@ -61,3 +61,17 @@ Steering 7.5 m/s² (35 % direct), air steer 2.6 m/s², propulsion levels 0 / 1.6
 - **Soft landing.** Close to the surface the allowed closing speed falls to about 8 m/s. Once you are coming in faster than that, the beam stops pulling and brakes instead, so you land firmly without a slam.
 - **On the track** (press, grip and booster) the beam is unchanged.
 - **Test:** a ball tossed 40 m up, still climbing at 15 m/s and drifting sideways, lands in about 1.1 s within 1.5 m of the centre line, with its forward speed kept.
+
+## Round 3 mechanics
+
+- **Tractor beam on the track you're on.**
+  - In contact (a floor, a wall, a roof, the outside of a pipe), the beam presses you onto that surface.
+  - In the air it picks the track directly beneath you (the High Road, a branch, a covered section's roof) instead of always the main gutter.
+- **Moving obstacles.** `ObstacleSpec.move = { amp, period, phase }` slides a block side to side: x = x0 + amp·sin(2πt/period + phase).
+  - The clock is `Track.time`, advanced by the ball physics, so rendering and collision agree.
+  - Collisions resolve against the block's velocity, so a sliding block shoves you.
+  - A dark floor slot with bright end stops shows each block's range.
+  - The autopilot predicts where a block will be when it arrives.
+- **Spin carried across landings.** The take-off surface normal is kept through a flight. On touchdown the spin is rotated onto the new surface before friction acts. Landing on the far wall of a pipe no longer skids away a third of your speed.
+- **Chain lifts.** `Segment.lift = speed` holds the ball at that speed along the course (hauling a slow ball, reining in a fast one) and keeps it centred, with a clack every 1.2 m.
+  - `liftHill()` = chain climb → open-sky crest → near-free-fall tip-over → 55–75° plunge → pull-out.

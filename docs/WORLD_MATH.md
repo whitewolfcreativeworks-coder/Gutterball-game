@@ -353,3 +353,23 @@ Every course gained a second act built from the new elements in `src/courses/ele
 | Snow | Backcountry | 3.4 km |
 
 Every course is checked so that no two passes of the gutter come within each other's walls.
+
+## Round 3: tubes, pipe corners, lift hills
+
+- **Tubes are the hook.** Every course has more tube: 25–46% of its length (it was 2–26%).
+  - New `tubeRun` (long winding fractal tube).
+  - `pipeCorner`: a fast bend inside a full pipe. With speed and a lean into the wall you ride up, over the top and down the far side.
+  - Helices, vortices, pretzels, labyrinths and turns accept `{ tube: true }`.
+- **Lift hills.** Classic coaster stomach drops in Wood (The Big One), Metal, Glass, Stone, Snow, Water, Grating, Sand, Concrete, Rubber and Mud.
+- **Moving obstacles** (`field(..., 'sliders')`):
+  - drifting logs on Water
+  - rolling boulders on Mud
+  - sliding crates on Grating
+  - pillar-gap sliders in the Stone colonnade
+  - the sliding log in Wood's Sawmill
+- **Finishes.** Each world ends in a chain-reaction contraption (`src/finale/finale.ts`):
+  - Plinko: Wood, Rubber, Grating
+  - Domino chain: Concrete, Stone, Sand
+  - Hoop shot: Metal, Mud
+  - Chime stairs: Glass, Ice
+  - Wishing-well funnel: Water, Snow

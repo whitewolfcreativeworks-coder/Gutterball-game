@@ -1,5 +1,6 @@
 import './ui/styles.css';
 import { Game, HudState } from './game/game';
+import { GENRES, type Genre } from './audio/music';
 import { AudioEngine } from './audio/audioEngine';
 import { HapticEngine } from './haptics/haptics';
 import { InputManager } from './input/input';
@@ -41,7 +42,8 @@ document.addEventListener('pointerdown', async () => {
   audioUnlocked = true;
   await audio.unlock();
   if (game.material) audio.configure(game.material);
-  audio.setMusic(settings.music);
+  audio.setMusicLevel(settings.musicLevel);
+  audio.setGenre(settings.musicGenre);
   audio.setVolume(settings.volume);
 }, { capture: true });
 
@@ -129,12 +131,22 @@ hud.innerHTML = `
   <div class="top"><div class="progress"><i></i></div><div class="clock">0:00.0</div><button class="pausebtn" data-act="pause" aria-label="Pause">❚❚</button></div>
   <div class="preview-tag" style="display:none"><span class="p">PREVIEW</span><span class="d"></span></div>
   <div class="hint"></div>
+  <button class="skipbtn" data-act="skipFinale" style="display:none">Skip ›</button>
+  <div class="musicdock"><button class="musicbtn" data-act="musicMenu" aria-label="Music">♪</button><div class="musicmenu"></div></div>
   <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div></div>
   <div class="bottom">
     <div><div class="speed">0<small>KM/H</small></div><div class="combo"><i></i><i></i><i></i><span class="turbo"></span></div></div>
     <div class="magring"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="5"/><circle class="arc" cx="32" cy="32" r="27" fill="none" stroke="#47e6ff" stroke-width="5" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="0"/></svg><div class="lbl">MAG</div></div>
   </div>`;
 addScreen('hud', hud);
+/** The side music picker: tap ♪, pick a genre (or off), set the level. */
+function renderMusicMenu() {
+  const m = $('.musicmenu', hud);
+  m.innerHTML = GENRES.map((g) => `<button data-act="genre" data-id="${g.id}" class="${settings.musicGenre === g.id ? 'on' : ''}">${g.name}</button>`).join('')
+    + `<label><span>Level</span><input type="range" min="0" max="1" step="0.05" value="${settings.musicLevel}" data-set="musicLevel"></label>`;
+  $('.musicbtn', hud).classList.toggle('muted', settings.musicGenre === 'off');
+}
+renderMusicMenu();
 let hintTimer = 0;
 game.cb.onHint = (text) => {
   const h = $('.hint', hud);
@@ -163,11 +175,13 @@ game.cb.onHud = (s: HudState) => {
   const launchEl = $('.launch', hud);
   launchEl.style.display = s.phase === 'ready' && s.mode === 'play' ? 'block' : 'none';
   $('.pausebtn', hud).style.display = s.mode === 'play' ? 'grid' : 'none';
-  $('.bottom', hud).style.opacity = s.mode === 'play' ? '1' : '0.7';
+  $('.skipbtn', hud).style.display = s.mode === 'play' && s.phase === 'finished' && screen === 'hud' ? 'block' : 'none';
+  $('.bottom', hud).style.opacity = s.mode === 'play' ? (s.phase === 'finished' ? '0' : '1') : '0.7'; // the finish contraption plays clean
 };
+game.cb.onFinaleDone = (score: number, kind: string) => { if (game.mode === 'play') showResults(score, kind); };
 game.cb.onPhase = (p: RunPhase) => {
   if (game.mode !== 'play') return;
-  if (p === 'finished') setTimeout(showResults, 1400);
+  if (p === 'finished') toast('FINISH!');
   if (p === 'respawning') toast('Off the track — back to the last checkpoint');
 };
 
@@ -198,7 +212,7 @@ function resume() { game.paused = false; show('hud'); }
 // ----- Results -----
 const results = el('div', 'results');
 addScreen('results', results);
-function showResults() {
+function showResults(bonus = 0, kind = '') {
   if (!game.run || !game.course) return;
   const t = game.run.finishTime;
   const key = `gb.best.${game.course.id}`;
@@ -209,7 +223,7 @@ function showResults() {
     <div class="lbl">${game.course.name} · complete</div>
     <div class="big">${fmtTime(t)}</div>
     <div class="lbl" style="color:${isBest ? 'var(--wood)' : 'var(--ink-faint)'}">${isBest ? 'New personal best' : 'Best ' + fmtTime(prev)}</div>
-    <div class="stats"><div><b>${game.run.falls}</b>falls</div><div><b>${(game.track!.length / 1000).toFixed(2)} km</b>distance</div></div>
+    <div class="stats"><div><b>${game.run.falls}</b>falls</div><div><b>${(game.track!.length / 1000).toFixed(2)} km</b>distance</div>${kind === 'plinko' ? `<div><b>${bonus.toLocaleString()}</b>Plinko</div>` : ''}</div>
     <div class="row"><button class="btn primary" data-act="restart">Run again</button><button class="btn" data-act="menu">Menu</button></div>`;
   show('results');
 }
@@ -421,7 +435,8 @@ function renderSettings() {
       <label class="set"><span>Fractal glow on the gutter</span><input id="set-fx" type="range" min="0" max="1" step="0.05" value="${settings.fractal}" data-set="fractal"></label>
       <label class="set"><span>Speed effects (blur, shake)</span><input id="set-speedfx" type="range" min="0" max="1" step="0.05" value="${settings.speedFx}" data-set="speedFx"></label>
       <label class="set"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${settings.volume}" data-set="volume"></label>
-      <label class="set"><span>Music</span><input class="toggle" type="checkbox" ${settings.music ? 'checked' : ''} data-set="music"></label>
+      <label class="set"><span>Music</span><select data-set="musicGenre">${GENRES.map((g) => `<option value="${g.id}" ${settings.musicGenre === g.id ? 'selected' : ''}>${g.name}</option>`).join('')}</select></label>
+      <label class="set"><span>Music volume</span><input type="range" min="0" max="1" step="0.05" value="${settings.musicLevel}" data-set="musicLevel"></label>
     </div>
     <div class="card"><h4>Graphics</h4>
       <label class="set"><span>Quality</span><select data-set="quality"><option value="high" ${game.quality === 'high' ? 'selected' : ''}>High (shadows)</option><option value="low" ${game.quality === 'low' ? 'selected' : ''}>Battery saver</option></select></label>
@@ -454,7 +469,7 @@ calibLoop();
 // Settings persistence
 // ---------------------------------------------------------------------------
 function loadSettings() {
-  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, fractal: 0.6, speedFx: 0.8, input: undefined as any, mode: undefined as any, inputVersion: 0 };
+  const def = { haptics: true, hapticStrength: 0.8, volume: 0.85, music: true, musicGenre: 'ambient' as Genre, musicLevel: 0.5, fractal: 0.6, speedFx: 0.8, input: undefined as any, mode: undefined as any, inputVersion: 0 };
   try { return { ...def, ...JSON.parse(localStorage.getItem('gb.settings') ?? '{}') }; } catch { return def; }
 }
 function saveSettings() {
@@ -473,7 +488,9 @@ function applySettings() {
   game.speedFx = settings.speedFx;
   haptics.intensity = settings.hapticStrength;
   audio.setVolume(settings.volume);
-  audio.setMusic(settings.music);
+  if (settings.music === false && settings.musicGenre === 'ambient') settings.musicGenre = 'off'; // older saves
+  audio.setMusicLevel(settings.musicLevel);
+  audio.setGenre(settings.musicGenre);
 }
 
 // ---------------------------------------------------------------------------
@@ -516,6 +533,9 @@ ui.addEventListener('click', async (e) => {
       break;
     }
     case 'pause': showPause(); break;
+    case 'skipFinale': game.skipFinale(); break;
+    case 'musicMenu': { const d = $('.musicdock', hud); d.classList.toggle('open'); renderMusicMenu(); break; }
+    case 'genre': { settings.musicGenre = id as Genre; audio.setGenre(id as Genre); saveSettings(); renderMusicMenu(); break; }
     case 'resume': resume(); break;
     case 'restart': game.paused = false; game.restart(); show('hud'); break;
     case 'calibrate': input.calibrate(); toast('Neutral position set'); break;
@@ -557,7 +577,8 @@ ui.addEventListener('input', (e) => {
     if (k === 'haptics') { settings.haptics = !!v; haptics.enabled = !!v; }
     if (k === 'hapticStrength') { settings.hapticStrength = Number(v); haptics.intensity = Number(v); }
     if (k === 'volume') { settings.volume = Number(v); audio.setVolume(Number(v)); }
-    if (k === 'music') { settings.music = !!v; audio.setMusic(!!v); }
+    if (k === 'musicGenre') { settings.musicGenre = v as Genre; audio.setGenre(v as Genre); renderMusicMenu(); }
+    if (k === 'musicLevel') { settings.musicLevel = Number(v); audio.setMusicLevel(Number(v)); }
     if (k === 'quality') game.setQuality(v as any);
     if (k === 'fractal') { settings.fractal = Number(v); game.fractalLevel = Number(v); }
     if (k === 'speedFx') { settings.speedFx = Number(v); game.speedFx = Number(v); }

@@ -4,7 +4,8 @@ import { MATERIALS, MaterialProfile } from '../physics/materials';
 import { Run, RunPhase } from './run';
 import { Autopilot } from './autopilot';
 import { buildWorld, World } from '../render/world';
-import { buildTrackGroup } from '../render/trackMesh';
+import { buildTrackGroup, updateMovingObstacles } from '../render/trackMesh';
+import { Finale, FINALE_FOR_WORLD } from '../finale/finale';
 import { TubeStreaks } from '../render/streaks';
 import { FogExp2, Color } from 'three';
 import { FRACTAL_THEMES } from '../render/fractal';
@@ -30,6 +31,8 @@ export interface GameCallbacks {
   onPhase?: (phase: RunPhase) => void;
   onHud?: (h: HudState) => void;
   onPreviewEnd?: () => void;
+  /** The finish contraption has played out (score: Plinko points, 0 otherwise). */
+  onFinaleDone?: (score: number, kind: string) => void;
 }
 
 export interface HudState {
@@ -73,6 +76,8 @@ export class Game {
   private time = 0;
   paused = false;
   cb: GameCallbacks = {};
+  finale?: Finale;
+  private finaleReported = false;
   cosmetics: Cosmetics = { skin: 'steel', beam: 'cyan', trail: false };
   /** Player setting 0..1 for the animated fractal gutter glow. */
   fractalLevel = 0.6;
@@ -136,6 +141,7 @@ export class Game {
   }
 
   load(course: CourseEntry, mode: GameMode) {
+    this.finale = undefined;
     this.disposeScene();
     this.course = course;
     this.mode = mode;
@@ -153,7 +159,13 @@ export class Game {
     this.branchGroups = cg.branches.map((t, k) => { const g = buildTrackGroup(t, this.material!, this.world!.groundHeight, true, carveFor(k + 1), cg.all); this.scene.add(g); return g; });
     this.post.setScene(this.scene, this.camera.cam);
     this.run = new Run(this.courseGeo, this.material);
-    this.run.onPhase = (p) => { this.cb.onPhase?.(p); if (p === 'respawning') this.camera.shake = 0.3; if (p === 'running') this.camera.snap(); };
+    this.run.onPhase = (p) => {
+      this.cb.onPhase?.(p);
+      if (p === 'respawning') this.camera.shake = 0.3;
+      if (p === 'running') this.camera.snap();
+      // across the line: hands off, the finish contraption takes over
+      if (p === 'finished' && this.mode === 'play') this.startFinale();
+    };
     this.ballView = new BallView(this.run.ball.tune.radius);
     {
       // how bright this world's gutter reads: the surface tint (and fog for see-through worlds)
@@ -198,8 +210,21 @@ export class Game {
     return true;
   }
 
+  private startFinale() {
+    if (!this.run || !this.track || !this.course || !this.material) return;
+    this.endFinale();
+    const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood;
+    this.finale = new Finale(this.scene, this.track, this.run.ball, FINALE_FOR_WORLD[this.course.id] ?? 'plinko', this.audio, { a: th.a, b: th.b });
+    this.finaleReported = false;
+  }
+  private endFinale() { this.finale?.dispose(); this.finale = undefined; }
+  /** Tap to skip the finish contraption. */
+  skipFinale() { if (this.finale && !this.finaleReported) { this.finaleReported = true; this.cb.onFinaleDone?.(this.finale.score, this.finale.kind); } }
+
   restart() {
     if (!this.run || !this.track) return;
+    this.endFinale();
+    this.camera.cam.fov = 80; this.camera.cam.updateProjectionMatrix();
     this.run.reset();
     this.hintIndex = 0;
     this.camera.snap();
@@ -254,7 +279,10 @@ export class Game {
     let input: BallInput;
     if (this.mode === 'play') input = this.input.sample(dt);
     else input = this.autopilot!.decide(this.run.ball);
-    if (!this.paused) {
+    if (this.finale) {
+      if (!this.paused) this.finale.update(dt);
+      if (this.finale.done && !this.finaleReported) { this.finaleReported = true; this.cb.onFinaleDone?.(this.finale.score, this.finale.kind); }
+    } else if (!this.paused) {
       this.run.update(dt, input);
       if (this.mode !== 'play' && this.run.phase === 'finished') {
         this.run.reset(); this.run.launch(); this.run.ball.placeAt(6, 12);
@@ -263,11 +291,14 @@ export class Game {
     }
     const b = this.run.ball;
     const events = this.run.pendingEvents.splice(0);
-    if (!this.paused) this.bus.publish(b.snapshot(), events);
+    if (!this.paused && !this.finale) this.bus.publish(b.snapshot(), events);
+    if (this.finale) this.audio.quiet();
     if (b.boosting && !this.paused) this.camera.punch(7 * this.speedFx); // booster widens the view
     else this.audio.quiet();
     if (b.activeIndex === 0) this.showHints(b.mainProj.s);
     this.ballView.update(b, dt, this.time);
+    if (this.trackGroup) updateMovingObstacles(this.trackGroup, this.track);
+    this.branchGroups.forEach((g, k) => updateMovingObstacles(g, this.courseGeo!.branches[k]));
     const fx = this.trackGroup?.userData.fx;
     if (fx) {
       fx.uFxTime.value = this.time;
@@ -281,7 +312,8 @@ export class Game {
       }
     }
     this.camera.fx = this.speedFx;
-    this.camera.update(b, b.track, dt);
+    if (this.finale) this.finale.applyCamera(this.camera.cam);
+    else this.camera.update(b, b.track, dt);
     this.streaks?.update(b.track, b.proj.s, b.v.length(), dt, this.time, 0.5 + 0.5 * this.speedFx);
     // depth: inside a tube the far end falls away into darkness (fog to near-black in the world's colour)
     if (this.fogBase && this.scene.fog instanceof FogExp2) {

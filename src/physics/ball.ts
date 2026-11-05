@@ -141,6 +141,7 @@ export class BallPhysics {
   slipSpeed = 0;
   private spinPrevN = new Vector3();
   private spinPrevValid = false;
+  private lastClack = -1;
   rollingState: RollingState = 'airborne';
   jumpTimer = 0;
   // Magnet
@@ -201,6 +202,7 @@ export class BallPhysics {
     this.jumpTimer = 0;
     this.lastSeamIndex = -1;
     this.rollingState = 'rolling';
+    this.spinPrevValid = false;
     this.pushCombo = 0; this.comboTimer = 0; this.turboCharge = 0; this.turboArmed = false; this.turboTime = 0;
   }
 
@@ -278,6 +280,7 @@ export class BallPhysics {
   }
 
   step(dt: number, input: BallInput) {
+    for (const t of this.tracks) t.time += dt;
     const tu = this.tune;
     const m = tu.mass;
     const r = tu.radius;
@@ -380,6 +383,22 @@ export class BallPhysics {
       }
     }
 
+    // ---- Chain lift: a coaster lift hill hauls you up at a steady speed ----
+    {
+      const li = this.track.lift[Math.max(0, Math.min(this.track.n - 1, Math.round(pr.s / this.track.ds)))];
+      if (li > 0 && this.sinceContact < 0.1) {
+        const vf = this.v.dot(pr.T);
+        // the chain grabs you and holds its speed (it hauls a slow ball up and
+        // reins in a fast one, so every crest is taken at the same float speed)
+        acc.addScaledVector(pr.T, Math.max(-40, Math.min(30, (li - vf) * 6)) + tu.gravity * Math.max(0, pr.T.y));
+        // and keeps you in the centre of the chain
+        acc.addScaledVector(pr.R, -pr.x * 3 - this.v.dot(pr.R) * 2);
+        // clack-clack-clack every 1.2 m of chain
+        const ci = Math.floor(pr.s / 1.2);
+        if (ci !== this.lastClack) { this.lastClack = ci; this.emit('LIFT_CLACK', 0.6, vf); }
+      }
+    }
+
     // ---- Swipe push: a physical shove that rolls the ball faster ----
     // Swipes stack into a combo of up to three. With a full combo, holding the
     // magnet booster for a second ARMS turbo; the next flick fires it: every top
@@ -459,13 +478,23 @@ export class BallPhysics {
       const src: 'track' | 'obstacle' = obd <= d + 0.02 ? 'obstacle' : 'track';
       touched = true;
       this.p.addScaledVector(nn, pen);
-      const vn = this.v.dot(nn);
+      // a moving obstacle shoves you: resolve against its velocity, not a still wall
+      const vob = src === 'obstacle' ? this.track.nearestObstacleVX(pr.s, pr.x, pr.y) : 0;
+      const vn = this.v.dot(nn) - vob * pr.R.dot(nn);
       if (vn < 0) {
         if (-vn > impactSpeed) { impactSpeed = -vn; impactSource = src; }
         const e = this.magnetActive && src === 'track' ? 0 : -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0; // magnet: lands and sticks, no bounce
         const Jn = -(1 + e) * m * vn;
         this.v.addScaledVector(nn, Jn / m);
         normalImpulseTotal += Jn;
+        // LANDING: carry the spin from the surface you left onto the one you land
+        // on (the same transport as rolling over a curve), so touching down on the
+        // far wall of a pipe doesn't skid away half your speed
+        if (this.spinPrevValid && this.sinceContact > 0.02) {
+          const dn = this.spinPrevN.dot(nn);
+          if (dn < 0.999999 && dn > -0.995) { tmpQ.setFromUnitVectors(this.spinPrevN, nn); this.w.applyQuaternion(tmpQ); }
+          this.spinPrevN.copy(nn);
+        }
         this.frictionImpulse(nn, Jn, dt);
       }
       this.n.copy(nn);
@@ -500,8 +529,7 @@ export class BallPhysics {
       const wn = this.w.dot(this.n);
       this.w.addScaledVector(this.n, -wn * Math.min(1, mat.spinDamping * dt));
     } else {
-      this.spinPrevValid = false;
-      this.sinceContact += dt;
+      this.sinceContact += dt; // (spinPrevN keeps the take-off surface for the landing)
     }
 
     // ---- Airborne state machine (debounced) ----
@@ -559,6 +587,23 @@ export class BallPhysics {
    * Choose which gutter the ball is on: the one whose surface is nearest
    * (with a little hysteresis so it doesn't flicker at junctions).
    */
+  /**
+   * Which track the airborne beam should pull toward: of the tracks whose
+   * channel column you are above, the one closest beneath you.
+   */
+  private beamTrack(): number {
+    if (this.tracks.length === 1) return 0;
+    let best = this.activeIndex, bestY = Infinity;
+    for (let i = 0; i < this.tracks.length; i++) {
+      const pr = this.projs[i], tr = this.tracks[i];
+      if (i !== this.activeIndex) pr.project(this.p.x, this.p.y, this.p.z);
+      if (Math.abs(pr.along) > 3 || tr.isGap(pr.s)) continue;
+      if (Math.abs(pr.x) > halfWidth(tr.profile) + 2 || pr.y < -0.5) continue;
+      if (pr.y < bestY) { bestY = pr.y; best = i; }
+    }
+    return best;
+  }
+
   private selectTrack() {
     const x = this.p.x, y = this.p.y, z = this.p.z;
     if (this.tracks.length === 1) { this.proj.project(x, y, z); return; }
@@ -695,13 +740,27 @@ export class BallPhysics {
       this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * (inAir ? 1.6 : 1) * dt);
       const nn = new Vector3();
       let d = this.sdfAndNormal(nn, false, true);
-      const prj = this.proj, prof = this.track.profile;
-      const Wc = halfWidth(prof);
-      const inTube = this.track.tubeAt(prj.s) > 0.85;
-      const [wl, wr] = this.track.wallsAt(prj.s);
-      const outside = !inTube && (Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > (prj.x < 0 ? wl : wr));
       const grounded0 = this.sinceContact <= 0.03;
-      if (!inTube && !outside && !grounded0 && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
+      // The beam works on the track you are ON or directly ABOVE: an upper
+      // track (High Road), a tunnel roof, a branch, not always the main gutter.
+      const bi = grounded0 ? this.activeIndex : this.beamTrack();
+      const btr = this.tracks[bi], prj = this.projs[bi], prof = btr.profile;
+      const Wc = halfWidth(prof);
+      const inTube = btr.tubeAt(prj.s) > 0.85;
+      const [wl, wr] = btr.wallsAt(prj.s);
+      // riding on top of something (a roof, a wall top, the outside of a pipe):
+      // press onto THAT surface, never through it toward the floor below
+      if (grounded0) { nn.copy(this.n); d = 0; }
+      const roof = !grounded0 && btr.isTunnel(prj.s) && prj.y > prof.H && Math.abs(prj.x) < Wc + prof.th;
+      const outside = !grounded0 && !inTube && !roof && (Math.abs(prj.x) > Wc - this.tune.radius * 0.5 || prj.y > (prj.x < 0 ? wl : wr));
+      if (roof && Math.abs(prj.along) < 3) {
+        // above a covered section: land on its roof
+        this.magnetTarget.copy(prj.P).addScaledVector(prj.R, Math.max(-Wc + 1, Math.min(Wc - 1, prj.x))).addScaledVector(prj.U, prof.H + prof.th * 2.5);
+        nn.copy(this.p).sub(this.magnetTarget);
+        const dl = nn.length();
+        if (dl > 1e-4) nn.multiplyScalar(1 / dl); else nn.copy(prj.U);
+        d = Math.max(0, dl - this.tune.radius);
+      } else if (!inTube && !outside && !grounded0 && Math.abs(prj.along) < 3 && !btr.isGap(prj.s)) {
         // In the air inside the channel: aim at the gutter surface directly
         // beneath the ball (keeps your lateral line; never a far wall or the rim).
         // ...pulled in toward the CENTRE of the gutter, so a big toss always comes
@@ -715,7 +774,7 @@ export class BallPhysics {
         if (dl > 1e-4) nn.multiplyScalar(1 / dl); else nn.copy(prj.U);
         d = Math.max(0, dl - this.tune.radius);
       }
-      if (outside && Math.abs(prj.along) < 3 && !this.track.isGap(prj.s)) {
+      if (outside && Math.abs(prj.along) < 3 && !btr.isGap(prj.s)) {
         // Rescue: above the rim or beside the gutter, the beam pulls you back
         // INTO the channel (towards the floor), never onto the outside of a wall.
         const tx = Math.max(-(Wc - 1.6), Math.min(Wc - 1.6, prj.x * AIR_BEAM_CENTRE));
@@ -729,7 +788,7 @@ export class BallPhysics {
       }
       if (d < tu.magnetRange) {
         // Closest point on the track shell (or the rescue point)
-        if (!outside && (grounded0 || inTube)) this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
+        if (!outside && !roof && (grounded0 || inTube)) this.magnetTarget.copy(this.p).addScaledVector(nn, -d);
         this.magnetHasTarget = true;
         const grounded = this.sinceContact <= 0.03;
         if (grounded) {

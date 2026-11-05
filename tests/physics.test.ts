@@ -392,4 +392,31 @@ describe('built-up corners', () => {
     expect(Math.abs(x)).toBeLessThan(1.5);
     expect(b.v.length()).toBeGreaterThan(24); // forward momentum kept
   });
+  it('tractor beam on a roof keeps you on the roof (does not drag you toward the floor below)', () => {
+    const tr = new Track({ id: 't', name: 't', segments: [{ len: 40, pitch: -4 }, { len: 160, pitch: -4, tunnel: true, label: 'shed' }, { len: 60, pitch: -4 }], obstacles: [], hints: [] } as any);
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(70, 14);
+    const H = tr.profile.H, th = tr.profile.th;
+    b.p.addScaledVector(b.proj.U, H + th * 2.5 + b.tune.radius - b.proj.y + 0.02); // sitting on the roof
+    b.proj.project(b.p.x, b.p.y, b.p.z);
+    let minY = 1e9, maxAim = 0;
+    sim(b, 2, { ...idle, magnet: true }, () => { if (b.proj.s < 190) { minY = Math.min(minY, b.proj.y); if (b.magnetHasTarget) maxAim = Math.max(maxAim, b.magnetTarget.distanceTo(b.p)); } });
+    expect(minY).toBeGreaterThan(H);
+    // the beam aims at the roof under the ball, not through it at the floor below
+    expect(maxAim).toBeLessThan(2);
+  });
+
+  it('a moving obstacle slides across and shoves the ball aside', () => {
+    const tr = new Track({ id: 't', name: 't', segments: [{ len: 80, pitch: 0 }],
+      obstacles: [{ s: 30, x: 0, ls: 2.1, w: 3.6, h: 1.7, move: { amp: 2.5, period: 2, phase: Math.PI / 2 } }], hints: [] } as any);
+    expect(tr.obstacleX(tr.obstacles[0], 0)).toBeCloseTo(2.5);
+    expect(tr.obstacleX(tr.obstacles[0], 1)).toBeCloseTo(-2.5);
+    const b = new BallPhysics(tr, MATERIALS.wood);
+    b.placeAt(30, 0, -1.5);
+    let minVx = 0, hit = false;
+    sim(b, 0.9, idle, () => { minVx = Math.min(minVx, b.v.dot(b.proj.R)); if (b.contactSource === 'obstacle') hit = true; });
+    expect(hit).toBe(true);
+    expect(minVx).toBeLessThan(-2); // knocked toward -x by the block's motion
+  });
+
 });

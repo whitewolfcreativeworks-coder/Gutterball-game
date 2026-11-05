@@ -29,6 +29,7 @@ export interface Segment {
   gap?: boolean;      // no gutter here (must be jumped)
   openSky?: boolean;  // containment walls stop above the rim (fly-off-course zone)
   tube?: boolean;     // the walls curl over and close into a full pipe
+  lift?: number;      // chain lift: carries the ball uphill at this speed (m/s)
   warp?: number;      // top speed the tube's air current pushes you to here (m/s; default: full warp)
   /**
    * Fractal motion for this section (visual only):
@@ -50,6 +51,8 @@ export interface ObstacleSpec {
   w: number;          // width
   h: number;          // height
   kind?: 'block' | 'barrier' | 'gate' | 'post';
+  /** Moving obstacle: slides side to side, x = x0 + amp * sin(2π t / period + phase). */
+  move?: { amp: number; period: number; phase?: number };
 }
 
 export interface HintSpec { at?: string; s: number; text: string; }
@@ -118,6 +121,8 @@ export class Track {
   readonly tubeK: Float32Array;
   /** Per-sample tube current top speed (0 = default warp). */
   readonly warpCap: Float32Array;
+  /** Per-sample chain-lift speed (0 = none). */
+  readonly lift: Float32Array;
   /** Wall height (m above the floor) on the left and right, per sample: raised on the outside of corners. */
   readonly wallL: Float32Array;
   readonly wallR: Float32Array;
@@ -146,6 +151,7 @@ export class Track {
     this.fxMode = new Float32Array(this.n * 3);
     this.tubeK = new Float32Array(this.n);
     this.warpCap = new Float32Array(this.n);
+    this.lift = new Float32Array(this.n);
     this.build();
     {
       // the walls curl closed gradually: box filter (+-12 m), then ease
@@ -310,6 +316,7 @@ export class Track {
         curFx = [seg.fx?.flow ?? 0, seg.fx?.pulse ?? 0, seg.fx?.twist ?? 0];
         this.tubeK[i] = seg.tube ? 1 : 0;
         this.warpCap[i] = seg.warp ?? 0;
+        this.lift[i] = seg.lift ?? 0;
         writeSample(i, !!seg.tunnel, !!seg.gap);
         i++;
         sGlobal += this.ds;
@@ -366,6 +373,30 @@ export class Track {
    * Signed distance of a point given in track-local coordinates (s, x, y) to
    * the gutter shell plus obstacles. Returns positive outside material.
    */
+  /** Simulation clock for moving obstacles (advanced by the ball physics). */
+  time = 0;
+  /** Lateral centre of an obstacle at time t (default: now). */
+  obstacleX(ob: ObstacleSpec, t = this.time): number {
+    return ob.move ? ob.x + ob.move.amp * Math.sin((2 * Math.PI * t) / ob.move.period + (ob.move.phase ?? 0)) : ob.x;
+  }
+  /** Lateral velocity of an obstacle now (m/s along R). */
+  obstacleVX(ob: ObstacleSpec): number {
+    if (!ob.move) return 0;
+    const w = (2 * Math.PI) / ob.move.period;
+    return ob.move.amp * w * Math.cos(w * this.time + (ob.move.phase ?? 0));
+  }
+  /** Lateral velocity of the obstacle nearest a local point (0 for static ones). */
+  nearestObstacleVX(s: number, x: number, y: number): number {
+    let d = 1e6, vx = 0;
+    for (const ob of this.obstacles) {
+      const ds = s - ob.s;
+      if (Math.abs(ds) > ob.ls + 3) continue;
+      const dd = boxSDF(ds, x - this.obstacleX(ob), y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06);
+      if (dd < d) { d = dd; vx = this.obstacleVX(ob); }
+    }
+    return vx;
+  }
+
   sdfLocal(s: number, x: number, y: number, includeObstacles = true, visibleOnly = false): number {
     let d = 1e6;
     const s0 = this.layout.openStart ? 0 : -2, s1 = this.layout.openEnd ? this.length : this.length + 2;
@@ -386,7 +417,7 @@ export class Track {
         const ob = this.obstacles[o];
         const ds = s - ob.s;
         if (ds > ob.ls + 2 || ds < -ob.ls - 2) continue;
-        d = Math.min(d, boxSDF(ds, x - ob.x, y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06));
+        d = Math.min(d, boxSDF(ds, x - this.obstacleX(ob), y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06));
       }
     }
     return d;
@@ -398,7 +429,7 @@ export class Track {
     for (const ob of this.obstacles) {
       const ds = s - ob.s;
       if (Math.abs(ds) > ob.ls + 3) continue;
-      d = Math.min(d, boxSDF(ds, x - ob.x, y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06));
+      d = Math.min(d, boxSDF(ds, x - this.obstacleX(ob), y - (ob.y + ob.h / 2), ob.ls / 2, ob.w / 2, ob.h / 2, 0.06));
     }
     return d;
   }

@@ -1,5 +1,5 @@
 import {
-  BoxGeometry, BackSide, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
+  BoxGeometry, BackSide, Object3D, ShaderMaterial, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
   Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry,
 } from 'three';
 import { TrackProjector, type Track } from '../track/track';
@@ -209,6 +209,9 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
 
   // ---- Obstacles ----
   g.add(buildObstacles(track, mat));
+  // ---- Chain-lift strips ----
+  const chain = buildLiftChains(track);
+  if (chain) { g.add(chain); g.userData.chain = chain.material; }
 
   // ---- Start & finish arches ----
   if (!isBranch) {
@@ -485,6 +488,8 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
   const top = new MeshBasicMaterial({ color: hazard.clone().lerp(new Color(0xffffff), 0.35), fog: false });
   const outline = new MeshBasicMaterial({ color: 0x000000, side: BackSide, fog: false });
   const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+  const movers: Mesh[] = [];
+  const slotMat = new MeshBasicMaterial({ color: 0x050505, fog: false });
   for (const o of track.obstacles) {
     track.frameAtS(o.s, P, T, U, R);
     const geo = new BoxGeometry(o.w, o.h, o.ls);
@@ -499,8 +504,85 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
     const hull = new Mesh(new BoxGeometry(o.w + 0.36, o.h + 0.36, o.ls + 0.36), outline);
     mesh.add(hull);
     g.add(mesh);
+    if (o.move) {
+      // MOVING: it slides along a dark slot in the floor that shows its range,
+      // so you can judge it from far away
+      mesh.userData.mover = { ob: o, base: mesh.position.clone(), R: R.clone() };
+      movers.push(mesh);
+      const slotW = o.w + 2 * Math.abs(o.move.amp) + 0.6;
+      const slot = new Mesh(new BoxGeometry(slotW, 0.06, o.ls + 0.8), slotMat);
+      slot.quaternion.copy(mesh.quaternion);
+      slot.position.copy(P).addScaledVector(R, o.x).addScaledVector(U, o.y + 0.04);
+      g.add(slot);
+      // bright end stops at both ends of the travel
+      for (const sgn of [-1, 1]) {
+        const stop = new Mesh(new BoxGeometry(0.25, 0.5, o.ls + 0.8), top);
+        stop.quaternion.copy(mesh.quaternion);
+        stop.position.copy(P).addScaledVector(R, o.x + sgn * (slotW / 2)).addScaledVector(U, o.y + 0.25);
+        g.add(stop);
+      }
+    }
   }
+  g.userData.movers = movers;
   return g;
+}
+
+/**
+ * A chain up the middle of every lift hill: dark links with bright dogs
+ * that crawl uphill at the chain's speed.
+ */
+function buildLiftChains(track: Track): Mesh | null {
+  const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+  const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+  let run = false, base = 0;
+  for (let i = 0; i < track.n; i += 2) {
+    const on = track.lift[i] > 0;
+    if (!on) { run = false; continue; }
+    track.frameAtS(i * track.ds, P, T, U, R);
+    const v0 = pos.length / 3;
+    for (const sx of [-0.6, 0.6]) {
+      const q = P.clone().addScaledVector(R, sx).addScaledVector(U, 0.035);
+      pos.push(q.x, q.y, q.z); uv.push(sx < 0 ? 0 : 1, i * track.ds);
+    }
+    if (run) idx.push(base, base + 1, v0, base + 1, v0 + 1, v0);
+    base = v0; run = true;
+  }
+  if (!idx.length) return null;
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  geo.setIndex(idx);
+  const m = new ShaderMaterial({
+    uniforms: { uScroll: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float uScroll; varying vec2 vUv;
+      void main(){
+        float s = vUv.y - uScroll;
+        float link = step(0.5, fract(s / 0.6));                 // alternating links
+        float dog = step(0.92, fract(s / 4.8));                 // a bright dog every few metres
+        float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
+        vec3 c = mix(vec3(0.05), vec3(0.16), link) + vec3(1.0, 0.75, 0.15) * dog * 1.6;
+        gl_FragColor = vec4(c * edge, 1.0);
+      }`,
+    side: DoubleSide,
+  });
+  const mesh = new Mesh(geo, m);
+  mesh.name = 'liftChain';
+  return mesh;
+}
+
+/** Slide the moving obstacles to where the physics has them now (and run the lift chains). */
+export function updateMovingObstacles(root: Object3D, track: Track) {
+  const ch = root.userData?.chain as ShaderMaterial | undefined;
+  if (ch) ch.uniforms.uScroll.value = track.time * 20; // the chain runs at lift speed
+  root.traverse((o) => {
+    const ms = o.userData?.movers as Mesh[] | undefined;
+    if (!ms) return;
+    for (const m of ms) {
+      const mv = m.userData.mover;
+      m.position.copy(mv.base).addScaledVector(mv.R, track.obstacleX(mv.ob) - mv.ob.x);
+    }
+  });
 }
 
 function labelTexture(text: string) {

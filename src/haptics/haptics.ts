@@ -131,6 +131,7 @@ export class HapticEngine {
           if (h.seamPulse > 0 && e.intensity > 0.15) this.fire(h.seamPulse, e.intensity, 1);
           break;
         case 'WATER_ENTRY': this.fire(30, 0.6, 2); break;
+        case 'LIFT_CLACK': this.fire(6, 0.35, 1); break;
       }
     }
     // Continuous rolling texture -> sparse micro-pulses (never continuous buzz)
