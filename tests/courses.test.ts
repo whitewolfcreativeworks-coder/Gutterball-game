@@ -285,3 +285,15 @@ describe('flow: no jolting turns', () => {
     }
   });
 });
+
+describe('no obstacle is perfectly still', () => {
+  it('every obstacle drifts at least a little, so a ball can never sit wedged against one', () => {
+    for (const c of CATALOG) {
+      const tr = new Track(c.layout());
+      for (const o of tr.obstacles) {
+        expect(o.move, `${c.id} obstacle at ${o.s.toFixed(0)}`).toBeTruthy();
+        expect(Math.abs(o.move!.amp)).toBeGreaterThan(0.2);
+      }
+    }
+  });
+});

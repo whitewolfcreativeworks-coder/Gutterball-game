@@ -203,7 +203,12 @@ export class Track {
       if (!seg) throw new Error(`Unknown segment label ${label}`);
       return seg.s;
     };
-    this.obstacles = layout.obstacles.map((o) => ({ ...o, s: base(o.at) + o.s, y: o.y ?? 0, kind: o.kind ?? 'block' }));
+    // every obstacle drifts at least a little, side to side and very slowly, so a
+    // ball can never sit wedged against one (sliders keep their own motion)
+    this.obstacles = layout.obstacles.map((o, k) => ({
+      ...o, s: base(o.at) + o.s, y: o.y ?? 0, kind: o.kind ?? 'block',
+      move: o.move ?? { amp: 0.35, period: 9 + (k % 5) * 1.3, phase: k * 1.7 },
+    }));
     this.hints = layout.hints.map((h) => ({ ...h, s: base(h.at) + h.s })).sort((a, b) => a.s - b.s);
     const every = layout.checkpointEvery ?? 160;
     this.checkpoints = [6];

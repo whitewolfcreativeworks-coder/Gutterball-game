@@ -142,6 +142,7 @@ export class BallPhysics {
   private spinPrevN = new Vector3();
   private spinPrevValid = false;
   private lastClack = -1;
+  private steerSmooth = 0;
   rollingState: RollingState = 'airborne';
   jumpTimer = 0;
   // Magnet
@@ -203,6 +204,7 @@ export class BallPhysics {
     this.lastSeamIndex = -1;
     this.rollingState = 'rolling';
     this.spinPrevValid = false;
+    this.steerSmooth = 0;
     this.pushCombo = 0; this.comboTimer = 0; this.turboCharge = 0; this.turboArmed = false; this.turboTime = 0;
   }
 
@@ -327,15 +329,25 @@ export class BallPhysics {
       // ...and the sideways speed it can add grows too (still capped, so a held
       // tilt carries you up a wall rather than spinning you round a pipe)
       const latCap = 9 + Math.min(10, sp * 0.12);
-      const latFade = Math.max(0, Math.min(1, 1 - (Math.sign(input.steer) * vlat - latCap) / 5));
-      const st = input.steer * tu.steerAccel * speedK * latFade;
+      // TRACTION GRADIENT (v6): on the walls you get full, sharp grip (riding
+      // high at speed); down on the middle of the floor the ball is a touch
+      // slippery and the steering is smoothed, so dodging isn't twitchy.
+      // It blends continuously from the floor centre up the curve.
+      const flA = this.track.profileAt(pr.s).a;
+      const tubeHere = this.track.tubeAt(pr.s);
+      const wallness = Math.max(tubeHere, Math.min(1, Math.max(0, (Math.abs(pr.x) - flA * 0.45) / (flA * 0.55 + this.track.profile.rc * 0.5))));
+      const ease = wallness * wallness * (3 - 2 * wallness);
+      // smooth the steering input low down (slower response), crisp up high
+      this.steerSmooth += (input.steer - this.steerSmooth) * Math.min(1, dt * (5 + 20 * ease));
+      const steerIn = this.steerSmooth;
+      const latFade = Math.max(0, Math.min(1, 1 - (Math.sign(steerIn) * vlat - latCap) / 5));
+      const st = steerIn * tu.steerAccel * speedK * latFade * (0.6 + 0.4 * ease);
       acc.addScaledVector(Rt, st * tu.steerDirectFrac);
       // Grip assist: sideways sliding settles quickly when you ease off the
       // tilt, so the ball goes where you point it instead of wandering.
       // (only on the flat floor: on a wall, sideways motion IS the ride up the corner and must keep its energy)
-      const flA = this.track.profileAt(pr.s).a;
       const onFloor = 1 - Math.max(0, Math.min(1, (Math.abs(pr.x) - flA * 0.6) / (flA * 0.5)));
-      acc.addScaledVector(Rt, -vlat * 1.2 * onFloor * (1 - Math.min(1, Math.abs(input.steer))));
+      acc.addScaledVector(Rt, -vlat * 0.5 * onFloor * (1 - Math.min(1, Math.abs(steerIn)))); // a little slippery on the floor
       // Δω = (n × dir)/r * Δv ; scale 3.5 so friction delivers ~the requested linear accel
       const gyro = st * (1 - tu.steerDirectFrac) * 3.5 / r * dt;
       const axis = new Vector3().copy(n).cross(Rt);

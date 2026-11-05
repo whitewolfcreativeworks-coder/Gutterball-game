@@ -600,10 +600,12 @@ function buildObstacles(track: Track, mat: MaterialProfile) {
     mesh.add(hull);
     g.add(mesh);
     if (o.move) {
-      // MOVING: it slides along a dark slot in the floor that shows its range,
-      // so you can judge it from far away
       mesh.userData.mover = { ob: o, base: mesh.position.clone(), R: R.clone() };
       movers.push(mesh);
+    }
+    if (o.move && Math.abs(o.move.amp) > 1) {
+      // MOVING: it slides along a dark slot in the floor that shows its range,
+      // so you can judge it from far away
       const slotW = o.w + 2 * Math.abs(o.move.amp) + 0.6;
       const slot = new Mesh(new BoxGeometry(slotW, 0.06, o.ls + 0.8), slotMat);
       slot.quaternion.copy(mesh.quaternion);
