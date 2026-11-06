@@ -243,7 +243,7 @@ select { font: inherit; color: var(--ink); background: rgba(255,255,255,0.08); b
 .autobtn.on { background: rgba(30,120,160,0.6); border-color: #7fe6ff; box-shadow: 0 0 16px rgba(127,230,255,0.55); }
 .autobtn.on .dot { background: #7fe6ff; box-shadow: 0 0 8px #7fe6ff; animation: autopulse 1s ease-in-out infinite; }
 @keyframes autopulse { 50% { opacity: 0.4 } }
-.trick { position: absolute; top: calc(var(--safe-t) + 104px); left: 50%; transform: translateX(-50%) scale(0.9); font: 900 20px var(--font); letter-spacing: 0.12em; color: #fff; text-shadow: 0 0 14px #7fe6ff, 0 2px 8px rgba(0,0,0,0.7); opacity: 0; transition: opacity .15s, transform .15s; pointer-events: none; }
+.trick { position: absolute; top: calc(var(--safe-t) + 176px); left: 50%; transform: translateX(-50%) scale(0.9); font: 900 20px var(--font); letter-spacing: 0.12em; color: #fff; text-shadow: 0 0 14px #7fe6ff, 0 2px 8px rgba(0,0,0,0.7); opacity: 0; transition: opacity .15s, transform .15s; pointer-events: none; }
 .trick.show { opacity: 1; transform: translateX(-50%) scale(1); }
 :root[data-screen=mini] .autobtn { top: calc(var(--safe-t) + 88px); font-size: 11px; padding: 5px 9px; }
 :root[data-screen=mini] .trick { font-size: 16px; }
