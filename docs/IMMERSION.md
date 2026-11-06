@@ -86,3 +86,26 @@ Results appear when the machine finishes (Skip › jumps straight to them).
 - **Racing:** "Run again" races the ghost of your last finished run. A toggle before launch turns it off.
 - **Saving:** "Save run" keeps your 10 fastest runs per course on the device, as int16 deltas in 2 cm units with an escape for respawn jumps (about 8 base64 characters a sample).
 - **Saved runs:** from the list you can Race one or Watch it. When watching, the recording drives the ball (`BallPhysics.followGhost`), so the camera and sound behave as they did on the run.
+
+## Auto Ball
+
+Tap **AUTO** at any time, before the launch or mid-run, and a pro driver (`src/game/proPilot.ts`) takes over once the ball is away. Tap again and you have it back.
+
+**What the pro does.** It uses only the player's controls, but plays like someone who knows the line:
+- Keeps its speed up with swipe pushes, and chains push-push-push plus the booster into TURBO on long clear straights.
+- Climbs the wall to roll over trigger pads. Height is held with gentle feedback, so it rolls along the wall instead of launching off it.
+- Aims straight through holograms for their boosts, and threads the solid blocks.
+- Lines up dead centre for gaps and jumps them at the edge. It catches air over crests, but never in open-sky stretches.
+- Holds the magnet through inversions, and beams home after big air, though never over a gap, where the beam would pull it into the hole.
+- Knows when not to push. A look-ahead safe speed (from corner radius, gaps and fly-off zones) caps its pushing, because there are no brakes.
+- Rides gently for 600 m after a crash, so one mistake never repeats.
+
+**The line.** Every 0.22 s the game copies the ball (`BallPhysics.copyStateFrom`) and lets the pro drive the copy for about 1.8 s:
+- The copy runs in predict mode: it never lights pads or uses up hologram boosts, and the obstacle clock is put back afterwards.
+- The result is drawn as a camera-facing glowing ribbon (`src/render/racingLine.ts`), coloured cyan when slow, through magenta, to gold at top speed, and brighter where the ball is airborne.
+- A fading ribbon traces the line just taken.
+- The camera eases back and up to show it, and a label names the move: PUSH, TURBO, PAD, HOLOGRAM, AIR, GAP, BEAM, GRIP or DODGE.
+
+**Results.** Auto Ball runs don't count as a best time and aren't saved, but "Race the Auto Ball" races its ghost.
+
+**Engine fix found on the way.** Flying over a gutter's gap now keeps the ball on that gutter. Before, a nearby route could claim it in mid-air, and the main course's landing then stopped counting for collisions.

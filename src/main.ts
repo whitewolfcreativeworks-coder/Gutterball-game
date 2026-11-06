@@ -141,6 +141,8 @@ hud.innerHTML = `
   <div class="preview-tag" style="display:none"><span class="p">PREVIEW</span><span class="d"></span></div>
   <div class="hint"></div>
   <button class="skipbtn" data-act="skipFinale" style="display:none">Skip ›</button>
+  <button class="autobtn" data-act="autoToggle" style="display:none" aria-pressed="false"><span class="dot"></span>AUTO</button>
+  <div class="trick"></div>
   <div class="musicdock"><button class="musicbtn" data-act="musicMenu" aria-label="Music">♪</button><div class="musicmenu"></div></div>
   <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div><button class="ghostbtn" data-act="ghostToggle" style="display:none"></button></div>
   <div class="replaytag" style="display:none">▶ REPLAY</div>
@@ -233,6 +235,15 @@ game.cb.onHud = (s: HudState) => {
   $('.magring', hud).classList.toggle('active', s.magnetActive);
   const launchEl = $('.launch', hud);
   const ip = game.intro?.phase;
+  {
+    const ab = $('.autobtn', hud);
+    ab.style.display = s.mode === 'play' && !game.replay ? 'flex' : 'none';
+    ab.classList.toggle('on', game.auto);
+    ab.setAttribute('aria-pressed', String(game.auto));
+    const tk = $('.trick', hud);
+    const trick = s.phase === 'running' ? game.autoTrick : '';
+    if (tk.textContent !== trick) { tk.textContent = trick; tk.classList.toggle('show', !!trick); }
+  }
   launchEl.style.display = s.phase === 'ready' && s.mode === 'play' && (!game.intro || ip === 'ready') ? 'block' : 'none';
   $('.launch .txt', hud).textContent = game.intro ? 'Pull back and let go' : 'Swipe up to launch';
   $('.launch .arrow', hud).textContent = game.intro ? '↓' : '↑';
@@ -291,20 +302,23 @@ function showResults(bonus = 0, kind = '') {
   const t = game.run.finishTime;
   const key = `gb.best.${game.course.id}`;
   const prev = Number(localStorage.getItem(key) ?? 'Infinity');
-  const isBest = t < prev;
+  const auto = game.autoUsed;
+  const isBest = !auto && t < prev;
   if (isBest) localStorage.setItem(key, String(t));
+  const bestLine = auto ? `Auto Ball run · not counted${Number.isFinite(prev) ? ' · your best ' + fmtTime(prev) : ''}` : isBest ? 'New personal best' : 'Best ' + fmtTime(prev);
   results.innerHTML = `
     <div class="lbl">${game.course.name} · complete</div>
     <div class="big">${fmtTime(t)}</div>
-    <div class="lbl" style="color:${isBest ? 'var(--wood)' : 'var(--ink-faint)'}">${isBest ? 'New personal best' : 'Best ' + fmtTime(prev)}</div>
+    <div class="lbl" style="color:${isBest ? 'var(--wood)' : auto ? '#7fe6ff' : 'var(--ink-faint)'}">${bestLine}</div>
     <div class="stats"><div><b>${game.run.falls}</b>falls</div><div><b>${(game.track!.length / 1000).toFixed(2)} km</b>distance</div>${kind === 'plinko' ? `<div><b>${bonus.toLocaleString()}</b>Plinko</div>` : ''}</div>
-    <div class="row"><button class="btn primary" data-act="restart">Run again${game.lastRun ? ' vs ghost' : ''}</button><button class="btn" data-act="menu">Menu</button></div>
+    <div class="row"><button class="btn primary" data-act="restart">${auto ? 'Race the Auto Ball' : 'Run again' + (game.lastRun ? ' vs ghost' : '')}</button><button class="btn" data-act="menu">Menu</button></div>
     <div class="row" style="margin-top:10px">${savedRunButton()}<button class="btn" data-act="savedRuns">Saved runs (${ghostStore.list(game.course.id).length})</button></div>`;
   show('results');
 }
 function savedRunButton() {
   const r = game.lastRun;
   if (!r || !game.course) return '';
+  if (game.autoUsed) return '<button class="btn" disabled>Auto runs aren’t saved</button>';
   if (ghostStore.isSaved(r.course, r.date)) return '<button class="btn" disabled>Saved ✓</button>';
   if (!ghostStore.qualifies(r.course, r.time)) return `<button class="btn" disabled>Not in your ${MAX_SAVED} best</button>`;
   return '<button class="btn" data-act="saveRun">Save run</button>';
@@ -652,6 +666,11 @@ ui.addEventListener('click', async (e) => {
     case 'musicMenu': { const d = $('.musicdock', hud); d.classList.toggle('open'); renderMusicMenu(); break; }
     case 'genre': { settings.musicGenre = id as Genre; audio.setGenre(id as Genre); saveSettings(); renderMusicMenu(); break; }
     case 'resume': resume(); break;
+    case 'autoToggle': {
+      game.setAuto(!game.auto);
+      toast(game.auto ? 'AUTO BALL on: launch it and kick back' : 'AUTO BALL off: you have it');
+      break;
+    }
     case 'ghostToggle': game.ghostOn = !game.ghostOn; break;
     case 'saveRun': {
       const r = game.lastRun;
@@ -772,6 +791,7 @@ entitlements.onChange(() => { if (screen === 'menu') renderMenu(); });
     startPlay(courseById(q.get('play')!));
     if (q.get('launch')) setTimeout(() => { if (q.get('intro') !== '1') game.skipIntro(); game.launch(); }, 600);
     const at = Number(q.get('at'));
+    if (q.get('auto') === '1') game.setAuto(true);
     if (at > 0) setTimeout(() => { game.skipIntro(); game.launch(); game.run?.ball.placeAt(at, Number(q.get('v') ?? 18), 0, Number(q.get('branch') ?? 0)); game.camera.snap(); }, 700);
   }
   else if (q.get('preview')) openDetail(courseById(q.get('preview')!));

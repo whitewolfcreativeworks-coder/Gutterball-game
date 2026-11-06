@@ -7,6 +7,9 @@ import { buildWorld, World } from '../render/world';
 import { buildTrackGroup, updateMovingObstacles } from '../render/trackMesh';
 import { Finale, FINALE_FOR_WORLD } from '../finale/finale';
 import { PlungerLauncher, launchSpeed } from '../finale/launcher';
+import { ProPilot } from './proPilot';
+import { Ribbon, type LinePoint } from '../render/racingLine';
+import { BallPhysics } from '../physics/ball';
 import { TubeStreaks } from '../render/streaks';
 import { TubeThemes } from '../render/tubeThemes';
 import { FogExp2, Color } from 'three';
@@ -192,6 +195,9 @@ export class Game {
     this.scene.add(this.ballView.group);
     this.ghostView = new GhostView(this.run.ball.tune.radius);
     this.scene.add(this.ghostView.group);
+    this.scene.add(this.lineAhead.mesh, this.lineBehind.mesh);
+    this.predBall = undefined; this.predPts = []; this.trailPts = []; this.fallsSeen = 0; this.autoUsed = false;
+    this.lineAhead.hide(); this.lineBehind.hide();
     if (this.lastRun?.course !== course.id) { this.lastRun = null; this.ghost = null; }
     this.replay = null;
     this.autopilot = mode !== 'play' ? new Autopilot(this.track) : undefined;
@@ -247,6 +253,7 @@ export class Game {
     this.endFinale();
     this.replay = null;
     this.ghostRec.reset();
+    this.autoUsed = false; this.fallsSeen = 0; this.trailPts = []; this.predPts = []; this.pro = new ProPilot();
     // run again: race the ghost of your last finished run
     if (!keepGhost && this.lastRun) this.ghost = this.lastRun;
     this.camera.cam.fov = 80; this.camera.cam.updateProjectionMatrix();
@@ -317,6 +324,77 @@ export class Game {
     this.run?.launch();
   }
   stopReplay() { this.replay = null; }
+
+  // ---- AUTO BALL ----
+  /** A pro takes over after launch and shows the line: flip on or off at any time. */
+  auto = false;
+  /** Did Auto Ball drive any of this run? (Then it doesn't count as your best.) */
+  autoUsed = false;
+  private pro = new ProPilot();
+  private predBall?: BallPhysics;
+  private predPts: LinePoint[] = [];
+  private predTimer = 0;
+  private trailPts: LinePoint[] = [];
+  private trailTimer = 0;
+  private lineAhead = new Ribbon(140, 0.32);
+  private lineBehind = new Ribbon(100, 0.22);
+  private fallsSeen = 0;
+  /** What the pro is doing right now (for the HUD). */
+  get autoTrick() { return this.auto ? this.pro.trick : ''; }
+  setAuto(on: boolean) {
+    this.auto = on;
+    this.pro = new ProPilot();
+    this.predPts = []; this.trailPts = []; this.predTimer = 0;
+    if (!on) { this.lineAhead.hide(); this.lineBehind.hide(); }
+  }
+  /**
+   * Look ahead: copy the ball, let the pro drive the copy for ~1.8 s, and
+   * keep the path. The copy never changes the course (no pads lit, no boosts
+   * used), and the obstacle clock is put back afterwards.
+   */
+  private predictLine() {
+    if (!this.run || !this.courseGeo || !this.material) return;
+    const ball = this.run.ball;
+    if (!this.predBall) this.predBall = new BallPhysics(this.courseGeo, this.material, ball.tune);
+    const pb = this.predBall;
+    const times = this.courseGeo.all.map((t) => t.time);
+    pb.copyStateFrom(ball);
+    pb.predict = true;
+    const pilot = this.pro.clone();
+    const dt = 1 / 75;
+    const pts: LinePoint[] = [];
+    for (let k = 0; k < 135; k++) {
+      const inp = pilot.decide(pb, dt);
+      pb.step(dt, inp);
+      pb.events.length = 0;
+      if (!Number.isFinite(pb.p.x)) break;
+      if (k % 2 === 0) pts.push({ p: pb.p.clone(), speed: pb.v.length(), air: pb.airborne });
+    }
+    this.courseGeo.all.forEach((t, i) => { t.time = times[i]; });
+    this.predPts = pts;
+  }
+  private updateAutoVisuals(dt: number) {
+    if (!this.run) return;
+    const b = this.run.ball;
+    const live = this.auto && this.run.phase === 'running' && !this.finale && !this.intro && !this.replay;
+    if (!live) { this.lineAhead.hide(); this.lineBehind.hide(); return; }
+    this.predTimer -= dt;
+    if (this.predTimer <= 0) { this.predTimer = 0.22; this.predictLine(); }
+    // start the line at the point nearest the ball now (the look-ahead is a moment old)
+    let start = 0, bd = Infinity;
+    for (let i = 0; i < Math.min(30, this.predPts.length); i++) { const d = this.predPts[i].p.distanceToSquared(b.p); if (d < bd) { bd = d; start = i; } }
+    this.lineAhead.set(this.predPts, start, 'ahead');
+    this.trailTimer -= dt;
+    if (this.trailTimer <= 0) {
+      this.trailTimer = 1 / 30;
+      this.trailPts.push({ p: b.p.clone(), speed: b.v.length(), air: b.airborne });
+      if (this.trailPts.length > 100) this.trailPts.shift();
+    }
+    // (a respawn jump breaks the trail)
+    const last = this.trailPts[this.trailPts.length - 2];
+    if (last && last.p.distanceTo(b.p) > 20) this.trailPts = this.trailPts.slice(-1);
+    this.lineBehind.set(this.trailPts, 0, 'behind', 0.8);
+  }
   // ---- the plunger ----
   /** The pinball-style launcher every race starts with (null once you're away, or when it's off). */
   intro: PlungerLauncher | null = null;
@@ -369,7 +447,14 @@ export class Game {
     if (!this.run || !this.track || !this.ballView) return;
     this.time += dt;
     let input: BallInput;
-    if (this.mode === 'play') input = this.input.sample(dt);
+    if (this.mode === 'play') {
+      input = this.input.sample(dt);
+      // AUTO BALL: once the ball is away, the pro drives
+      if (this.auto && this.run.phase === 'running' && !this.intro && !this.replay && !this.paused) {
+        input = this.pro.decide(this.run.ball, dt);
+        this.autoUsed = true;
+      }
+    }
     else input = this.autopilot!.decide(this.run.ball);
     if (this.intro) {
       if (!this.paused) this.intro.update(dt);
@@ -436,6 +521,9 @@ export class Game {
     if (this.intro) this.intro.applyCamera(this.camera.cam);
     else if (this.finale) this.finale.applyCamera(this.camera.cam);
     else this.camera.update(b, b.track, dt);
+    if (this.run.falls !== this.fallsSeen) { if (this.run.falls > this.fallsSeen && this.auto) this.pro.crashed(b); this.fallsSeen = this.run.falls; }
+    this.camera.autoTarget = this.auto && this.run.phase === 'running' && !this.replay ? 1 : 0;
+    this.updateAutoVisuals(this.paused ? 0 : dt);
     this.streaks?.update(b.track, b.proj.s, b.v.length(), dt, this.time, 0.5 + 0.5 * this.speedFx);
     if (!this.intro && !this.finale) this.tubeThemes?.update(b, this.paused ? 0 : dt, this.time, this.mode === 'play' && !this.paused ? (k) => this.audio.themeSound(k) : undefined);
     // depth: inside a tube the far end falls away into darkness (fog to near-black in the world's colour)

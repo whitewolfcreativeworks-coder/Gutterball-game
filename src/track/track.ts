@@ -505,7 +505,7 @@ export class Track {
     return arr[i] + (arr[i + 1] - arr[i]) * u;
   }
 
-  private idx(s: number): number {
+  idx(s: number): number {
     return Math.max(0, Math.min(this.n - 1, Math.round(s / this.ds)));
   }
 
@@ -751,6 +751,11 @@ export class TrackProjector {
   constructor(private track: Track) {}
 
   reset(s: number) { this.hint = Math.round(s / this.track.ds); }
+  /** Take over another projector's state (same track). */
+  copyFrom(o: TrackProjector) {
+    this.hint = o.hint; this.s = o.s; this.x = o.x; this.y = o.y; this.along = o.along;
+    this.P.copy(o.P); this.T.copy(o.T); this.U.copy(o.U); this.R.copy(o.R);
+  }
 
   /** Global (coarse) search for the nearest sample — used when the ball teleports. */
   relocate(px: number, py: number, pz: number) {

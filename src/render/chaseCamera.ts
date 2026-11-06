@@ -39,6 +39,9 @@ export class ChaseCamera {
   private baseFov = 80;
   /** 0 tablet .. 1 smallest phones: a slightly tighter view so the ball and obstacles read bigger. */
   compact = 0;
+  /** Auto Ball: sit back and up a little, to show the line ahead. */
+  autoTarget = 0;
+  private autoK = 0;
   private freeK = 0;     // 0 = ride the track, 1 = follow the ball freely (it has left the channel)
   private freeDir = new Vector3(0, 0, -1);
 
@@ -97,11 +100,12 @@ export class ChaseCamera {
     desiredUp.applyQuaternion(new Quaternion().setFromAxisAngle(this.T, lean));
 
     // --- position: low and close behind along the track ---
-    const back = 6.6 - 0.6 * this.compact + Math.min(3.5, speed * 0.07);
+    this.autoK += (this.autoTarget - this.autoK) * Math.min(1, dt * 1.5);
+    const back = 6.6 - 0.6 * this.compact + Math.min(3.5, speed * 0.07) + 4 * this.autoK;
     this.airPull += ((b.airborne ? 1 : 0) - this.airPull) * Math.min(1, dt * 2.5);
     const targetDip = (-this.vertG * 0.45 + this.airPull * 1.2) * fx;
     this.dip += (targetDip - this.dip) * Math.min(1, dt * 6);
-    const height = 3.0 + this.dip;
+    const height = 3.0 + this.dip + 2.6 * this.autoK;
     track.frameAtS(Math.max(0, s - back), this.P2, this.T2, this.U2, this.R2);
     const lat0 = b.proj.x * 0.6;
     const vert = Math.max(0, b.proj.y - 0.75) * 0.55;
@@ -114,7 +118,7 @@ export class ChaseCamera {
     }
 
     // --- look ahead along the course ---
-    const ahead = Math.min(16, 6 + speed * 0.3);
+    const ahead = Math.min(16, 6 + speed * 0.3) + 8 * this.autoK;
     track.frameAtS(s + ahead, this.P2, this.T2, this.U2, this.R2);
     const aheadPt = this.P2.clone().addScaledVector(this.U2, 0.9).addScaledVector(this.R2, b.proj.x * 0.3);
     if (tk > 0.001) {

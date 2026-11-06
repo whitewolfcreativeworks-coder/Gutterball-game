@@ -184,6 +184,30 @@ export class BallPhysics {
     this.I = 0.4 * this.tune.mass * this.tune.radius * this.tune.radius;
   }
 
+  /**
+   * A look-ahead ball (Auto Ball's racing line): it simulates where the ball
+   * is going but never changes the course, so no pads light and no hologram
+   * boosts are used up. The caller restores the obstacle clock afterwards.
+   */
+  predict = false;
+  private static readonly NO_COPY = new Set(['tracks', 'projs', 'proj', 'track', 'tune', 'material', 'I', 'events', 'junctions', 'predict']);
+  /** Become an exact copy of another ball on the same course (for look-ahead). */
+  copyStateFrom(o: BallPhysics) {
+    const self = this as unknown as Record<string, unknown>, src = o as unknown as Record<string, unknown>;
+    for (const k of Object.keys(src)) {
+      if (BallPhysics.NO_COPY.has(k)) continue;
+      const a = src[k], b = self[k];
+      if (a instanceof Vector3 && b instanceof Vector3) b.copy(a);
+      else if (a instanceof Quaternion && b instanceof Quaternion) b.copy(a);
+      else if (Array.isArray(a)) self[k] = a.map((x) => (Array.isArray(x) ? [...x] : x));
+      else if (a === null || typeof a !== 'object') self[k] = a;
+    }
+    o.projs.forEach((pj, i) => this.projs[i].copyFrom(pj));
+    this.track = this.tracks[this.activeIndex];
+    this.proj = this.projs[this.activeIndex];
+    this.events.length = 0;
+  }
+
   /** Place the ball at rest (or with a speed) on the floor at arc length s. */
   placeAt(s: number, speed = 0, x = 0, trackIndex = 0) {
     const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
@@ -288,7 +312,7 @@ export class BallPhysics {
   }
 
   step(dt: number, input: BallInput) {
-    for (const t of this.tracks) t.time += dt;
+    for (const t of this.tracks) t.time += dt; // (a look-ahead ball's caller puts the clock back)
     const tu = this.tune;
     const m = tu.mass;
     const r = tu.radius;
@@ -604,7 +628,7 @@ export class BallPhysics {
     // holograms. Rolling through a hologram gives a short speed boost.
     {
       const tr = this.track, pq = this.proj;
-      if (tr.pads.length) {
+      if (tr.pads.length && !this.predict) {
         const k = tr.padAt(pq.s, pq.x, pq.y, r);
         if (k >= 0 && !tr.padHit[k]) { tr.triggerPad(k); this.emit('TRIGGER_PAD', 1, tr.pads[k].obs.length); }
         const o = tr.hologramAt(pq.s, pq.x, pq.y, r);
@@ -685,6 +709,9 @@ export class BallPhysics {
       // a branch far away (or beyond its ends) can't be the one we're on
       if (Math.abs(pr.along) > 3 || Math.abs(pr.x) > 30 || Math.abs(pr.y) > 40) continue;
       let d = this.tracks[i].sdfLocal(pr.s, pr.x, pr.y, false, true);
+      // flying over a gutter's gap: you still belong to that gutter (its landing is just
+      // ahead), even though there's no surface right under you to measure
+      if (this.tracks[i].isGap(pr.s) && Math.abs(pr.x) < this.tracks[i].halfWidthAt(pr.s) + 1.5 && pr.y > -8 && pr.y < 25) d = Math.min(d, 0.5);
       // being inside a track's hollow beats being merely near its outside
       if (this.tracks[i].channelDepthLocal(pr.s, pr.x, pr.y) < -0.05) d += 4;
       if (i === this.activeIndex) d -= 0.3;
