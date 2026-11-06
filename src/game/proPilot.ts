@@ -15,7 +15,7 @@ import { Vector3 } from 'three';
  *    after big air.
  * `trick` names what it's doing (for the HUD).
  */
-export type Trick = '' | 'PUSH' | 'TURBO' | 'PAD' | 'HOLOGRAM' | 'AIR' | 'GAP' | 'BEAM' | 'GRIP' | 'DODGE' | 'BOOST' | 'CARVE';
+export type Trick = '' | 'PUSH' | 'TURBO' | 'PAD' | 'HOLOGRAM' | 'AIR' | 'GAP' | 'BEAM' | 'GRIP' | 'DODGE' | 'GAS' | 'CARVE';
 
 export class ProPilot {
   private lastTargetX = 0;
@@ -30,6 +30,8 @@ export class ProPilot {
    * instead of fought. Everything still respects the look-ahead safe speed.
    */
   pace = 0.6;
+  /** INSANE: flat out everywhere (the ball runs INSANE_TUNING); the beam and the net catch the rest. */
+  insane = false;
   // after a crash it rides carefully for a while (so one mistake never repeats)
   private lastP = new Vector3(NaN, 0, 0);
   private lastTrack = -1;
@@ -42,7 +44,7 @@ export class ProPilot {
     const c = new ProPilot();
     c.lastTargetX = this.lastTargetX; c.pushT = this.pushT; c.airT = this.airT; c.padK = this.padK;
     c.trick = this.trick; c.trickHold = this.trickHold;
-    c.lastP.copy(this.lastP); c.lastTrack = this.lastTrack; c.cautiousTo = this.cautiousTo; c.pace = this.pace;
+    c.lastP.copy(this.lastP); c.lastTrack = this.lastTrack; c.cautiousTo = this.cautiousTo; c.pace = this.pace; c.insane = this.insane;
     return c;
   }
 
@@ -61,16 +63,16 @@ export class ProPilot {
    */
   safeSpeed(ball: BallPhysics, horizon: number): number {
     const tr = ball.track, s = ball.proj.s;
-    let v = 80;
+    let v = this.insane ? 160 : 80;
     for (let d = 0; d < horizon && v > 20; d += 5) {
       const q = s + d;
       if (q > tr.length) break;
       const i0 = tr.idx(q - 6), i1 = tr.idx(q + 6);
       const dx = tr.T[i1 * 3] - tr.T[i0 * 3], dy = tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], dz = tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2];
       const kappa = Math.hypot(dx, dy, dz) / 12;
-      if (kappa > 1e-4 && tr.tubeAt(q) < 0.5) v = Math.min(v, Math.sqrt((14 + 14 * this.pace) / kappa) + d * 0.08);
-      if (tr.isGap(q)) v = Math.min(v, 46 + d * 0.05);
-      if (tr.openSky[tr.idx(q)]) v = Math.min(v, 44 + d * 0.05);
+      if (kappa > 1e-4 && tr.tubeAt(q) < 0.5) v = Math.min(v, Math.sqrt((this.insane ? 140 : 14 + 34 * this.pace) / kappa) + d * 0.08);
+      if (tr.isGap(q)) v = Math.min(v, (this.insane ? 90 : 46) + d * 0.05);
+      if (tr.openSky[tr.idx(q)]) v = Math.min(v, (this.insane ? 85 : 44 + 10 * this.pace) + d * 0.05);
     }
     return v;
   }
@@ -180,17 +182,19 @@ export class ProPilot {
       const i0 = tr.idx(s), i1 = tr.idx(s + 40);
       return tr.T[i0 * 3] * tr.T[i1 * 3] + tr.T[i0 * 3 + 1] * tr.T[i1 * 3 + 1] + tr.T[i0 * 3 + 2] * tr.T[i1 * 3 + 2] > 0.96;
     })();
-    const safeNear = Math.min(careful ? 0 : 99, this.safeSpeed(ball, Math.max(120, speed * 3.5)));
-    const turboOk = !careful && this.pace >= 0.4 && this.safeSpeed(ball, 480) >= 70 - 12 * this.pace && straight && !tube;
-    const pushCap = 26 + 26 * this.pace;
+    const safeNear = Math.min(careful && !this.insane ? 0 : 999, this.safeSpeed(ball, Math.max(120, speed * 3.5)));
+    const turboOk = this.insane ? straight && !tube : !careful && this.pace >= 0.4 && this.safeSpeed(ball, 480) >= 70 - 15 * this.pace && straight && !tube;
+    const pushCap = this.insane ? 110 : 26 + 30 * this.pace;
     if (ball.contact && climb === 0 && !magnet && this.pace >= 0.15) {
       if (ball.turboArmed && turboOk) { push = 1; this.say('TURBO', 1.4); }
       else if (ball.pushCombo >= 3 && ball.turboTime <= 0 && turboOk) magnet = true; // charge the booster
       else if (this.pushT <= 0 && speed < Math.min(pushCap, safeNear - 3) && ball.turboTime <= 0) {
         push = Math.min(1, 0.5 + this.pace); this.pushT = 0.6 - 0.25 * this.pace; if (!this.trick) this.say('PUSH', 0.4);
       }
-      // ripping: hold the booster on clear stretches below the safe speed (keep a reserve for saves)
-      else if (this.pace >= 0.6 && !tube && speed < safeNear - 5 && ball.magnetEnergy > 0.4 && blocked(pr.x) < 0) { magnet = true; this.say('BOOST', 0.5); }
+      // ripping: the beam is the throttle. Give it gas whenever it's safe, in bursts
+      // (lift off to let the energy recover, keep a little in reserve for saves)
+      else if ((this.insane || this.pace >= 0.5) && speed < safeNear - (this.insane ? 0 : 4) && blocked(pr.x) < 0
+        && ball.magnetEnergy > (this.insane ? 0.12 : ball.magnetActive ? 0.18 : 0.32)) { magnet = true; this.say('GAS', 0.4); }
     }
     if (magnet && ball.magnetEnergy < 0.08 && !ball.airborne) magnet = false;
 

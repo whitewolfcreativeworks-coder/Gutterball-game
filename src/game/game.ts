@@ -9,7 +9,7 @@ import { Finale, FINALE_FOR_WORLD } from '../finale/finale';
 import { PlungerLauncher, launchSpeed } from '../finale/launcher';
 import { ProPilot } from './proPilot';
 import { Ribbon, type LinePoint } from '../render/racingLine';
-import { BallPhysics } from '../physics/ball';
+import { BallPhysics, DEFAULT_TUNING, INSANE_TUNING } from '../physics/ball';
 import { TubeStreaks } from '../render/streaks';
 import { TubeThemes } from '../render/tubeThemes';
 import { FogExp2, Color } from 'three';
@@ -197,6 +197,7 @@ export class Game {
     this.scene.add(this.ghostView.group);
     this.scene.add(this.lineAhead.mesh, this.lineBehind.mesh);
     this.predBall = undefined; this.predPts = []; this.trailPts = []; this.fallsSeen = 0; this.autoUsed = false;
+    this.applyTuning();
     this.lineAhead.hide(); this.lineBehind.hide();
     if (this.lastRun?.course !== course.id) { this.lastRun = null; this.ghost = null; }
     this.replay = null;
@@ -253,7 +254,7 @@ export class Game {
     this.endFinale();
     this.replay = null;
     this.ghostRec.reset();
-    this.autoUsed = false; this.fallsSeen = 0; this.trailPts = []; this.predPts = []; this.pro = new ProPilot(); this.pro.pace = this.autoPace;
+    this.autoUsed = false; this.fallsSeen = 0; this.trailPts = []; this.predPts = []; this.pro = new ProPilot(); this.pro.pace = this.autoPace; this.pro.insane = this.insane;
     // run again: race the ghost of your last finished run
     if (!keepGhost && this.lastRun) this.ghost = this.lastRun;
     this.camera.cam.fov = 80; this.camera.cam.updateProjectionMatrix();
@@ -348,10 +349,29 @@ export class Game {
     this.pro.pace = this.autoPace;
     try { localStorage.setItem('gb.autoPace', String(this.autoPace)); } catch { /* private mode */ }
   }
+  /** INSANE: Auto Ball with the physics turned loose (never a counted run). */
+  insane = false;
+  setInsane(on: boolean) {
+    this.insane = on;
+    if (on && !this.auto) this.setAuto(true);
+    this.pro.insane = on;
+    this.applyTuning();
+  }
+  /** The ball runs INSANE_TUNING only while INSANE Auto Ball is on; normal physics otherwise. */
+  private applyTuning() {
+    if (!this.run) return;
+    const t = this.run.ball.tune as unknown as Record<string, unknown>;
+    const src = { ...DEFAULT_TUNING, ...(this.insane && this.auto ? INSANE_TUNING : {}) } as unknown as Record<string, unknown>;
+    for (const k of Object.keys(src)) { const v = src[k]; t[k] = Array.isArray(v) ? [...v] : v; }
+    this.predBall = undefined; // the look-ahead copies the new physics
+  }
   setAuto(on: boolean) {
     this.auto = on;
+    if (!on && this.insane) { this.insane = false; }
     this.pro = new ProPilot();
     this.pro.pace = this.autoPace;
+    this.pro.insane = this.insane;
+    this.applyTuning();
     this.predPts = []; this.trailPts = []; this.predTimer = 0;
     if (!on) { this.lineAhead.hide(); this.lineBehind.hide(); }
   }
@@ -369,14 +389,15 @@ export class Game {
     pb.copyStateFrom(ball);
     pb.predict = true;
     const pilot = this.pro.clone();
-    const dt = 1 / 75;
+    const dt = this.insane ? 1 / 120 : 1 / 75;
+    const steps = this.insane ? 170 : 135;
     const pts: LinePoint[] = [];
-    for (let k = 0; k < 135; k++) {
+    for (let k = 0; k < steps; k++) {
       const inp = pilot.decide(pb, dt);
       pb.step(dt, inp);
       pb.events.length = 0;
       if (!Number.isFinite(pb.p.x)) break;
-      if (k % 2 === 0) pts.push({ p: pb.p.clone(), speed: pb.v.length(), air: pb.airborne });
+      if (k % (this.insane ? 3 : 2) === 0) pts.push({ p: pb.p.clone(), speed: pb.v.length(), air: pb.airborne });
     }
     this.courseGeo.all.forEach((t, i) => { t.time = times[i]; });
     this.predPts = pts;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Course } from '../src/track/track';
 import { MATERIALS } from '../src/physics/materials';
-import { BallPhysics } from '../src/physics/ball';
+import { BallPhysics, INSANE_TUNING } from '../src/physics/ball';
 import { Run } from '../src/game/run';
 import { Autopilot } from '../src/game/autopilot';
 import { ProPilot } from '../src/game/proPilot';
@@ -41,13 +41,14 @@ describe('AUTO BALL (the pro driver)', () => {
     expect(totalTurbos).toBeGreaterThan(3);
   });
 
-  it('the pace slider: rip runs faster than chill everywhere, and both always finish', () => {
+  it('chill < rip < INSANE: each clearly faster, and all three always finish', () => {
+    let sum = [0, 0, 0];
     for (const c of CATALOG) {
       const t: number[] = [];
-      for (const pace of [0, 1]) {
+      for (const mode of [0, 1, 2]) {
         const course = new Course(c.layout());
-        const run = new Run(course, MATERIALS[c.materialId]);
-        const pp = new ProPilot(); pp.pace = pace;
+        const run = new Run(course, MATERIALS[c.materialId], mode === 2 ? INSANE_TUNING : {});
+        const pp = new ProPilot(); pp.pace = mode === 0 ? 0 : 1; pp.insane = mode === 2;
         run.launch(); run.ball.v.addScaledVector(run.ball.proj.T, 20);
         for (let f = 0; f < 60 * 300 && run.phase !== 'finished'; f++) {
           const f0 = run.falls;
@@ -55,13 +56,18 @@ describe('AUTO BALL (the pro driver)', () => {
           if (run.falls > f0) pp.crashed(run.ball);
           run.pendingEvents.length = 0;
         }
-        expect(run.phase, `${c.id} pace ${pace}`).toBe('finished');
-        expect(run.falls, `${c.id} pace ${pace}`).toBeLessThanOrEqual(2);
+        expect(run.phase, `${c.id} mode ${mode}`).toBe('finished');
+        expect(run.falls, `${c.id} mode ${mode}`).toBeLessThanOrEqual(3);
         t.push(run.finishTime);
       }
-      expect(t[1], c.id).toBeLessThan(t[0]);
+      expect(t[1], `${c.id}: rip beats chill`).toBeLessThan(t[0]);
+      expect(t[2], `${c.id}: insane beats rip`).toBeLessThan(t[1] * 0.85);
+      sum = sum.map((x, k) => x + t[k]);
     }
-  }, 600000);
+    // overall: rip at least 20% quicker than chill, insane at least 30% quicker than rip
+    expect(sum[1]).toBeLessThan(sum[0] * 0.8);
+    expect(sum[2]).toBeLessThan(sum[1] * 0.7);
+  }, 900000);
 
   it('the look-ahead never changes the course', () => {
     const c = CATALOG.find((x) => x.id === 'wood')!;

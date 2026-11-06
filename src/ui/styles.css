@@ -252,3 +252,9 @@ select { font: inherit; color: var(--ink); background: rgba(255,255,255,0.08); b
 .autopace input { width: 96px; accent-color: #7fe6ff; }
 :root[data-screen=mini] .autopace { top: calc(var(--safe-t) + 120px); }
 :root[data-screen=mini] .autopace input { width: 74px; }
+
+.insanebtn { pointer-events: auto !important; position: absolute; top: calc(var(--safe-t) + 96px); left: 96px; z-index: 5; padding: 6px 11px; border-radius: 999px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,90,120,0.5); color: #ffb3c2; font: 900 12px var(--mono); letter-spacing: 0.12em; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.insanebtn.on { color: #fff; background: linear-gradient(90deg, rgba(255,40,90,0.75), rgba(255,170,30,0.75)); border-color: #ffd36b; box-shadow: 0 0 18px rgba(255,80,80,0.7); animation: insanepulse 0.6s ease-in-out infinite; }
+@keyframes insanepulse { 50% { box-shadow: 0 0 30px rgba(255,170,30,0.9); } }
+.autopace.dim { opacity: 0.35; }
+:root[data-screen=mini] .insanebtn { top: calc(var(--safe-t) + 88px); left: 86px; font-size: 11px; padding: 5px 9px; }

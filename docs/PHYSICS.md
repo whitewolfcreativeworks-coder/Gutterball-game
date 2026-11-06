@@ -168,3 +168,33 @@ Now and then a tube puts on a show (`src/render/tubeThemes.ts`):
 - **Pinball:** JACKPOT, 1000, EXTRA BALL and similar holograms, with chimes.
 
 At most three tubes per course get a theme (about one in three tubes, 90 m or longer), picked deterministically and varied by world. The plain fractal tubes stay the main event. All the art is drawn in code.
+
+## The throttle (v9)
+
+Holding the tractor beam on the track is the throttle, a twist of a dirt bike's grip.
+
+| Setting | Was | Now |
+|---|---|---|
+| Beam push on the track | 14 m/s² | 24 m/s² |
+| Beam fades out near | 62 m/s | 80 m/s |
+| Open-gutter cruise speed | 46 m/s | 54 m/s |
+| Brake above cruise | 1.6× the excess | 0.9× the excess |
+
+The brake above cruise never applies while you're on the gas. Energy still drains while you hold it, so you ride it in bursts: give it gas on the straights, lift off before the corner, and let it recharge.
+
+**INSANE** (Auto Ball only, never a counted run) swaps in `INSANE_TUNING`:
+- a far stronger and longer-lasting throttle: 46 m/s² up to 150 m/s, with a third of the drain
+- the cruise and tube caps opened right out
+- harder pushes and higher jumps
+
+The pro then runs flat out with only the loosest safe-speed check, and the beam and safety net catch the rest.
+
+Measured across the twelve worlds (the averages are approximate):
+
+| Mode | Average speed | Top speed |
+|---|---|---|
+| Chill | about 165 km/h | |
+| Rip | about 235 km/h | 400–500 km/h |
+| Insane | about 400 km/h | up to about 860 km/h |
+
+Insane takes about 2.5× less time than Chill, and every course finishes in all three modes.

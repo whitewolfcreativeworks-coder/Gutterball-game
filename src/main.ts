@@ -143,6 +143,7 @@ hud.innerHTML = `
   <button class="skipbtn" data-act="skipFinale" style="display:none">Skip ›</button>
   <button class="autobtn" data-act="autoToggle" style="display:none" aria-pressed="false"><span class="dot"></span>AUTO</button>
   <label class="autopace" style="display:none"><span>CHILL</span><input type="range" min="0" max="1" step="0.05" data-autopace aria-label="Auto Ball pace"><span>RIP</span></label>
+  <button class="insanebtn" data-act="insaneToggle" style="display:none" aria-pressed="false">INSANE</button>
   <div class="trick"></div>
   <div class="musicdock"><button class="musicbtn" data-act="musicMenu" aria-label="Music">♪</button><div class="musicmenu"></div></div>
   <div class="launch"><div class="arrow">↑</div><div class="txt">Swipe up to launch</div><div class="sub2"></div><button class="ghostbtn" data-act="ghostToggle" style="display:none"></button></div>
@@ -243,6 +244,11 @@ game.cb.onHud = (s: HudState) => {
     ab.setAttribute('aria-pressed', String(game.auto));
     const ap = $('.autopace', hud);
     ap.style.display = game.auto && s.mode === 'play' && !game.replay ? 'flex' : 'none';
+    ap.classList.toggle('dim', game.insane);
+    const ib = $('.insanebtn', hud);
+    ib.style.display = s.mode === 'play' && !game.replay ? 'block' : 'none';
+    ib.classList.toggle('on', game.insane);
+    ib.setAttribute('aria-pressed', String(game.insane));
     const tk = $('.trick', hud);
     const trick = s.phase === 'running' ? game.autoTrick : '';
     if (tk.textContent !== trick) { tk.textContent = trick; tk.classList.toggle('show', !!trick); }
@@ -669,6 +675,11 @@ ui.addEventListener('click', async (e) => {
     case 'musicMenu': { const d = $('.musicdock', hud); d.classList.toggle('open'); renderMusicMenu(); break; }
     case 'genre': { settings.musicGenre = id as Genre; audio.setGenre(id as Genre); saveSettings(); renderMusicMenu(); break; }
     case 'resume': resume(); break;
+    case 'insaneToggle': {
+      game.setInsane(!game.insane);
+      toast(game.insane ? 'INSANE: physics off the leash. Launch it and hold on' : 'INSANE off');
+      break;
+    }
     case 'autoToggle': {
       game.setAuto(!game.auto);
       toast(game.auto ? 'AUTO BALL on: launch it and kick back' : 'AUTO BALL off: you have it');
@@ -795,6 +806,7 @@ entitlements.onChange(() => { if (screen === 'menu') renderMenu(); });
     if (q.get('launch')) setTimeout(() => { if (q.get('intro') !== '1') game.skipIntro(); game.launch(); }, 600);
     const at = Number(q.get('at'));
     if (q.get('auto') === '1') game.setAuto(true);
+    if (q.get('insane') === '1') game.setInsane(true);
     if (at > 0) setTimeout(() => { game.skipIntro(); game.launch(); game.run?.ball.placeAt(at, Number(q.get('v') ?? 18), 0, Number(q.get('branch') ?? 0)); game.camera.snap(); }, 700);
   }
   else if (q.get('preview')) openDetail(courseById(q.get('preview')!));

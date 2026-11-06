@@ -119,3 +119,8 @@ Tap **AUTO** at any time, before the launch or mid-run, and a pro driver (`src/g
   - turns carved high on the outside wall instead of fought
 
 Every pace still respects the look-ahead safe speed. On every world Rip finishes faster than Chill, and both always finish.
+
+**Rip and INSANE (v9).**
+- **Rip** treats the beam as the throttle. It gives gas in bursts whenever it's safe, keeping a reserve for saves, and trusts the banked walls to carry far more speed through turns.
+- **INSANE** (the button beside AUTO) turns the physics loose: no governors, a huge throttle, and flat out everywhere.
+- Labels: GAS is the throttle; CARVE is riding the outside wall.

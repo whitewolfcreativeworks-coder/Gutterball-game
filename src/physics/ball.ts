@@ -63,6 +63,17 @@ export interface BallTuning {
   turboChargeTime: number;  // seconds holding the booster (with a full combo) to arm turbo
 }
 
+/**
+ * INSANE physics (Auto Ball's INSANE mode only): the throttle turned way
+ * up and the speed governors opened right out, for the most spectacular
+ * runs the gutter can carry. Never used for a counted run.
+ */
+export const INSANE_TUNING: Partial<BallTuning> = {
+  magnetBoostAccel: 46, magnetBoostCap: 150, magnetDrain: 0.035, magnetRegen: 0.6,
+  gutterCruise: 120, tubeFlowCap: 130, tubeFlowAccel: 46,
+  driveAccel: [0, 6, 10], driveCap: [0, 70, 110], jumpSpeed: 11, magnetAccel: 160,
+};
+
 export const DEFAULT_TUNING: BallTuning = {
   radius: 1.15,
   mass: 1,
@@ -77,8 +88,8 @@ export const DEFAULT_TUNING: BallTuning = {
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
   magnetPressG: 4.2,
-  magnetBoostAccel: 14,
-  magnetBoostCap: 62,
+  magnetBoostAccel: 24,   // (v9) the beam on the track is your throttle: give it gas
+  magnetBoostCap: 80,
   magnetAccel: 115,
   magnetRange: 60,
   magnetDrain: 0.1,
@@ -86,7 +97,7 @@ export const DEFAULT_TUNING: BallTuning = {
   magnetMinRestart: 0.05,
   tubeFlowAccel: 24,
   tubeFlowCap: 72,
-  gutterCruise: 46,
+  gutterCruise: 54,
   turboDuration: 7,
   turboChargeTime: 1.0,
 };
@@ -447,7 +458,7 @@ export class BallPhysics {
         acc.addScaledVector(pr.T, tu.tubeFlowAccel * (turboK > 1 ? 1.6 : 1) * fade * Math.min(1, (tk - 0.3) / 0.5));
       } else if (vf > tu.gutterCruise * turboK && !this.boosting) {
         // back out in the open gutter the air brakes ease you down to cruising speed (~1 s)
-        acc.addScaledVector(pr.T, -(vf - tu.gutterCruise * turboK) * 1.6);
+        acc.addScaledVector(pr.T, -(vf - tu.gutterCruise * turboK) * 0.9);
       }
       // turbo drives you on toward double cruising speed in the open too
       if (turboK > 1 && tk <= 0.3) {

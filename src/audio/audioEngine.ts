@@ -307,7 +307,7 @@ export class AudioEngine {
     this.wind!.filt.frequency.setTargetAtTime(250 + sp * (tubeAir ? 48 : 35), t, 0.08);
     // --- magnet hum ---
     // magnet hum; when boosting on the track it becomes a rising thrust tone tied to speed
-    const mag = st.magnetActive ? (st.boosting ? 0.22 : 0.12 + 0.16 * st.magnetForce) : 0;
+    const mag = st.magnetActive ? (st.boosting ? 0.3 : 0.12 + 0.16 * st.magnetForce) : 0; // (v9) the throttle: you hear the gas
     this.hum!.gain.gain.setTargetAtTime(mag, t, 0.04);
     this.hum!.filt.frequency.setTargetAtTime(st.boosting ? 900 + sp * 45 : 350 + st.magnetForce * 1200, t, 0.05);
     this.hum!.o1.frequency.setTargetAtTime(st.boosting ? 60 + sp * 2.2 : 52 + st.magnetForce * 14, t, 0.05);
