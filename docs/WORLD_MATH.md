@@ -403,3 +403,28 @@ Every course is checked so that no two passes of the gutter come within each oth
   - no route overlaps another gutter
   - an air transfer from Wood's main gutter lands on the Ridge Route
   - the ball never passes *through* a wall (flying out over the top is allowed)
+
+## Round 8: flow, not whoop-de-doos
+
+Watching Auto Ball made the courses easy to study, and the bumps stood out. BMX humps and quick jinks make sense with handlebars, not for a ball whose whole game is carrying speed down a line. So:
+
+| Element | Now |
+|---|---|
+| `rollers`, `hops` | Smooth descents of the same length; the fractals still pulse |
+| `tabletop` | A flowing descent |
+| `wave` | Keeps its banked sweep without the climb-and-drop |
+| Sand's dunes | Glide down each face |
+| `gullyJump` | Kicker softened from 11° to 5° |
+
+Lengths are unchanged, so labels, obstacles, signs and hints don't move.
+
+The flow limits are tighter everywhere:
+
+| Limit | Was | Now |
+|---|---|---|
+| Turn radius | 32 m | 45 m |
+| Crest radius | 30 m | 60 m |
+| Dip radius | 22 m | 40 m |
+| Bank rate | 2.5°/m | 2.0°/m |
+
+Deliberate set pieces are marked `exact` to keep their solved geometry, for example the High Road launch ramp and the High Road itself, which has to land back over the main gutter.

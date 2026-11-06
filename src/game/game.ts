@@ -253,7 +253,7 @@ export class Game {
     this.endFinale();
     this.replay = null;
     this.ghostRec.reset();
-    this.autoUsed = false; this.fallsSeen = 0; this.trailPts = []; this.predPts = []; this.pro = new ProPilot();
+    this.autoUsed = false; this.fallsSeen = 0; this.trailPts = []; this.predPts = []; this.pro = new ProPilot(); this.pro.pace = this.autoPace;
     // run again: race the ghost of your last finished run
     if (!keepGhost && this.lastRun) this.ghost = this.lastRun;
     this.camera.cam.fov = 80; this.camera.cam.updateProjectionMatrix();
@@ -341,9 +341,17 @@ export class Game {
   private fallsSeen = 0;
   /** What the pro is doing right now (for the HUD). */
   get autoTrick() { return this.auto ? this.pro.trick : ''; }
+  /** Auto Ball pace: 0 = chill (study the line) .. 1 = rip. */
+  autoPace = (() => { try { const v = Number(localStorage.getItem('gb.autoPace')); return Number.isFinite(v) && localStorage.getItem('gb.autoPace') !== null ? v : 0.6; } catch { return 0.6; } })();
+  setAutoPace(v: number) {
+    this.autoPace = Math.max(0, Math.min(1, v));
+    this.pro.pace = this.autoPace;
+    try { localStorage.setItem('gb.autoPace', String(this.autoPace)); } catch { /* private mode */ }
+  }
   setAuto(on: boolean) {
     this.auto = on;
     this.pro = new ProPilot();
+    this.pro.pace = this.autoPace;
     this.predPts = []; this.trailPts = []; this.predTimer = 0;
     if (!on) { this.lineAhead.hide(); this.lineBehind.hide(); }
   }

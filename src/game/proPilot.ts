@@ -15,13 +15,21 @@ import { Vector3 } from 'three';
  *    after big air.
  * `trick` names what it's doing (for the HUD).
  */
-export type Trick = '' | 'PUSH' | 'TURBO' | 'PAD' | 'HOLOGRAM' | 'AIR' | 'GAP' | 'BEAM' | 'GRIP' | 'DODGE';
+export type Trick = '' | 'PUSH' | 'TURBO' | 'PAD' | 'HOLOGRAM' | 'AIR' | 'GAP' | 'BEAM' | 'GRIP' | 'DODGE' | 'BOOST' | 'CARVE';
 
 export class ProPilot {
   private lastTargetX = 0;
   private pushT = 0;
   private airT = 0;
   private padK = -1;
+  /**
+   * PACE, 0 = chill .. 1 = rip. Chill rolls the line calmly (no pushing, no
+   * showing off), good for studying a course. Rip runs it like a racer:
+   * harder pushes and turbo, the booster held on clear stretches, air then
+   * an early beam back down, and turns carved high on the outside wall
+   * instead of fought. Everything still respects the look-ahead safe speed.
+   */
+  pace = 0.6;
   // after a crash it rides carefully for a while (so one mistake never repeats)
   private lastP = new Vector3(NaN, 0, 0);
   private lastTrack = -1;
@@ -34,7 +42,7 @@ export class ProPilot {
     const c = new ProPilot();
     c.lastTargetX = this.lastTargetX; c.pushT = this.pushT; c.airT = this.airT; c.padK = this.padK;
     c.trick = this.trick; c.trickHold = this.trickHold;
-    c.lastP.copy(this.lastP); c.lastTrack = this.lastTrack; c.cautiousTo = this.cautiousTo;
+    c.lastP.copy(this.lastP); c.lastTrack = this.lastTrack; c.cautiousTo = this.cautiousTo; c.pace = this.pace;
     return c;
   }
 
@@ -60,7 +68,7 @@ export class ProPilot {
       const i0 = tr.idx(q - 6), i1 = tr.idx(q + 6);
       const dx = tr.T[i1 * 3] - tr.T[i0 * 3], dy = tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], dz = tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2];
       const kappa = Math.hypot(dx, dy, dz) / 12;
-      if (kappa > 1e-4 && tr.tubeAt(q) < 0.5) v = Math.min(v, Math.sqrt(22 / kappa) + d * 0.08);
+      if (kappa > 1e-4 && tr.tubeAt(q) < 0.5) v = Math.min(v, Math.sqrt((14 + 14 * this.pace) / kappa) + d * 0.08);
       if (tr.isGap(q)) v = Math.min(v, 46 + d * 0.05);
       if (tr.openSky[tr.idx(q)]) v = Math.min(v, 44 + d * 0.05);
     }
@@ -118,7 +126,7 @@ export class ProPilot {
 
     // ---- trigger pads: climb the wall to roll over the next one ----
     let climb = 0;
-    if (!tube && !gapAhead && !careful) {
+    if (!tube && !gapAhead && !careful && this.pace >= 0.25) {
       for (let pk = 0; pk < tr.pads.length; pk++) {
         if (tr.padHit[pk]) continue;
         const pd = tr.pads[pk], ds = pd.s - s;
@@ -141,7 +149,7 @@ export class ProPilot {
     for (let d = 0; d < speed * 0.3; d += 1) if (tr.isGap(s + d)) { jump = true; this.say('GAP'); break; }
     if (blocked(pr.x) >= 0 && blocked(pr.x) < speed * 0.3 && bestScore < 100) jump = true;
     // air over a crest: the gutter drops away ahead, nothing closed or solid coming up
-    if (!jump && !careful && climb === 0 && ball.contact && this.airT <= 0 && speed > 24 && !tube && Math.abs(pr.x) < W * 0.4) {
+    if (!jump && !careful && this.pace >= 0.5 && climb === 0 && ball.contact && this.airT <= 0 && speed > 24 && !tube && Math.abs(pr.x) < W * 0.4) {
       const i0 = tr.idx(s), i1 = tr.idx(s + 10);
       const dT = new Vector3(tr.T[i1 * 3] - tr.T[i0 * 3], tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]);
       const drop = dT.dot(pr.U);
@@ -163,7 +171,8 @@ export class ProPilot {
     // (never over a gap: the beam would pull you down into it. Wait till you're across.)
     let overGap = false;
     for (let d = -4; d < 30; d += 2) if (tr.isGap(s + d)) { overGap = true; break; }
-    if (ball.airborne && ball.airborneTime > 0.35 && climb === 0 && !overGap) { magnet = true; this.say('BEAM', 0.5); }
+    // (ripping: beam back down sooner. Air is slow, the gutter is fast)
+    if (ball.airborne && ball.airborneTime > 0.4 - 0.25 * this.pace && climb === 0 && !overGap) { magnet = true; this.say('BEAM', 0.5); }
 
     // ---- speed: swipe pushes, and TURBO on long open stretches ----
     let push = 0;
@@ -172,11 +181,16 @@ export class ProPilot {
       return tr.T[i0 * 3] * tr.T[i1 * 3] + tr.T[i0 * 3 + 1] * tr.T[i1 * 3 + 1] + tr.T[i0 * 3 + 2] * tr.T[i1 * 3 + 2] > 0.96;
     })();
     const safeNear = Math.min(careful ? 0 : 99, this.safeSpeed(ball, Math.max(120, speed * 3.5)));
-    const turboOk = !careful && this.safeSpeed(ball, 480) >= 70 && straight && !tube;
-    if (ball.contact && climb === 0 && !magnet) {
+    const turboOk = !careful && this.pace >= 0.4 && this.safeSpeed(ball, 480) >= 70 - 12 * this.pace && straight && !tube;
+    const pushCap = 26 + 26 * this.pace;
+    if (ball.contact && climb === 0 && !magnet && this.pace >= 0.15) {
       if (ball.turboArmed && turboOk) { push = 1; this.say('TURBO', 1.4); }
       else if (ball.pushCombo >= 3 && ball.turboTime <= 0 && turboOk) magnet = true; // charge the booster
-      else if (this.pushT <= 0 && speed < Math.min(44, safeNear - 3) && ball.turboTime <= 0) { push = 1; this.pushT = 0.42; if (!this.trick) this.say('PUSH', 0.4); }
+      else if (this.pushT <= 0 && speed < Math.min(pushCap, safeNear - 3) && ball.turboTime <= 0) {
+        push = Math.min(1, 0.5 + this.pace); this.pushT = 0.6 - 0.25 * this.pace; if (!this.trick) this.say('PUSH', 0.4);
+      }
+      // ripping: hold the booster on clear stretches below the safe speed (keep a reserve for saves)
+      else if (this.pace >= 0.6 && !tube && speed < safeNear - 5 && ball.magnetEnergy > 0.4 && blocked(pr.x) < 0) { magnet = true; this.say('BOOST', 0.5); }
     }
     if (magnet && ball.magnetEnergy < 0.08 && !ball.airborne) magnet = false;
 
@@ -186,6 +200,12 @@ export class ProPilot {
       steer = climb;                      // toward the wall: ride up to the pad
       if (!this.trick || this.trick === 'PUSH') this.say('PAD', 0.6);
     } else {
+      // ripping through a turn: let it ride up the outside wall (the banking carries the speed)
+      if (this.pace >= 0.5 && !tube && !gapAhead && holoX === null && blocked(0) < 0) {
+        const i0 = tr.idx(s), i1 = tr.idx(s + 15);
+        const turnR = (tr.T[i1 * 3] - tr.T[i0 * 3]) * pr.R.x + (tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1]) * pr.R.y + (tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]) * pr.R.z;
+        if (Math.abs(turnR) > 0.06) { targetX = -Math.sign(turnR) * W * 0.4 * Math.min(1, Math.abs(turnR) / 0.2) * this.pace; if (!this.trick) this.say('CARVE', 0.4); }
+      }
       steer = Math.max(-1, Math.min(1, (targetX - pr.x) * 0.55 - vLat * (gapAhead ? 0.7 : 0.35)));
     }
     this.lastTargetX = targetX;

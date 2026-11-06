@@ -322,7 +322,8 @@ function rubber(): CourseLayout {
 // ---------------------------------------------------------------------------
 function sand(): CourseLayout {
   const legs = 34;
-  const dune = (): Seg[] => [{ len: 50, pitch: 3, fx: { flow: 0.6 } }, { len: 30, pitch: -30, fx: { flow: -2 } }, { len: 20, pitch: -6 }];
+  // (v8) dunes flow: a long glide down each face, no up-and-over hump
+  const dune = (): Seg[] => [{ len: 50, pitch: -5, fx: { flow: 0.6 } }, { len: 30, pitch: -12, fx: { flow: -2 } }, { len: 20, pitch: -7 }];
   const girih = (dirs: number[]): Seg[] => dirs.flatMap((d) => [{ len: 22, yaw: 36 * d, bank: 18 * d, pitch: -8 }, { len: 18, bank: 0, pitch: -8 }]);
   const segs: Seg[] = [
     ...START(),

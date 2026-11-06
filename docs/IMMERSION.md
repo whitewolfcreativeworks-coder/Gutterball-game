@@ -109,3 +109,13 @@ Tap **AUTO** at any time, before the launch or mid-run, and a pro driver (`src/g
 **Results.** Auto Ball runs don't count as a best time and aren't saved, but "Race the Auto Ball" races its ghost.
 
 **Engine fix found on the way.** Flying over a gutter's gap now keeps the ball on that gutter. Before, a nearby route could claim it in mid-air, and the main course's landing then stopped counting for collisions.
+
+**Pace (v8).** A slider beside AUTO runs from CHILL to RIP:
+- **Chill:** no pushing and no show-off jumps; it rolls the line so you can study the course.
+- **Rip:** runs it like a racer:
+  - harder, faster pushes and turbo
+  - the tractor beam held as a booster on clear stretches, keeping a reserve for saves
+  - air followed by an early beam back down, because the gutter is faster than the air
+  - turns carved high on the outside wall instead of fought
+
+Every pace still respects the look-ahead safe speed. On every world Rip finishes faster than Chill, and both always finish.

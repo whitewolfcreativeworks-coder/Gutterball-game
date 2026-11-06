@@ -921,7 +921,7 @@ export class Course {
  *
  * Loops, rolls and `exact` (solved) segments are left exactly as written.
  */
-export const FLOW = { turnR: 32, crestR: 30, sagR: 22, bankRate: 2.5, maxDown: -55, peak: 1.875 };
+export const FLOW = { turnR: 45, crestR: 60, sagR: 40, bankRate: 2.0, maxDown: -55, peak: 1.875 };
 
 export function applyFlowLimits(segs: Segment[]): Segment[] {
   const D = Math.PI / 180;

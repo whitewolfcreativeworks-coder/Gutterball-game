@@ -41,6 +41,28 @@ describe('AUTO BALL (the pro driver)', () => {
     expect(totalTurbos).toBeGreaterThan(3);
   });
 
+  it('the pace slider: rip runs faster than chill everywhere, and both always finish', () => {
+    for (const c of CATALOG) {
+      const t: number[] = [];
+      for (const pace of [0, 1]) {
+        const course = new Course(c.layout());
+        const run = new Run(course, MATERIALS[c.materialId]);
+        const pp = new ProPilot(); pp.pace = pace;
+        run.launch(); run.ball.v.addScaledVector(run.ball.proj.T, 20);
+        for (let f = 0; f < 60 * 300 && run.phase !== 'finished'; f++) {
+          const f0 = run.falls;
+          run.update(1 / 60, pp.decide(run.ball, 1 / 60));
+          if (run.falls > f0) pp.crashed(run.ball);
+          run.pendingEvents.length = 0;
+        }
+        expect(run.phase, `${c.id} pace ${pace}`).toBe('finished');
+        expect(run.falls, `${c.id} pace ${pace}`).toBeLessThanOrEqual(2);
+        t.push(run.finishTime);
+      }
+      expect(t[1], c.id).toBeLessThan(t[0]);
+    }
+  }, 600000);
+
   it('the look-ahead never changes the course', () => {
     const c = CATALOG.find((x) => x.id === 'wood')!;
     const course = new Course(c.layout());

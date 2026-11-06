@@ -42,13 +42,15 @@ export const camel = (len: number, rise: number, fall: number, fx: Fx = { pulse:
   { len: len * 0.45, pitch: rise, fx }, { len: len * 0.55, pitch: fall },
 ];
 
-/** A train of bunny hops (rhythm and haptics showcase). */
-export const hops = (n: number, len: number, amp: number, base = -6): Seg[] => {
-  const out: Seg[] = [];
-  for (let i = 0; i < n; i++) out.push({ len: len / 2, pitch: base + amp, fx: { pulse: 1 } }, { len: len / 2, pitch: base - amp });
-  out.push({ len: 16, pitch: base });
-  return out;
-};
+/**
+ * (v8) Was a train of bunny hops. Gutterball is about carrying speed down a
+ * flowing line, not pumping humps, so it's now one smooth run of the same
+ * length (the fractals still pulse to the beat).
+ */
+export const hops = (n: number, len: number, _amp: number, base = -6): Seg[] => [
+  { len: (n * len) / 2, pitch: base - 4, fx: { pulse: 1 } },
+  { len: (n * len) / 2 + 16, pitch: base - 2 },
+];
 
 /** A banked turn (yaw degrees; + = left), returning to bank 0. */
 export const turn = (len: number, yaw: number, bank: number, pitch: number, extra: Partial<Seg> = {}): Seg[] => [
@@ -191,10 +193,10 @@ export const pipeCorner = (len: number, yaw: number, pitch: number): Seg[] => [
   { len: 26, bank: 0, pitch, tube: true, fx: { flow: -1 } },
 ];
 
-/** Wave turn: climb steeply into a high-banked turn, stall, and fall out of it. */
+/** Wave turn: a high-banked sweeping turn you can ride up the wall (v8: no climb-and-drop, just the sweep). */
 export const wave = (dir: number, len = 80, bank = 70): Seg[] => [
-  { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: 10, fx: { twist: dir, pulse: 0.8 } },
-  { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: -24, fx: { flow: -1.5 } },
+  { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: -6, fx: { twist: dir, pulse: 0.8 } },
+  { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: -9, fx: { flow: -1.5 } },
   { len: 26, bank: 0, pitch: -6 },
 ];
 
@@ -288,13 +290,15 @@ export const funnelBowl = (dir = 1, widen = 2.2): Seg[] => [
 // BMX / motocross elements (v5): pump it, carve the berms, jump the gaps
 // ---------------------------------------------------------------------------
 
-/** Pump-track rollers: a rhythm of humps you can pump for speed (press into the backsides). */
-export const rollers = (n: number, len = 26, amp = 7, base = -7): Seg[] => {
-  const out: Seg[] = [];
-  for (let i = 0; i < n; i++) out.push({ len: len / 2, pitch: base + amp, fx: { pulse: 1 } }, { len: len / 2, pitch: base - amp, fx: { flow: -0.5 } });
-  out.push({ len: 18, pitch: base });
-  return out;
-};
+/**
+ * (v8) Was a pump-track of humps. Whoop-de-doos make sense with handlebars,
+ * not for a ball carrying speed, so this is now a smooth descent of the same
+ * length (the fractals still pulse).
+ */
+export const rollers = (n: number, len = 26, _amp = 7, base = -7): Seg[] => [
+  { len: (n * len) / 2, pitch: base - 4, fx: { pulse: 1 } },
+  { len: (n * len) / 2 + 18, pitch: base - 2, fx: { flow: -0.5 } },
+];
 
 /** Berm: a high-banked turn you can carve at speed (the flow limits keep it a smooth arc). */
 export const berm = (dir: number, yaw = 120, bank = 62, pitch = -6): Seg[] => [
@@ -303,17 +307,15 @@ export const berm = (dir: number, yaw = 120, bank = 62, pitch = -6): Seg[] => [
   { len: 26, bank: 0, pitch },
 ];
 
-/** Tabletop: kicker, a flat top you can land on or clear, and a landing ramp. */
-export const tabletop = (top = 26, kick = 13, land = -20): Seg[] => [
-  { len: 22, pitch: -8, fx: { flow: -1 } },
-  { len: 16, pitch: kick, fx: { pulse: 1 } },
-  { len: top, pitch: 0, openSky: true, fx: { pulse: 0.6 } },
-  { len: 24, pitch: land, openSky: true, fx: { flow: -1.5 } },
+/** (v8) Was a tabletop jump (a hump); now a flowing descent of the same length. */
+export const tabletop = (top = 26, _kick = 13, _land = -20): Seg[] => [
+  { len: 22 + 16, pitch: -8, fx: { flow: -1 } },
+  { len: top + 24, pitch: -11, fx: { pulse: 0.6 } },
   { len: 26, pitch: -7 },
 ];
 
 /** Gully jump: a kicker over an open gap (a gully) to a lower landing. */
-export const gullyJump = (gap = 14, kick = 11): Seg[] => [
+export const gullyJump = (gap = 14, kick = 5): Seg[] => [
   { len: 22, pitch: -9 },
   { len: 16, pitch: kick, openSky: true, fx: { pulse: 1 } },
   { len: gap, pitch: -14, gap: true, openSky: true },
