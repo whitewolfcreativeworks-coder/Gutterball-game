@@ -428,3 +428,24 @@ The flow limits are tighter everywhere:
 | Bank rate | 2.5°/m | 2.0°/m |
 
 Deliberate set pieces are marked `exact` to keep their solved geometry, for example the High Road launch ramp and the High Road itself, which has to land back over the main gutter.
+
+## Round 9: loops you can feel
+
+Tight loops and quick rolls only spun the picture: there was no rush of being swept round. Glass's shrinking-loop cascade went down to loops 34 m round, a 5 m radius. The flow limits now give them room:
+
+| Element | Minimum |
+|---|---|
+| Vertical loop (including corkscrews) | 190 m round (about a 30 m radius) |
+| Barrel roll | 160 m per full turn |
+
+Unless a segment is marked `exact`, it is lengthened to meet these. The chase camera's "up" also turns more slowly while you're inverted (rate 2.6, was 4), so the world rolls round you instead of snapping.
+
+| World | What changed |
+|---|---|
+| Glass | 13 loops and a roll |
+| Metal | 9 loops and two rolls |
+| Wood | 2 loops |
+| Ice | 1 loop |
+| Concrete | 1 roll |
+
+Every course still finishes in every Auto Ball mode.

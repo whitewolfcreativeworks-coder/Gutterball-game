@@ -164,7 +164,7 @@ export class ChaseCamera {
     } else {
       const kp = 1 - Math.exp(-dt * 10);
       const kl = 1 - Math.exp(-dt * 13);
-      const ku = 1 - Math.exp(-dt * (inv ? 4 : tk > 0.5 ? 7 : 5));
+      const ku = 1 - Math.exp(-dt * (inv ? 2.6 : tk > 0.5 ? 6 : 5)); // inverted: the world rolls round you, it doesn't snap
       this.pos.lerp(desiredPos, kp);
       this.look.lerp(desiredLook, kl);
       this.up.lerp(desiredUp, ku);

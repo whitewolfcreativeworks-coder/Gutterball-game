@@ -16,7 +16,7 @@ for (const spec of (process.env.SHOTS ?? '').split(',').filter(Boolean)) {
   const p = await browser.newPage();
   await p.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
   p.on('pageerror', (e) => console.log('ERR', e.message));
-  await p.goto(`http://127.0.0.1:${port}/?play=${world}&mode=keyboard&quality=low&fixed=1&at=${at}&v=24${process.env.AUTO ? '&auto=1' : ''}${process.env.INSANE ? '&insane=1' : ''}`, { waitUntil: 'load' });
+  await p.goto(`http://127.0.0.1:${port}/?play=${world}&mode=keyboard&quality=low&fixed=1&at=${at}&v=${process.env.V ?? 24}${process.env.AUTO ? '&auto=1' : ''}${process.env.INSANE ? '&insane=1' : ''}`, { waitUntil: 'load' });
   if (process.env.DROP) {
     // knock the ball off the side of the gutter (to see the safety net catch it)
     await p.waitForFunction(() => window.__gutterball?.game?.run?.time > 0.05, { timeout: 900000, polling: 1000 });

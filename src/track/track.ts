@@ -289,7 +289,7 @@ export class Track {
       const first = this.obstacles[g[0]].s, last = this.obstacles[g[g.length - 1]].s;
       const hash = Math.abs(Math.sin((first + 1) * 12.9898) * 43758.5453) % 1;
       const side: 1 | -1 = (gi + (hash > 0.5 ? 1 : 0)) % 2 === 0 ? 1 : -1;
-      const y = p.rc + 0.7 + hash * 1.1;
+      const y = p.rc + 0.6 + hash * 0.9;  // (always fits under a standard wall top)
       const len = 5, tall = 2.2;
       const ok = (c: number) => {
         if (c < 15 || c - len < prevEnd + 10) return false;
@@ -916,12 +916,14 @@ export class Course {
  *  - crests (nose going down): radius at least FLOW.crestR, so you float
  *    rather than get flung; sags (nose coming up): at least FLOW.sagR
  *  - bank: changes no faster than FLOW.bankRate degrees per metre
+ *  - loops: at least FLOW.loopLen metres round (~30 m radius); rolls at
+ *    least FLOW.rollLen metres per full turn, so the world sweeps round you
  *  - steepness: no steeper than FLOW.maxDown degrees, except deliberate
  *    `steep` plunges (lift-hill drops)
  *
  * Loops, rolls and `exact` (solved) segments are left exactly as written.
  */
-export const FLOW = { turnR: 45, crestR: 60, sagR: 40, bankRate: 2.0, maxDown: -55, peak: 1.875 };
+export const FLOW = { turnR: 45, crestR: 60, sagR: 40, bankRate: 2.0, maxDown: -55, peak: 1.875, loopLen: 190, rollLen: 160 };
 
 export function applyFlowLimits(segs: Segment[]): Segment[] {
   const D = Math.PI / 180;
@@ -929,6 +931,10 @@ export function applyFlowLimits(segs: Segment[]): Segment[] {
   return segs.map((seg) => {
     const p1raw = seg.pitch ?? pitch;
     const out: Segment = { ...seg };
+    // (v10) loops and rolls get room to breathe: a tight one just spins the
+    // picture; a long arc lets you feel the inertia sweep you round
+    if (!seg.exact && seg.loop) out.len = Math.max(seg.len, FLOW.loopLen);
+    if (!seg.exact && seg.roll) out.len = Math.max(seg.len, FLOW.rollLen * Math.abs(seg.roll));
     if (!seg.loop && !seg.roll && !seg.exact) {
       const p1 = seg.steep ? p1raw : Math.max(FLOW.maxDown, p1raw);
       out.pitch = seg.pitch === undefined ? undefined : p1;
