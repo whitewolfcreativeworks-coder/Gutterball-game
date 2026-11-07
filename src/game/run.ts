@@ -158,7 +158,8 @@ export class Run {
       return;
     }
     // stuck (wedged against an obstacle)
-    if (b.v.length() < 0.6) this.stuckTimer += this.fixedDt; else this.stuckTimer = 0;
+    // (braked to a stop on purpose is not stuck: a swipe up rolls you on)
+    if (b.v.length() < 0.6 && b.sinceBrake > 6) this.stuckTimer += this.fixedDt; else this.stuckTimer = 0;
     if (this.stuckTimer > 1.5) { this.stuckTimer = 0; this.fail(); }
   }
 

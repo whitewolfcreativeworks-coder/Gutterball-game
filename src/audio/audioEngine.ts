@@ -351,6 +351,7 @@ export class AudioEngine {
       case 'MAGNET_RELEASED': this.sweep(520, 160, 0.12, 0.08, 'triangle'); break;
       case 'MAGNETIC_CAPTURE': this.sweep(1400, 260, 0.16, 0.18, 'square'); this.sweep(110, 40, 0.3, 0.24, 'sine'); break;
       case 'JUMP': this.sweep(260, 520, 0.1, 0.06, 'sine'); break;
+      case 'BRAKE': this.brakeScrape(0.4 + 0.5 * e.intensity); break;
       case 'PUSH': this.impact(0.25 + 0.3 * e.intensity, 0.6); this.whoosh(0.5 + 0.5 * e.intensity); break;
       case 'DOUBLE_JUMP': this.sweep(420, 1100, 0.16, 0.08, 'triangle'); this.sweep(840, 2200, 0.12, 0.03, 'sine'); break;
       case 'WATER_ENTRY': this.splash(e.intensity); break;
@@ -565,6 +566,19 @@ export class AudioEngine {
     n.connect(f).connect(g);
     out.connect(this.dry);
     n.start(t, Math.random() * 2, 0.3);
+  }
+
+  /** Swipe-back brake: a gritty scrape that falls in pitch, like a palm dragging on a rolling ball. */
+  brakeScrape(intensity: number) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    const n = c.createBufferSource(); n.buffer = this.noise; n.playbackRate.value = 0.8;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 3;
+    f.frequency.setValueAtTime(1800, t); f.frequency.exponentialRampToValueAtTime(260, t + 0.38);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * intensity, t + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+    n.connect(f).connect(g).connect(this.dry);
+    n.start(t, Math.random() * 2, 0.45);
   }
 
   /** Short UI click */

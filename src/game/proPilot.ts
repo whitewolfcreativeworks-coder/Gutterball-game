@@ -15,13 +15,14 @@ import { Vector3 } from 'three';
  *    after big air.
  * `trick` names what it's doing (for the HUD).
  */
-export type Trick = '' | 'PUSH' | 'TURBO' | 'PAD' | 'HOLOGRAM' | 'AIR' | 'GAP' | 'BEAM' | 'GRIP' | 'DODGE' | 'GAS' | 'CARVE';
+export type Trick = '' | 'PUSH' | 'TURBO' | 'PAD' | 'HOLOGRAM' | 'AIR' | 'GAP' | 'BEAM' | 'GRIP' | 'DODGE' | 'GAS' | 'CARVE' | 'BRAKE';
 
 export class ProPilot {
   private lastTargetX = 0;
   private pushT = 0;
   private airT = 0;
   private padK = -1;
+  private brakeT = 0;
   /**
    * PACE, 0 = chill .. 1 = rip. Chill rolls the line calmly (no pushing, no
    * showing off), good for studying a course. Rip runs it like a racer:
@@ -42,7 +43,7 @@ export class ProPilot {
   /** A copy with the same plan (for the look-ahead). */
   clone(): ProPilot {
     const c = new ProPilot();
-    c.lastTargetX = this.lastTargetX; c.pushT = this.pushT; c.airT = this.airT; c.padK = this.padK;
+    c.lastTargetX = this.lastTargetX; c.pushT = this.pushT; c.airT = this.airT; c.padK = this.padK; c.brakeT = this.brakeT;
     c.trick = this.trick; c.trickHold = this.trickHold;
     c.lastP.copy(this.lastP); c.lastTrack = this.lastTrack; c.cautiousTo = this.cautiousTo; c.pace = this.pace; c.insane = this.insane;
     return c;
@@ -81,12 +82,29 @@ export class ProPilot {
     return v;
   }
 
+  /** How fast it can go into an open-sky corner ahead (one with no walls to hold it) before it flies off. */
+  flyOffSpeed(ball: BallPhysics, horizon: number): number {
+    const tr = ball.track, s = ball.proj.s;
+    let v = 999;
+    for (let d = 0; d < horizon; d += 5) {
+      const q = s + d;
+      if (q > tr.length) break;
+      if (tr.isSteepOrInverted(q) || tr.tubeAt(q) > 0.5) return 999;   // a loop or tube first: keep the speed
+      if (tr.isGap(q)) return 999;                                          // a gap first: it needs the speed
+      if (!tr.openSky[tr.idx(q)]) continue;
+      const i0 = tr.idx(q - 6), i1 = tr.idx(q + 6);
+      const kappa = Math.hypot(tr.T[i1 * 3] - tr.T[i0 * 3], tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]) / 12;
+      if (kappa > 0.008) v = Math.min(v, Math.sqrt((30 + 60 * this.pace) / kappa) + d * 0.08);
+    }
+    return v;
+  }
+
   decide(ball: BallPhysics, dt: number): BallInput {
     const tr = ball.track, pr = ball.proj, s = pr.s;
     const speed = Math.max(4, ball.v.length());
     const vLat = ball.v.dot(pr.R);
     const W = tr.halfWidthAt(s);
-    this.pushT -= dt; this.airT -= dt;
+    this.pushT -= dt; this.airT -= dt; this.brakeT -= dt;
     this.trickHold -= dt; if (this.trickHold <= 0) this.trick = '';
     const tube = tr.tubeAt(s) > 0.5;
     // a jump in position = a reset after a fall: ease off for the next 500 m
@@ -152,7 +170,14 @@ export class ProPilot {
 
     // ---- jumps ----
     let jump = false;
-    for (let d = 0; d < speed * 0.3; d += 1) if (tr.isGap(s + d)) { jump = true; this.say('GAP'); break; }
+    for (let d = 0; d < speed * 0.3; d += 1) if (tr.isGap(s + d)) {
+      // flying fast, a short gap is just a skim: the ball drops only centimetres crossing it,
+      // and a jump would only throw it high (and long) off the far side
+      let len = 0; while (len < 80 && tr.isGap(s + d + len)) len += 1;
+      const sink = 4.9 * (len / speed) ** 2;
+      if ((this.insane || this.pace >= 0.7) && sink < 0.45) { this.say('GAP'); break; }
+      jump = true; this.say('GAP'); break;
+    }
     if (blocked(pr.x) >= 0 && blocked(pr.x) < speed * 0.3 && bestScore < 100) jump = true;
     // air over a crest: the gutter drops away ahead, nothing closed or solid coming up
     if (!jump && !careful && (this.insane || (this.pace >= 0.5 && this.pace < 0.85)) && climb === 0 && ball.contact && this.airT <= 0 && speed > 24 && !tube && Math.abs(pr.x) < W * 0.4) {
@@ -191,6 +216,13 @@ export class ProPilot {
     const safeNear = Math.min(careful && !this.insane ? 30 : 999, this.safeSpeed(ball, Math.max(120, speed * 3.5)));
     const turboOk = this.insane ? straight && !tube : !careful && this.pace >= 0.4 && this.safeSpeed(ball, 480) >= 70 - 15 * this.pace && straight && !tube;
     const pushCap = this.insane ? 110 : 26 + 60 * this.pace;
+    // the swipe-back brake: a calm rider scrubs speed before a corner it can't carry
+    let brake = 0;
+    // (only where too much speed would throw it off the course: an open-sky edge or a gap ahead,
+    // never before loops and climbs, which need every bit of speed)
+    if (!this.insane && this.pace <= 0.6 && ball.contact && this.brakeT <= 0 && speed > this.flyOffSpeed(ball, Math.max(80, speed * 2.5)) + 9) {
+      brake = 0.7; this.brakeT = 0.45; this.say('BRAKE', 0.6);
+    }
     if (ball.contact && climb === 0 && !magnet && this.pace >= 0.15) {
       if (ball.turboArmed && turboOk) { push = 1; this.say('TURBO', 1.4); }
       else if (ball.pushCombo >= 3 && ball.turboTime <= 0 && turboOk) magnet = true; // charge the booster
@@ -230,6 +262,6 @@ export class ProPilot {
       steer = Math.max(-1, Math.min(1, (targetX - pr.x) * 0.55 - vLat * (gapAhead ? 0.7 : 0.35)));
     }
     this.lastTargetX = targetX;
-    return { steer, jump, magnet, driveLevel: 2, push };
+    return { steer, jump, magnet: brake ? false : magnet, driveLevel: 2, push: brake ? 0 : push, brake };
   }
 }

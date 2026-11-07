@@ -216,7 +216,11 @@ export class InputManager {
     if (down && this.mode !== 'tilt') this.mode = 'keyboard';
   }
 
-  /** Swipe up launches, then each swipe up shoves the ball (faster swipe = harder). Swipe down does nothing: you can't brake. */
+  /**
+   * Swipe up launches, then each swipe up shoves the ball (faster swipe = harder).
+   * Swipe down (back over the ball, top to bottom) brakes: each swipe slows you a step;
+   * a slow, deliberate drag brakes hardest.
+   */
   private swipe(dir: number, strength = 0.6) {
     if (dir > 0 && this.onLaunch) {
       // launch takes precedence (game decides if it's in ready state)
@@ -224,7 +228,9 @@ export class InputManager {
       if (consumed) return;
     }
     if (dir > 0) this.pushQueued = Math.max(this.pushQueued, strength);
+    else this.brakeQueued = Math.max(this.brakeQueued, strength);
   }
+  private brakeQueued = 0;
   private pushQueued = 0;
 
   // Touch: swipe up anywhere launches / pushes. A quick THUMB TAP near the left
@@ -245,9 +251,11 @@ export class InputManager {
       if (!st || !this.enabled) continue;
       const [dx, dy] = this.rot(t.clientX - st.x, t.clientY - st.y);
       const dtm = performance.now() - st.t;
-      if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < 600) {
+      if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < (dy > 0 ? 1200 : 600)) {
         const speed = Math.abs(dy) / Math.max(1, dtm); // px per ms
-        this.swipe(dy < 0 ? 1 : -1, Math.max(0.15, Math.min(1, (speed - 0.25) / 1.6)));
+        // up: a faster flick pushes harder; down: a slower, deliberate drag brakes harder
+        if (dy < 0) this.swipe(1, Math.max(0.15, Math.min(1, (speed - 0.25) / 1.6)));
+        else this.swipe(-1, Math.max(0.35, Math.min(1, 1.2 - speed * 0.6)));
       } else if (dtm < 300 && Math.hypot(dx, dy) < 24 && this.isEdgeTap(st.x, st.y)) {
         this.swipe(1, 0.75);
         this.onThumbTap?.();
@@ -304,7 +312,9 @@ export class InputManager {
     this.jumpQueued = false;
     const push = this.pushQueued;
     this.pushQueued = 0;
-    return { steer: this.steerSmooth, magnet, jump, driveLevel: this.driveLevel, push };
+    const brake = this.brakeQueued;
+    this.brakeQueued = 0;
+    return { steer: this.steerSmooth, magnet, jump, driveLevel: this.driveLevel, push, brake };
   }
 
   /** Debug readout for the calibration screen. */

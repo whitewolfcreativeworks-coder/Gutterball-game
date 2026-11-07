@@ -1,4 +1,5 @@
 import type { CourseLayout } from '../track/track';
+import { skyLines } from './skyLines';
 import { berm, funnelBowl, gullyJump, liftHill, pipeCorner, rollers, tabletop, tubeRun, vertWall } from './elements';
 
 /**
@@ -277,5 +278,7 @@ export const WOOD_COURSE: CourseLayout = {
         { at: 'ridgeBowl', s: 0, text: 'The ridge bowl' },
       ],
     },
+    // SKY LINES: alternate tubes up where fast riders fly (src/courses/skyLines.ts)
+    ...skyLines('wood'),
   ],
 };

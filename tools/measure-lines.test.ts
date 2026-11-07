@@ -36,11 +36,18 @@ interface PopOff {
   track: string; s: number; mainS: number; speed: number; cause: string; openSky: boolean;
   outcome: 'save' | 'catch' | 'loss' | 'unfinished'; air: number; peak: number; dist: number; side: number;
   landTrack?: string; landS?: number;
+  /** The flight in the main course's frame every 0.1 s: [mainS, right, up] (metres). */
+  traj?: number[][];
 }
+
+// LINE_LAB_WORLDS=wood,ice and LINE_LAB_MODES=rip,insane narrow a run while tuning
+const WORLDS = process.env.LINE_LAB_WORLDS?.split(',');
+const ONLY = process.env.LINE_LAB_MODES?.split(',');
 
 it('line lab', () => {
   const out: Record<string, unknown> = {};
   for (const c of CATALOG) {
+    if (WORLDS && !WORLDS.includes(c.id)) continue;
     const world: Record<string, unknown> = { name: c.world, course: c.name };
     const geo = new Course(c.layout());
     world.length = geo.main.length;
@@ -53,6 +60,7 @@ it('line lab', () => {
     world.tubes = (() => { const r: number[][] = []; let st = -1; for (let i = 0; i <= geo.main.n; i++) { const v = i < geo.main.n && geo.main.tubeK[i] > 0.5; if (v && st < 0) st = i; if (!v && st >= 0) { r.push([Math.round(st * geo.main.ds), Math.round(i * geo.main.ds)]); st = -1; } } return r; })();
     const modes: Record<string, unknown> = {};
     for (const m of MODES) {
+      if (ONLY && !ONLY.includes(m.name)) continue;
       const course = new Course(c.layout());
       const run = new Run(course, MATERIALS[c.materialId], m.insane ? INSANE_TUNING : {});
       const pp = new ProPilot(); pp.pace = m.pace; pp.insane = m.insane;
@@ -86,6 +94,7 @@ it('line lab', () => {
           const up = d.y, horiz = Math.hypot(d.x, d.z);
           cur.peak = Math.max(cur.peak, +up.toFixed(1)); cur.dist = Math.max(cur.dist, +horiz.toFixed(0));
           if (netEv) cur.netted = true;
+          if (frames % 6 === 0 && cur.traj!.length < 80) { const mp = b.mainProj; cur.traj!.push([Math.round(mp.s), +mp.x.toFixed(1), +mp.y.toFixed(1)]); }
           if (run.falls > cur.falls0) { cur.outcome = 'loss'; }
           else if (inside && b.contact && !b.netLift) cur.outcome = cur.netted ? 'catch' : 'save';
           if (cur.outcome !== 'unfinished' || t - cur.t0 > 20) {
@@ -104,7 +113,7 @@ it('line lab', () => {
           else if (pr.y < 0) cause = 'under';
           cur = { track: tr.layout.id, s: Math.round(pr.s), mainS: Math.round(b.mainProj.s), speed: Math.round(b.v.length() * 3.6), cause,
             openSky: tr.openSky[tr.idx(pr.s)] === 1, outcome: 'unfinished', air: 0, peak: 0, dist: 0, side: Math.sign(pr.x),
-            p0: b.p.clone(), t0: t, jumpT: lastJump, netted: false, falls0: run.falls };
+            traj: [], p0: b.p.clone(), t0: t, jumpT: lastJump, netted: false, falls0: run.falls };
         }
         wasInside = inside || b.contact;
       }

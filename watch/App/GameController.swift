@@ -42,6 +42,8 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
     let autoplay = ProcessInfo.processInfo.arguments.contains("-autoplay")
     private var clock = 0.0
     private let pilot = Autopilot()
+    /// 0 cold steel .. 1 white hot (rolling friction at speed; visual only).
+    private var heat = 0.0
 
     override init() {
         let track = WatchCourse.build()
@@ -123,6 +125,7 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
 
         if !events.isEmpty { DispatchQueue.main.async { for e in events { self.haptics.handle(e) } } }
         updateNodes()
+        updateHeat(dt)
         updateCamera(dt, snap: !camInit)
         camInit = true
         hudTimer -= dt
@@ -156,6 +159,25 @@ final class GameController: NSObject, ObservableObject, SCNSceneRendererDelegate
     }
 
     // MARK: visuals
+
+    /// HEAT: roll fast and the steel glows dull red, orange, yellow, then white hot.
+    private func updateHeat(_ dt: Double) {
+        let b = run.ball
+        let target = b.contact ? max(0, min(1, (b.v.length - 28) / 34)) : 0
+        let rate = target > heat ? 0.6 : (b.contact ? 0.25 : 0.5)
+        heat += (target - heat) * min(1, dt * rate)
+        guard let m = built.ball.geometry?.firstMaterial else { return }
+        if heat < 0.04 { m.emission.contents = CGColor(red: 0, green: 0, blue: 0, alpha: 1); return }
+        let stops: [(Double, Double, Double, Double)] = [(0, 0.35, 0.02, 0), (0.3, 0.85, 0.08, 0.01), (0.55, 1, 0.36, 0.04), (0.78, 1, 0.75, 0.25), (1, 1, 0.97, 0.9)]
+        var c = (1.0, 0.97, 0.9)
+        for i in 1..<stops.count where heat <= stops[i].0 {
+            let a = stops[i - 1], z = stops[i], u = (heat - a.0) / (z.0 - a.0)
+            c = (a.1 + (z.1 - a.1) * u, a.2 + (z.2 - a.2) * u, a.3 + (z.3 - a.3) * u)
+            break
+        }
+        let k = min(1, pow((heat - 0.04) / 0.96, 1.3) * 1.4)
+        m.emission.contents = CGColor(red: CGFloat(c.0 * k), green: CGFloat(c.1 * k), blue: CGFloat(c.2 * k), alpha: 1)
+    }
 
     private func updateNodes() {
         let b = run.ball

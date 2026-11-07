@@ -14,6 +14,14 @@ const START = (): Seg[] => [
 const FINISH = (): Seg[] => [{ len: 55, bank: 0, pitch: -4, label: 'finish', fx: { flow: 1 } }, { len: 60, pitch: 3, label: 'runout' }];
 const H = (at: string, s: number, text: string): HintSpec => ({ at, s, text });
 const L = (segs: Seg[], label: string): Seg[] => { segs[0] = { ...segs[0], label }; return segs; };
+/** A low skim over a gap: the slope barely changes, so a fast ball skims across a few metres up instead of launching. */
+const skimGap = (gap: number): Seg[] => [
+  { len: 22, pitch: -6 },
+  { len: 16, pitch: 1, openSky: true, fx: { pulse: 1 } },
+  { len: gap, pitch: -2, gap: true, openSky: true },
+  { len: 60, pitch: -4, openSky: true, fx: { flow: -1 } },
+  { len: 30, pitch: -7 },
+];
 const firstHint = H('start', 0, 'Swipe up, or tap the screen edges, to launch');
 // ---------------------------------------------------------------------------
 // ALTERNATE ROUTES (v7): a split is a choice of a whole different ride to the
@@ -510,7 +518,7 @@ function snow(): CourseLayout {
     ...L(helix(1, 36, 35, -10, 1, { tube: true }), 'peakHelix'),
     ...L([{ len: 80, pitch: -26, fx: { flow: -2 } }, { len: 20, pitch: 9, openSky: true, fx: { pulse: 1 } }, { len: 34, pitch: -24, gap: true, openSky: true }, { len: 60, pitch: -24, fx: { flow: -1 } }, { len: 40, pitch: -6 }], 'skiJump'),
     // ACT II — BACKCOUNTRY: tree slalom, the couloir, the pretzel, the small jump
-    ...L([...rollers(5, 24, 6), ...berm(-1), ...gullyJump(12), ...berm(1)], 'boardercross'), ...L(run(150, -7), 'trees'),
+    ...L([...rollers(5, 24, 6), ...berm(-1), ...run(70, -7), ...skimGap(12), ...run(40, -7), ...berm(1)], 'boardercross'), ...L(run(150, -7), 'trees'),
     ...L(labyrinth(4, 20, 100, 20, -8), 'slalom2'),
     ...L(tubeRun(220, 40, -9), 'couloir'),
     ...L(pretzel(34, 40, -9, { tube: true }), 'cornice'),

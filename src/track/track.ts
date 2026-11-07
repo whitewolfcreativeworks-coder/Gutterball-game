@@ -121,6 +121,13 @@ export interface BranchSpec {
   offset: [number, number]; // [right, up] metres from the main floor centre
   /** Extra pitch (degrees) at the branch start relative to the main course. */
   pitchOffset?: number;
+  /** Extra heading (degrees, + = left) at the branch start relative to the main course. */
+  yawOffset?: number;
+  /** Start pitch / bank in world terms (degrees), instead of the main course's at the fork (sky lines aim along a flight). */
+  startPitch?: number;
+  startBank?: number;
+  /** Only the far end merges as a Y-junction (a sky line you fly into has no fork). */
+  mergeOnly?: boolean;
   segments: Segment[];
   obstacles?: ObstacleSpec[];
   hints?: HintSpec[];
@@ -837,7 +844,7 @@ export class Course {
       const start = P.clone().addScaledVector(R, b.offset[0]).addScaledVector(U, b.offset[1]);
       const br = new Track({
         id: b.id, name: b.name, segments: b.segments, obstacles: b.obstacles ?? [], hints: b.hints ?? [],
-        startPos: [start.x, start.y, start.z], startAngles: [ang[i], ang[i + 1] + (b.pitchOffset ?? 0), ang[i + 2]],
+        startPos: [start.x, start.y, start.z], startAngles: [ang[i] + (b.yawOffset ?? 0), b.startPitch ?? ang[i + 1] + (b.pitchOffset ?? 0), b.startBank ?? ang[i + 2]],
         openStart: true, openEnd: !b.toFinish, finishLine: !!b.toFinish, checkpointEvery: b.toFinish ? 220 : 1e9,
       });
       const bi = this.branches.length + 1;
@@ -895,7 +902,7 @@ export class Course {
           J0 = Math.min(br.length * 0.45, i0 * br.ds + 4);
           J1 = Math.min(br.length * 0.45, (br.n - 1 - i1) * br.ds + 4);
         } else { J0 = J1 = b.junction; }
-        this.junctions.push({ a: pi, b: bi, aS: [s - 2, s + J0 + 2], bS: [0, J0] });
+        if (!b.mergeOnly) this.junctions.push({ a: pi, b: bi, aS: [s - 2, s + J0 + 2], bS: [0, J0] });
         if (sEnd >= 0) this.junctions.push({ a: pi, b: bi, aS: [sEnd - J1 - 2, sEnd + 2], bS: [br.length - J1, br.length] });
       }
       this.branches.push(br);

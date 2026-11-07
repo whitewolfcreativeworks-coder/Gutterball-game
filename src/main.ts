@@ -101,6 +101,17 @@ function show(name: string) {
   input.enabled = name === 'hud';
 }
 
+// ----- Splash: the cover art, then the menu -----
+{
+  const splash = document.createElement('div');
+  splash.className = 'splash';
+  splash.innerHTML = '<img src="./cover.jpg" alt="Gutterball" />';
+  document.body.appendChild(splash);
+  const go = () => { splash.classList.add('out'); setTimeout(() => splash.remove(), 700); };
+  splash.addEventListener('pointerdown', go);
+  setTimeout(go, new URLSearchParams(location.search).has('play') ? 0 : 1900);
+}
+
 // ----- Menu -----
 const menu = el('div', 'menu');
 addScreen('menu', menu);
@@ -108,7 +119,7 @@ function renderMenu() {
   const wood = courseById('wood');
   const best = localStorage.getItem('gb.best.wood');
   menu.innerHTML = `
-    <h1 class="logo">Gutter<span>ball</span></h1>
+    <h1 class="logo"><img class="logo-icon" src="./icon-192.png" alt="" />Gutter<span>ball</span></h1>
     <div class="tag">A physical world you can hold in your hands</div>
     <div class="menu-spacer"></div>
     <button class="hero-play" data-act="play" data-id="wood">
@@ -416,7 +427,8 @@ function showTiltSetup(c: CourseEntry, failed: boolean) {
         <div class="kv"><span>Steer</span><span>tilt left / right</span></div>
         <div class="kv"><span>Jump</span><span>tilt the top toward you</span></div>
         <div class="kv"><span>Magnet tractor beam</span><span>tilt the top away, hold</span></div>
-        <div class="kv"><span>Launch / propulsion</span><span>swipe up / down</span></div>
+        <div class="kv"><span>Launch / push faster</span><span>swipe up</span></div>
+        <div class="kv"><span>Brake</span><span>swipe back down over the ball</span></div>
       </div>
       <div class="row" style="flex-direction:column">
         <button class="btn primary" data-act="useTilt">${failed ? 'Try again' : 'Enable tilt and play'}</button>

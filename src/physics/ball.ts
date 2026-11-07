@@ -33,6 +33,7 @@ export interface BallInput {
   jump: boolean;        // edge-triggered request
   driveLevel: number;   // 0 coast, 1 cruise, 2 push
   push?: number;        // 0..1 strength of a swipe-up push this frame (edge)
+  brake?: number;       // 0..1 strength of a swipe-back brake this frame (edge)
 }
 
 export interface BallTuning {
@@ -173,6 +174,9 @@ export class BallPhysics {
   magnetSuppress = 0;
   boosting = false;
   pushTimer = 0;
+  /** Speed still to take off from swipe-back brakes (m/s), and seconds since the last one. */
+  brakeLeft = 0;
+  sinceBrake = 99;
   airJumpsLeft = 0;
   private magnetRamp = 0;
   wasMagnetAirborne = false;
@@ -248,6 +252,7 @@ export class BallPhysics {
     this.rollingState = 'rolling';
     this.spinPrevValid = false;
     this.steerSmooth = 0;
+    this.brakeLeft = 0; this.sinceBrake = 99;
     this.pushCombo = 0; this.comboTimer = 0; this.turboCharge = 0; this.turboArmed = false; this.turboTime = 0;
   }
 
@@ -514,6 +519,32 @@ export class BallPhysics {
         this.emit('PUSH', Math.min(1, input.push), dv);
       }
       this.pushTimer = 0.25;
+    }
+
+    // ---- Swipe-back brake: drag a finger back over the ball to slow it ----
+    // Each swipe asks for a slice of your speed (about a sixth, plus a bit), taken
+    // off smoothly over a third of a second while you're on the track, like
+    // pressing a palm on a rolling ball. Swipe again and again and it stops.
+    this.sinceBrake += dt;
+    if (input.brake && input.brake > 0 && grounded) {
+      const want = sp * (0.12 + 0.08 * Math.min(1, input.brake)) + 2.5;
+      this.brakeLeft = Math.min(sp + 1, this.brakeLeft + want);
+      this.sinceBrake = 0;
+      if (this.turboTime > 0) { this.turboTime = 0; this.emit('TURBO_END', 1); }
+      this.emit('BRAKE', Math.min(1, input.brake), want);
+    }
+    if (this.brakeLeft > 0) {
+      if (!grounded) this.brakeLeft = Math.max(0, this.brakeLeft - 30 * dt);
+      else {
+        const vNow = this.v.length();
+        const dec = Math.min(this.brakeLeft, 38 * dt, vNow);
+        this.brakeLeft -= dec;
+        if (vNow > 1e-6) {
+          const k = (vNow - dec) / vNow;
+          this.v.multiplyScalar(k); this.w.multiplyScalar(k);
+        }
+        if (this.v.length() < 0.4) { this.brakeLeft = 0; }
+      }
     }
 
     // ---- Jump ----

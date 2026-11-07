@@ -261,3 +261,11 @@ select { font: inherit; color: var(--ink); background: rgba(255,255,255,0.08); b
 
 .autopace .pacev { min-width: 44px; text-align: right; color: #fff; font-weight: 900; letter-spacing: 0.08em; }
 .autopace.idle { opacity: 0.7; }
+
+/* cover-art splash and the logo's app icon */
+.splash { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: #05070a; transition: opacity 0.6s ease; }
+.splash img { width: min(86vw, 70vh, 560px); aspect-ratio: 1; border-radius: 22%; box-shadow: 0 20px 80px rgba(255, 140, 40, 0.25); animation: splash-in 0.9s cubic-bezier(.2,.8,.2,1) both; }
+.splash.out { opacity: 0; pointer-events: none; }
+@keyframes splash-in { from { transform: scale(0.92); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .splash img { animation: none; } }
+.logo-icon { width: 0.78em; height: 0.78em; border-radius: 22%; vertical-align: -0.05em; margin-right: 0.14em; box-shadow: 0 4px 18px rgba(0,0,0,0.5); }
