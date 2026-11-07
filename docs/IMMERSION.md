@@ -124,3 +124,23 @@ Every pace still respects the look-ahead safe speed. On every world Rip finishes
 - **Rip** treats the beam as the throttle. It gives gas in bursts whenever it's safe, keeping a reserve for saves, and trusts the banked walls to carry far more speed through turns.
 - **INSANE** (the button beside AUTO) turns the physics loose: no governors, a huge throttle, and flat out everywhere.
 - Labels: GAS is the throttle; CARVE is riding the outside wall.
+
+**Real ripping (v11).** The slider now really scales aggression:
+
+| Mode | Average speed | Throttle held |
+|---|---|---|
+| Chill | about 167 km/h | none |
+| Middle | about 240 km/h | |
+| Rip | about 320 km/h, peaks around 500 | up to ~60% of the time |
+| Insane | about 455 km/h | |
+
+What made the difference:
+1. **The game's throttle was too low for anyone to rip.** The beam on the track now pushes 30 m/s² up to 115 m/s (about 415 km/h). The open gutter cruises at 62 m/s, and a hard ceiling of 160 m/s (260 for Insane) keeps the physics sane.
+2. **Rip was too timid:**
+   - It lifted before any corner up to about 280 m ahead. Inside the containment walls a hot ball just rides higher up the wall, so Rip now carries speed there and only lifts for open-sky corners and gaps, and never inside closed tubes.
+   - It no longer does show-off crest jumps, and it sticks straight back down after small hops, because air is slow and the throttle needs the track.
+   - It can hold the gas while swiping.
+   - It gives gas only on the floor of the gutter. On a wall, the throttle's press would drive the ball up and over the top.
+   - After a crash it rides at a sensible 30 m/s instead of coasting.
+
+The slider is always visible in a race, so you can set the pace first and then hit AUTO. It shows CHILL, CRUISE, FAST or RIP.

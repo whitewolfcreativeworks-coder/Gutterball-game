@@ -142,7 +142,7 @@ hud.innerHTML = `
   <div class="hint"></div>
   <button class="skipbtn" data-act="skipFinale" style="display:none">Skip ›</button>
   <button class="autobtn" data-act="autoToggle" style="display:none" aria-pressed="false"><span class="dot"></span>AUTO</button>
-  <label class="autopace" style="display:none"><span>CHILL</span><input type="range" min="0" max="1" step="0.05" data-autopace aria-label="Auto Ball pace"><span>RIP</span></label>
+  <label class="autopace" style="display:none"><span>CHILL</span><input type="range" min="0" max="1" step="0.05" data-autopace aria-label="Auto Ball pace"><span>RIP</span><b class="pacev"></b></label>
   <button class="insanebtn" data-act="insaneToggle" style="display:none" aria-pressed="false">INSANE</button>
   <div class="trick"></div>
   <div class="musicdock"><button class="musicbtn" data-act="musicMenu" aria-label="Music">♪</button><div class="musicmenu"></div></div>
@@ -243,7 +243,8 @@ game.cb.onHud = (s: HudState) => {
     ab.classList.toggle('on', game.auto);
     ab.setAttribute('aria-pressed', String(game.auto));
     const ap = $('.autopace', hud);
-    ap.style.display = game.auto && s.mode === 'play' && !game.replay ? 'flex' : 'none';
+    ap.style.display = s.mode === 'play' && !game.replay ? 'flex' : 'none';   // set the pace first, then hit AUTO
+    ap.classList.toggle('idle', !game.auto);
     ap.classList.toggle('dim', game.insane);
     const ib = $('.insanebtn', hud);
     ib.style.display = s.mode === 'play' && !game.replay ? 'block' : 'none';

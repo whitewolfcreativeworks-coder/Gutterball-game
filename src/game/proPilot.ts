@@ -63,16 +63,20 @@ export class ProPilot {
    */
   safeSpeed(ball: BallPhysics, horizon: number): number {
     const tr = ball.track, s = ball.proj.s;
-    let v = this.insane ? 160 : 80;
+    let v = this.insane ? 180 : 130;
     for (let d = 0; d < horizon && v > 20; d += 5) {
       const q = s + d;
       if (q > tr.length) break;
       const i0 = tr.idx(q - 6), i1 = tr.idx(q + 6);
       const dx = tr.T[i1 * 3] - tr.T[i0 * 3], dy = tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], dz = tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2];
       const kappa = Math.hypot(dx, dy, dz) / 12;
-      if (kappa > 1e-4 && tr.tubeAt(q) < 0.5) v = Math.min(v, Math.sqrt((this.insane ? 140 : 14 + 34 * this.pace) / kappa) + d * 0.08);
-      if (tr.isGap(q)) v = Math.min(v, (this.insane ? 90 : 46) + d * 0.05);
-      if (tr.openSky[tr.idx(q)]) v = Math.min(v, (this.insane ? 85 : 44 + 10 * this.pace) + d * 0.05);
+      // corners: inside the containment walls a hot ball just rides higher up the wall,
+      // so a ripper carries much more there; only open-sky corners can throw you off
+      const contained = !tr.openSky[tr.idx(q)];
+      const latG = this.insane ? 150 : 14 + 80 * Math.pow(this.pace, 1.3) + (contained ? 260 * Math.pow(this.pace, 2) : 0);
+      if (kappa > 1e-4 && tr.tubeAt(q) < 0.5) v = Math.min(v, Math.sqrt(latG / kappa) + d * 0.08);
+      if (tr.isGap(q)) v = Math.min(v, (this.insane ? 90 : 46 + 6 * this.pace) + d * 0.05);
+      if (tr.openSky[tr.idx(q)]) v = Math.min(v, (this.insane ? 85 : 44 + 26 * this.pace) + d * 0.05);
     }
     return v;
   }
@@ -151,7 +155,7 @@ export class ProPilot {
     for (let d = 0; d < speed * 0.3; d += 1) if (tr.isGap(s + d)) { jump = true; this.say('GAP'); break; }
     if (blocked(pr.x) >= 0 && blocked(pr.x) < speed * 0.3 && bestScore < 100) jump = true;
     // air over a crest: the gutter drops away ahead, nothing closed or solid coming up
-    if (!jump && !careful && this.pace >= 0.5 && climb === 0 && ball.contact && this.airT <= 0 && speed > 24 && !tube && Math.abs(pr.x) < W * 0.4) {
+    if (!jump && !careful && (this.insane || (this.pace >= 0.5 && this.pace < 0.85)) && climb === 0 && ball.contact && this.airT <= 0 && speed > 24 && !tube && Math.abs(pr.x) < W * 0.4) {
       const i0 = tr.idx(s), i1 = tr.idx(s + 10);
       const dT = new Vector3(tr.T[i1 * 3] - tr.T[i0 * 3], tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]);
       const drop = dT.dot(pr.U);
@@ -175,6 +179,8 @@ export class ProPilot {
     for (let d = -4; d < 30; d += 2) if (tr.isGap(s + d)) { overGap = true; break; }
     // (ripping: beam back down sooner. Air is slow, the gutter is fast)
     if (ball.airborne && ball.airborneTime > 0.4 - 0.25 * this.pace && climb === 0 && !overGap) { magnet = true; this.say('BEAM', 0.5); }
+    // ripping: a little hop off the surface? stick straight back down (air is slow, the throttle needs the track)
+    if (!ball.contact && this.pace >= 0.7 && climb === 0 && !overGap && pr.y < 4.5 && pr.y > -0.5 && Math.abs(pr.x) < W) magnet = true;
 
     // ---- speed: swipe pushes, and TURBO on long open stretches ----
     let push = 0;
@@ -182,19 +188,30 @@ export class ProPilot {
       const i0 = tr.idx(s), i1 = tr.idx(s + 40);
       return tr.T[i0 * 3] * tr.T[i1 * 3] + tr.T[i0 * 3 + 1] * tr.T[i1 * 3 + 1] + tr.T[i0 * 3 + 2] * tr.T[i1 * 3 + 2] > 0.96;
     })();
-    const safeNear = Math.min(careful && !this.insane ? 0 : 999, this.safeSpeed(ball, Math.max(120, speed * 3.5)));
+    const safeNear = Math.min(careful && !this.insane ? 30 : 999, this.safeSpeed(ball, Math.max(120, speed * 3.5)));
     const turboOk = this.insane ? straight && !tube : !careful && this.pace >= 0.4 && this.safeSpeed(ball, 480) >= 70 - 15 * this.pace && straight && !tube;
-    const pushCap = this.insane ? 110 : 26 + 30 * this.pace;
+    const pushCap = this.insane ? 110 : 26 + 60 * this.pace;
     if (ball.contact && climb === 0 && !magnet && this.pace >= 0.15) {
       if (ball.turboArmed && turboOk) { push = 1; this.say('TURBO', 1.4); }
       else if (ball.pushCombo >= 3 && ball.turboTime <= 0 && turboOk) magnet = true; // charge the booster
       else if (this.pushT <= 0 && speed < Math.min(pushCap, safeNear - 3) && ball.turboTime <= 0) {
         push = Math.min(1, 0.5 + this.pace); this.pushT = 0.6 - 0.25 * this.pace; if (!this.trick) this.say('PUSH', 0.4);
       }
-      // ripping: the beam is the throttle. Give it gas whenever it's safe, in bursts
-      // (lift off to let the energy recover, keep a little in reserve for saves)
-      else if ((this.insane || this.pace >= 0.5) && speed < safeNear - (this.insane ? 0 : 4) && blocked(pr.x) < 0
-        && ball.magnetEnergy > (this.insane ? 0.12 : ball.magnetActive ? 0.18 : 0.32)) { magnet = true; this.say('GAS', 0.4); }
+      // (the throttle is decided below: it can be held while you swipe too)
+    }
+    // ---- THE THROTTLE: the beam held on the track is the gas ----
+    // The slider sets how hard: from just past chill it rides the throttle more and
+    // more; at RIP it's pinned, lifting only for corners it can't carry, solid blocks
+    // dead ahead, and to refill. (You can hold it while you swipe, too.)
+    // (inside a closed tube nothing can throw you out: ripping stays on the gas)
+    const safeHere = tube && this.pace >= 0.7 ? 999 : safeNear;
+    // (gas on the floor of the gutter, never halfway up a wall: the throttle presses you onto
+    // whatever you're riding, so on a wall it would drive you up and over the top)
+    const onFloor = pr.y < (tube ? 3.6 : 3.2);
+    if (!magnet && ball.contact && onFloor && climb === 0 && (this.insane || this.pace >= 0.2) && blocked(pr.x) < 0
+      && speed < Math.min(safeHere - (this.insane ? 0 : 4 * (1 - this.pace)), this.insane ? 999 : 25 + 95 * this.pace)
+      && ball.magnetEnergy > (this.insane ? 0.08 : ball.magnetActive ? 0.25 - 0.22 * this.pace : 0.4 - 0.34 * this.pace)) {
+      magnet = true; this.say('GAS', 0.4);
     }
     if (magnet && ball.magnetEnergy < 0.08 && !ball.airborne) magnet = false;
 

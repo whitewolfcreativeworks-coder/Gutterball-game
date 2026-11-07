@@ -61,6 +61,7 @@ export interface BallTuning {
   gutterCruise: number;     // open-gutter speed above which you ease back down (after a tube)
   turboDuration: number;    // seconds of turbo
   turboChargeTime: number;  // seconds holding the booster (with a full combo) to arm turbo
+  maxSpeed: number;         // hard ceiling (m/s): keeps the simulation sane at extreme speeds
 }
 
 /**
@@ -69,9 +70,9 @@ export interface BallTuning {
  * runs the gutter can carry. Never used for a counted run.
  */
 export const INSANE_TUNING: Partial<BallTuning> = {
-  magnetBoostAccel: 46, magnetBoostCap: 150, magnetDrain: 0.035, magnetRegen: 0.6,
-  gutterCruise: 120, tubeFlowCap: 130, tubeFlowAccel: 46,
-  driveAccel: [0, 6, 10], driveCap: [0, 70, 110], jumpSpeed: 11, magnetAccel: 160,
+  magnetBoostAccel: 58, magnetBoostCap: 180, magnetDrain: 0.035, magnetRegen: 0.6,
+  gutterCruise: 150, tubeFlowCap: 160, tubeFlowAccel: 50,
+  driveAccel: [0, 6, 10], driveCap: [0, 70, 110], jumpSpeed: 11, magnetAccel: 160, maxSpeed: 260,
 };
 
 export const DEFAULT_TUNING: BallTuning = {
@@ -88,8 +89,8 @@ export const DEFAULT_TUNING: BallTuning = {
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
   magnetPressG: 4.2,
-  magnetBoostAccel: 24,   // (v9) the beam on the track is your throttle: give it gas
-  magnetBoostCap: 80,
+  magnetBoostAccel: 30,   // (v9/v11) the beam on the track is your throttle: give it gas
+  magnetBoostCap: 115,    // ~415 km/h: what a real ripper can reach
   magnetAccel: 115,
   magnetRange: 60,
   magnetDrain: 0.1,
@@ -97,9 +98,10 @@ export const DEFAULT_TUNING: BallTuning = {
   magnetMinRestart: 0.05,
   tubeFlowAccel: 24,
   tubeFlowCap: 72,
-  gutterCruise: 54,
+  gutterCruise: 62,
   turboDuration: 7,
   turboChargeTime: 1.0,
+  maxSpeed: 160,
 };
 
 const tmpA = new Vector3();
@@ -545,6 +547,7 @@ export class BallPhysics {
 
     this.updateNetLift(acc, dt);
     this.v.addScaledVector(acc, dt);
+    { const sp2 = this.v.length(); if (sp2 > tu.maxSpeed) this.v.multiplyScalar(tu.maxSpeed / sp2); }
     this.p.addScaledVector(this.v, dt);
     this.applyNetLift(dt);
 

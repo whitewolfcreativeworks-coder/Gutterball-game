@@ -258,3 +258,6 @@ select { font: inherit; color: var(--ink); background: rgba(255,255,255,0.08); b
 @keyframes insanepulse { 50% { box-shadow: 0 0 30px rgba(255,170,30,0.9); } }
 .autopace.dim { opacity: 0.35; }
 :root[data-screen=mini] .insanebtn { top: calc(var(--safe-t) + 88px); left: 86px; font-size: 11px; padding: 5px 9px; }
+
+.autopace .pacev { min-width: 44px; text-align: right; color: #fff; font-weight: 900; letter-spacing: 0.08em; }
+.autopace.idle { opacity: 0.7; }
