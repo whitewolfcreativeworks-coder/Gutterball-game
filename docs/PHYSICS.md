@@ -230,3 +230,24 @@ The sky lines so far:
 Chill never leaves the main course at either one.
 
 Branch specs gained `yawOffset`, `startPitch`, `startBank` (to aim a deck along a flight) and `mergeOnly` (no fork junction: you fly in).
+
+## The recall beam: no flying off into the sky (v12)
+
+Playtesting verdict: a ball flying around outside the course, unattached to anything, isn't fun. Long flights can also land far ahead and cut out pieces of the course, which isn't fair against your ghost. So the ball no longer gets to wander:
+
+- **Out of the gutter for more than 2.5 seconds** (`RECALL.after`), the magnetic tractor beam takes the ball. Out of the gutter means:
+  - flying;
+  - more than 5 m above the walls, even directly over the gutter;
+  - rolling along the outside or the top of a wall.
+- **Dropped clear of the gutter** (under it, or coming down beside it), the beam takes it at once.
+
+Designed pop-outs are untouched, because they land well inside that time: gap jumps, kickers, the ski jump, flying into a sky line's catch deck, and riding a covered bridge's roof.
+
+**Where the beam takes you.** The beam hauls the ball up, over and down into the middle of the gutter, `RECALL.ahead` (20 m) past the last place it was rolling safely in a gutter. That's never further along, so leaving the course can never cut a corner. If that spot is a gap, a loop, a tube or a tunnel, it moves on to the next open stretch.
+
+**What it costs.**
+- A real flight off the course leaves you at 75% of the speed you had there.
+- A slip just through the floor or over the lip, right beside the gutter, keeps 95%.
+- The haul takes 0.5–2 s, depending on how far out you were.
+
+It counts as a lost ball (`falls`). There's a sound, a haptic pulse and a "TRACTOR BEAM" flash. The Apple Watch uses the same 2.5 s rule.

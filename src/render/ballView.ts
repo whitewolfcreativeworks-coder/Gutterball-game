@@ -188,7 +188,7 @@ export class BallView {
     this.updateHeat(b, dt, time);
     this.glow.position.copy(b.p);
     this.light.position.copy(b.p);
-    const target = b.magnetActive || b.netLift ? 0.4 + 0.6 * b.magnetForce : 0;
+    const target = b.magnetActive || b.netLift || b.recalling ? 0.4 + 0.6 * b.magnetForce : 0;
     this.beamLevel += (target - this.beamLevel) * Math.min(1, dt * 14);
     this.captureFlash = Math.max(0, this.captureFlash - dt * 3);
     const lvl = this.beamLevel + this.captureFlash * 0.8;

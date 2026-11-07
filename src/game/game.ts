@@ -294,6 +294,7 @@ export class Game {
       if (e.type === 'MAGNETIC_CAPTURE') { this.ballView?.flashCapture(); this.camera.shake = Math.max(this.camera.shake, 0.55 * this.speedFx); this.camera.punch(9); }
       if (e.type === 'MAGNET_ENGAGED') { this.camera.shake = Math.max(this.camera.shake, 0.25 * this.speedFx); }
       if ((e.type === 'COLLISION_IMPACT' || e.type === 'AIRBORNE_END') && e.intensity > 0.3) { this.camera.shake = Math.max(this.camera.shake, e.intensity * 0.7 * this.speedFx); this.camera.punch(e.intensity * 6); }
+      if (e.type === 'RECALL' && this.mode === 'play') this.cb.onHint?.('TRACTOR BEAM: back on the track');
       if (e.type === 'JUMP') this.camera.punch(4);
       if (e.type === 'DOUBLE_JUMP') this.camera.punch(8);
       if (e.type === 'TURBO_ARMED') { this.camera.punch(6); if (this.mode === 'play') this.cb.onHint?.('TURBO READY — FLICK!'); }

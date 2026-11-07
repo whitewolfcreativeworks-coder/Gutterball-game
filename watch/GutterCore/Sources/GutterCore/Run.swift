@@ -25,6 +25,9 @@ public final class Run {
     private var acc = 0.0
     private var lastGood: (s: Double, v: Double) = (6, 0)
     private var underTimer = 0.0, stuckTimer = 0.0
+    /// Seconds out of the gutter's channel (flying, or riding its outside): past 2.5 s the beam brings you back.
+    private var offTimer = 0.0
+    public static let recallAfter = 2.5
     private var pendingJump = false
 
     public init(track: Track) {
@@ -89,7 +92,11 @@ public final class Run {
         if !(b.p.isFinite && b.v.isFinite) { fail(); return }
         // a safety net below you (or its beam carrying you) catches you: not a fall
         let netted = b.netLift || (tr.netAt(pr.s) && abs(pr.x) < Net.half + 3 && pr.y > -Net.depth - 3 && abs(pr.along) < 3)
-        if netted { underTimer = 0; stuckTimer = 0; return }
+        if netted { underTimer = 0; stuckTimer = 0; offTimer = 0; return }
+        // out of the gutter (high above it counts too) for more than a moment: back in, a little slower
+        let inChannel = tr.channelDepthLocal(pr.s, pr.x, pr.y) > -0.3 && abs(pr.along) < 3 && (pr.y < tr.profile.H + 5 || tr.tubeAt(pr.s) > 0.5)
+        offTimer = inChannel ? 0 : offTimer + fixedDt
+        if offTimer > Run.recallAfter { fail(keep: 0.75); return }
         let inside = tr.channelDepthLocal(pr.s, pr.x, pr.y) > -0.3
         let under = !inside && (pr.y < -2.5 || (pr.y < -0.8 && !tr.isGap(pr.s)))
         underTimer = under ? underTimer + fixedDt : 0
@@ -100,12 +107,12 @@ public final class Run {
     }
 
     /// Quick reset: straight back into the middle of the gutter where you were, going fast.
-    private func fail() {
+    private func fail(keep: Double = 1) {
         falls += 1
-        underTimer = 0; stuckTimer = 0
+        underTimer = 0; stuckTimer = 0; offTimer = 0
         var s = lastGood.s
         while s < track.length - 50 && (track.isGap(s) || track.isSteepOrInverted(s)) { s += 5 }
-        ball.placeAt(s: s, speed: max(20, min(45, lastGood.v)))
+        ball.placeAt(s: s, speed: max(16, min(45, lastGood.v * keep)))
         onFall?()
     }
 

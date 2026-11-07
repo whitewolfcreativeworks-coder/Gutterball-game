@@ -239,7 +239,7 @@ export class BallPhysics {
     // rolling without slipping: w = (n x v) / r
     this.w.copy(U).cross(this.v).multiplyScalar(1 / this.tune.radius);
     this.n.copy(U);
-    this.netLift = false; this.netTime = 0;
+    this.netLift = false; this.netTime = 0; this.recalling = false;
     this.proj.reset(s);
     this.proj.project(this.p.x, this.p.y, this.p.z);
     for (let i = 0; i < this.projs.length; i++) { if (i === this.activeIndex) continue; this.projs[i].relocate(this.p.x, this.p.y, this.p.z); this.projs[i].project(this.p.x, this.p.y, this.p.z); }
@@ -334,6 +334,7 @@ export class BallPhysics {
 
   step(dt: number, input: BallInput) {
     for (const t of this.tracks) t.time += dt; // (a look-ahead ball's caller puts the clock back)
+    if (this.recalling) { this.recallStep(dt); return; }
     const tu = this.tune;
     const m = tu.mass;
     const r = tu.radius;
@@ -1108,6 +1109,75 @@ export class BallPhysics {
     const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
     this.track.frameAtS(q[0], P, T, U, R);
     return out.copy(P).addScaledVector(R, q[1]).addScaledVector(U, q[2]);
+  }
+
+  /**
+   * THE RECALL BEAM. Lose the ball off the course (flying for more than a
+   * moment, or dropping clear of the gutter) and the magnetic tractor beam
+   * takes it: it hauls the ball up and over, and sets it back down in the
+   * middle of the gutter just past where it flew out, slower than it left.
+   * It never puts you further along than where you left, so leaving the
+   * course can't cut a corner (fair against your ghost).
+   */
+  recalling = false;
+  private recallT = 0;
+  private recallDur = 1;
+  private recallPts: Vector3[] = [];
+  private recallTrack = 0;
+  private recallS = 0;
+  private recallV = 0;
+  /** Start the beam toward gutter `trackIndex` at arc length `s`, arriving at `speed`. */
+  startRecall(trackIndex: number, s: number, speed: number) {
+    const idx = Math.max(0, Math.min(this.tracks.length - 1, trackIndex));
+    const tr = this.tracks[idx];
+    const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+    tr.frameAtS(s, P, T, U, R);
+    const [wl, wr] = tr.wallsAt(s);
+    const rim = Math.max(wl, wr, tr.profileAt(s).H);
+    const end = P.clone().addScaledVector(U, this.tune.radius + 0.05);
+    const above = P.clone().addScaledVector(U, rim + 4).addScaledVector(T, -6);
+    const dist = this.p.distanceTo(above);
+    const mid = this.p.clone().lerp(above, 0.5);
+    mid.y = Math.max(this.p.y, above.y) + 4 + Math.min(14, dist * 0.08);
+    const start = this.p.clone();
+    // a little of the ball's own motion first, so the pull reads as a catch, not a cut
+    const lead = start.clone().addScaledVector(this.v, Math.min(0.12, 6 / Math.max(1, this.v.length())));
+    this.recallPts = [start, lead, mid, above, end];
+    this.recallDur = Math.max(0.5, Math.min(2.0, 0.45 + dist / 90));
+    this.recallT = 0;
+    this.recallTrack = idx; this.recallS = s; this.recallV = speed;
+    this.recalling = true;
+    this.netLift = false; this.netTime = 0;
+    this.magnetHasTarget = true; this.magnetForce = 1; this.magnetTarget.copy(end);
+    this.emit('RECALL', 1, dist);
+    this.emit('MAGNET_ENGAGED', 1);
+  }
+  private recallPoint(t: number, out: Vector3) {
+    const q = this.recallPts, n = q.length - 1;
+    // ease in and out along the path
+    const e = t * t * (3 - 2 * t);
+    const f = Math.max(0, Math.min(0.9999, e)) * n, i = Math.floor(f), u = f - i;
+    const at = (k: number) => q[Math.max(0, Math.min(n, k))];
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    const cr = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u);
+    return out.set(cr(p0.x, p1.x, p2.x, p3.x), cr(p0.y, p1.y, p2.y, p3.y), cr(p0.z, p1.z, p2.z, p3.z));
+  }
+  private recallStep(dt: number) {
+    this.t += dt;
+    this.recallT += dt;
+    const t = this.recallT / this.recallDur;
+    const np = this.recallPoint(Math.min(1, t), new Vector3());
+    this.v.subVectors(np, this.p).multiplyScalar(1 / Math.max(dt, 1e-4));
+    this.p.copy(np);
+    this.magnetHasTarget = true; this.magnetForce = 1; this.magnetActive = true;
+    this.contact = false;
+    this.selectTrack();
+    if (t >= 1) {
+      this.recalling = false;
+      this.magnetActive = false;
+      this.placeAt(this.recallS, this.recallV, 0, this.recallTrack);
+      this.emit('MAGNETIC_CAPTURE', 1);
+    }
   }
 
   /**

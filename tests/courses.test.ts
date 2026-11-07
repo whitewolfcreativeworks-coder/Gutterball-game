@@ -263,7 +263,7 @@ describe('every world: routes can be ridden to their finish (side arms rejoin cl
 });
 
 describe('quick reset', () => {
-  it('flung far off course, the ball blinks back into the gutter where it left, at speed', () => {
+  it('flung far off course, the tractor beam hauls the ball back into the gutter where it left, a bit slower', () => {
     const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
     const run = new Run(course, MATERIALS.wood);
     run.launch();
@@ -274,10 +274,37 @@ describe('quick reset', () => {
     // something goes haywire: the ball is thrown 80 m sideways
     run.ball.p.addScaledVector(run.ball.proj.R, 80);
     let t = 0;
-    for (let f = 0; f < 60 && !(run.phase === 'running' && t > 0.05 && run.ball.proj.x ** 2 < 4 && Math.abs(run.ball.proj.along) < 1); f++) { run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any); t += 1 / 60; }
-    expect(t).toBeLessThan(0.6);
-    expect(Math.abs(run.ball.mainProj.s - sLeft)).toBeLessThan(40);
-    expect(run.ball.v.length()).toBeGreaterThan(20);
+    let beamed = false;
+    for (let f = 0; f < 240 && !(run.phase === 'running' && t > 0.05 && !run.ball.recalling && run.ball.proj.x ** 2 < 4 && Math.abs(run.ball.proj.along) < 1); f++) { run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any); t += 1 / 60; beamed ||= run.ball.recalling; }
+    expect(beamed).toBe(true);
+    expect(t).toBeLessThan(2.6);
+    expect(run.ball.mainProj.s - sLeft).toBeLessThan(45);   // never ahead of where it left (no shortcuts)
+    expect(run.ball.mainProj.s - sLeft).toBeGreaterThan(-10);
+    expect(run.ball.v.length()).toBeGreaterThan(15);
+    expect(run.falls).toBe(1);
+  });
+});
+
+describe('no flying off into the sky', () => {
+  it('a ball launched high off the course is beamed back within a few seconds, never ahead of where it left', () => {
+    const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
+    const run = new Run(course, MATERIALS.wood);
+    run.launch();
+    run.ball.placeAt(900, 34);
+    for (let f = 0; f < 30; f++) run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any);
+    const sLeft = run.ball.mainProj.s;
+    // a huge launch: up and out over the countryside
+    run.ball.v.addScaledVector(run.ball.proj.U, 45).addScaledVector(run.ball.proj.T, 30).addScaledVector(run.ball.proj.R, 12);
+    let t = 0, beamedAt = -1, maxAhead = 0;
+    for (let f = 0; f < 60 * 8; f++) {
+      run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any); t += 1 / 60;
+      if (run.ball.recalling && beamedAt < 0) beamedAt = t;
+      if (beamedAt > 0 && !run.ball.recalling) { maxAhead = run.ball.mainProj.s - sLeft; break; }
+    }
+    expect(beamedAt).toBeGreaterThan(0);
+    expect(beamedAt).toBeLessThan(3.2);      // out of the gutter for no more than about 2.5 s
+    expect(maxAhead).toBeLessThan(60);       // set back down just past where it left: no shortcut
+    expect(run.ball.contact).toBe(true);
     expect(run.falls).toBe(1);
   });
 });
