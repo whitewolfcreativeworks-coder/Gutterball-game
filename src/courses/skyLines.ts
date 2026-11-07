@@ -37,8 +37,9 @@ export interface SkyDef {
   deckLen: number;
   /** Floor widening on the deck (wider = easier to land on). */
   widen?: number;
-  /** Where it merges back into the main course. */
+  /** Where it merges back into the main course, and the main course's bank there (degrees). */
   merge: { at: string; s: number };
+  mergeBank?: number;
   /** Arc lengths of the two tube sweeps (m). */
   lens: [number, number];
   /** Solved: [yaw1, pitch1, yaw2, pitch2, exit pitch, merge swing] in degrees. */
@@ -61,9 +62,9 @@ export function skyBody(d: SkyDef, fit = d.fit): Segment[] {
     { exact: true, len: L1, yaw: y1, pitch: p1, bank: bankFor(y1, L1), tube: true, label: `${d.id}Tube`, fx: d.fx ?? { twist: 1.2, flow: -1 } },
     { exact: true, len: L2, yaw: y2, pitch: p2, bank: bankFor(y2, L2), tube: true, fx: { flow: -2 } },
     // and down into the main course
-    { exact: true, len: 40, pitch: pe, bank: 0, tube: true, fx: { flow: 1 } },
+    { exact: true, len: 40, pitch: pe, bank: (d.mergeBank ?? 0) * 0.5, tube: true, fx: { flow: 1 } },
     // the merge: alongside the main gutter at its level, swinging in from the side (a Y-junction)
-    { exact: true, len: 70, yaw: ym, pitch: pe, bank: 0, label: `${d.id}Merge` },
+    { exact: true, len: 70, yaw: ym, pitch: pe, bank: d.mergeBank ?? 0, label: `${d.id}Merge` },
   ];
 }
 
@@ -84,6 +85,14 @@ export const SKY: Record<string, SkyDef[]> = {
     {
       id: 'skyTreetop', name: 'Treetop Line', at: 'camels', s: 120, offset: [4, 17.5], yawOffset: 0, pitch: 8, deckLen: 120,
       merge: { at: 'finish', s: 50 }, lens: [100, 115], fit: [85.12, -28.1, -92.42, -23.2, -4.97, 7.4],
+    },
+  ],
+  rubber: [
+    // TOWER TWO: over the top of the lift hill at speed the ball sails far out past the
+    // plunge. The Skyhook catches it on the way down and carries it on to the slalom.
+    {
+      id: 'skyHook', name: 'Skyhook', at: 'tower2', s: 238, offset: [2.2, 22], yawOffset: -8, pitch: -11, deckLen: 90,
+      merge: { at: 'finish', s: 30 }, lens: [120, 125], fit: [92.29, -17.5, 28.85, -22.65, -5.26, -23.14],
     },
   ],
 };

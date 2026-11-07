@@ -206,6 +206,8 @@ export class InputManager {
       if (k === ' ' ) this.jumpQueued = true;
       if (k === 'arrowup' || k === 'w') this.swipe(1);
       if (k === 'arrowdown' || k === 's') this.swipe(-1);
+      if (k === 'q') this.swipe(0, 0.7, -1);
+      if (k === 'e') this.swipe(0, 0.7, 1);
       if (k === 'r') this.onRestart?.();
       if (k === 'escape' || k === 'p') this.onPause?.();
       if (k === 'enter') this.onLaunch?.();
@@ -217,20 +219,27 @@ export class InputManager {
   }
 
   /**
-   * Swipe up launches, then each swipe up shoves the ball (faster swipe = harder).
-   * Swipe down (back over the ball, top to bottom) brakes: each swipe slows you a step;
-   * a slow, deliberate drag brakes hardest.
+   * SWIPES, in any direction (the angle of your swipe is the direction you shove the ball):
+   *   up (forward)            -> launch, then a push (a faster flick pushes harder)
+   *   down (back over the ball) -> brake: each swipe slows you a step; a slow drag brakes hardest
+   *   left / right            -> a shove across the gutter that way
+   *   diagonals               -> a mix: up-left pushes and shoves left, down-right brakes and shoves right
+   * Tilt and swipe stack: tilt right and flick right for a hard move across.
+   * `fwd` is +1 straight up the screen, -1 straight down; `side` is +1 right.
    */
-  private swipe(dir: number, strength = 0.6) {
-    if (dir > 0 && this.onLaunch) {
+  private swipe(dir: number, strength = 0.6, side = 0) {
+    if (dir > 0 && Math.abs(side) < 0.4 && this.onLaunch) {
       // launch takes precedence (game decides if it's in ready state)
       const consumed = (this.onLaunch as any)() === true;
       if (consumed) return;
     }
-    if (dir > 0) this.pushQueued = Math.max(this.pushQueued, strength);
-    else this.brakeQueued = Math.max(this.brakeQueued, strength);
+    const fwd = Math.max(-1, Math.min(1, dir));
+    if (fwd > 0.35) this.pushQueued = Math.max(this.pushQueued, strength * Math.min(1, (fwd - 0.2) / 0.6));
+    if (fwd < -0.35) this.brakeQueued = Math.max(this.brakeQueued, strength * Math.min(1, (-fwd - 0.2) / 0.6));
+    if (Math.abs(side) > 0.35) this.nudgeQueued = Math.max(-1, Math.min(1, this.nudgeQueued + Math.sign(side) * Math.min(1, (Math.abs(side) - 0.2) / 0.6) * Math.max(0.5, strength)));
   }
   private brakeQueued = 0;
+  private nudgeQueued = 0;
   private pushQueued = 0;
 
   // Touch: swipe up anywhere launches / pushes. A quick THUMB TAP near the left
@@ -251,11 +260,13 @@ export class InputManager {
       if (!st || !this.enabled) continue;
       const [dx, dy] = this.rot(t.clientX - st.x, t.clientY - st.y);
       const dtm = performance.now() - st.t;
-      if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2 && dtm < (dy > 0 ? 1200 : 600)) {
-        const speed = Math.abs(dy) / Math.max(1, dtm); // px per ms
-        // up: a faster flick pushes harder; down: a slower, deliberate drag brakes harder
-        if (dy < 0) this.swipe(1, Math.max(0.15, Math.min(1, (speed - 0.25) / 1.6)));
-        else this.swipe(-1, Math.max(0.35, Math.min(1, 1.2 - speed * 0.6)));
+      const len = Math.hypot(dx, dy);
+      if (len > 40 && dtm < (dy > Math.abs(dx) ? 1200 : 700)) {
+        const speed = len / Math.max(1, dtm); // px per ms
+        const fwd = -dy / len, side = dx / len;
+        // forward / sideways: a faster flick is harder; straight back: a slower, deliberate drag brakes harder
+        const strength = fwd < -0.7 ? Math.max(0.35, Math.min(1, 1.2 - speed * 0.6)) : Math.max(0.15, Math.min(1, (speed - 0.25) / 1.6));
+        this.swipe(fwd, strength, side);
       } else if (dtm < 300 && Math.hypot(dx, dy) < 24 && this.isEdgeTap(st.x, st.y)) {
         this.swipe(1, 0.75);
         this.onThumbTap?.();
@@ -286,7 +297,8 @@ export class InputManager {
   private onMouseUp(e: PointerEvent) {
     if (!this.mouseStart) return;
     const dy = e.clientY - this.mouseStart.y, dx = e.clientX - this.mouseStart.x;
-    if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) this.swipe(dy < 0 ? 1 : -1);
+    const len = Math.hypot(dx, dy);
+    if (len > 60) this.swipe(-dy / len, 0.6, dx / len);
     this.mouseStart = null;
   }
 
@@ -314,7 +326,10 @@ export class InputManager {
     this.pushQueued = 0;
     const brake = this.brakeQueued;
     this.brakeQueued = 0;
-    return { steer: this.steerSmooth, magnet, jump, driveLevel: this.driveLevel, push, brake };
+    let nudge = this.nudgeQueued;
+    this.nudgeQueued = 0;
+    if (this.settings.invertSteer) nudge = -nudge;
+    return { steer: this.steerSmooth, magnet, jump, driveLevel: this.driveLevel, push, brake, nudge };
   }
 
   /** Debug readout for the calibration screen. */

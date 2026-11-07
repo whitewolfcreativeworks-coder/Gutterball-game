@@ -198,3 +198,35 @@ Measured across the twelve worlds (the averages are approximate):
 | Insane | about 400 km/h | up to about 860 km/h |
 
 Insane takes about 2.5× less time than Chill, and every course finishes in all three modes.
+
+## Swipes in any direction (v11)
+
+The angle of a swipe is the direction you shove the ball:
+
+- **Up (forward):** launch, then a push. A faster flick pushes harder, and pushes stack into the turbo combo as before.
+- **Back (top of the ball to the bottom):** the brake. Each swipe asks for about a sixth of your speed plus 2.5 m/s, taken off smoothly at up to 38 m/s² while you're on the track, like pressing a palm on a rolling ball. Keep swiping and it stops. A slow, deliberate drag brakes hardest. A ball braked to a stop is not "stuck"; a swipe up rolls it on.
+- **Left / right:** a shove across the gutter: 3–6 m/s sideways on the track (round the pipe in a tube, like steering), so a few flicks take you wall to wall. In the air it's a lighter 1.5–3 m/s nudge through the magnet field that bends your flight.
+- **Diagonals:** a mix. Up-left pushes and shoves left; down-right brakes and shoves right.
+
+Tilt and swipe stack: tilt right and flick right for a hard move across. Keyboard: ↓/S brakes, Q/E shove left/right.
+
+The calm Auto Ball (Chill to Middle) uses the brake before open-sky corners it would fly off; Rip and Insane never brake.
+
+## Sky lines (v11)
+
+Measured with the line lab (`tools/measure-lines.test.ts`) and the sky lab (`tools/sky-lab.test.ts`), a few spots throw fast balls off the course. A **sky line** is an alternate tube waiting along that flight (`src/courses/skyLines.ts`):
+
+- **The catch deck** is a wide, open gutter aimed down the measured flight line, a few metres under it (`at`/`s`/`offset` in the main course's frame, plus the flight's heading and pitch).
+- **The sky tube** has two long sweeps.
+- **The merge** brings it alongside the main gutter at its level and bank, and joins it as a Y-junction.
+
+The tube's shape is solved numerically (`tools/sky-solve.test.ts`, Nelder-Mead with restarts). The solver lands the end on the merge point, with the same heading and roll, and keeps the tube 16 m or more clear of every other gutter. Near the main course the tube must be level with it, never hovering just above, because its shell would sit in the main gutter's way and its hollow would open a hole in the main floor.
+
+The sky lines so far:
+
+- **Wood, Treetop Line:** catches Middle, Rip and Insane flights off the first camelback and merges onto the finish straight.
+- **Rubber, Skyhook:** catches the flight over the top of tower two and merges before the finish.
+
+Chill never leaves the main course at either one.
+
+Branch specs gained `yawOffset`, `startPitch`, `startBank` (to aim a deck along a flight) and `mergeOnly` (no fork junction: you fly in).

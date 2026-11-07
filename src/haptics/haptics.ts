@@ -128,6 +128,7 @@ export class HapticEngine {
         case 'TURBO_START': this.fire(70, 1, 3); break;
         case 'MAGNET_ENGAGED': this.fire(22, 0.8, 2); break;
         case 'JUMP': this.fire(10, 0.5, 2); break;
+        case 'NUDGE': this.fire(10 + 8 * e.intensity, 0.7, 2); break;
         case 'BRAKE': this.fire(18 + 12 * e.intensity, 0.3, 2); break;
         case 'PUSH': this.fire(12 + 10 * e.intensity, 0.6, 2); break;
         case 'DOUBLE_JUMP': this.fire(16, 0.7, 2); break;

@@ -42,3 +42,15 @@ The game was tuned on a tablet. `screenClass()` in `main.ts` sets `data-screen` 
 | mini | narrow side < 380 px, or long side < 700 px (iPhone mini / SE) | HUD trimmed further; the controls line is hidden; the camera is 5° tighter and a little closer, so the ball and obstacles read bigger |
 
 These are defaults only. Settings still override them.
+
+## App icon and cover art
+
+The cover art (`store/app-icon-1024.png` for the stores) is used in several places:
+
+- the web app's icons (`public/icon-192.png`, `icon-512.png` with the art's own rounded corners, and a maskable version on the game's dark background);
+- the Apple touch icon (`icon-180.png`; iOS applies its own mask);
+- the favicon;
+- a cover splash (`public/cover.jpg`) that fades into the menu;
+- the menu logo.
+
+The Apple Watch icon is a crop around the ball, because a round icon would cut off the title.

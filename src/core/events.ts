@@ -23,6 +23,7 @@ export type SensoryEventType =
   | 'DOUBLE_JUMP'
   | 'PUSH'
   | 'BRAKE'
+  | 'NUDGE'
   | 'TURBO_ARMED'
   | 'TURBO_START'
   | 'TURBO_END'

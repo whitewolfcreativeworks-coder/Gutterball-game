@@ -429,6 +429,7 @@ function showTiltSetup(c: CourseEntry, failed: boolean) {
         <div class="kv"><span>Magnet tractor beam</span><span>tilt the top away, hold</span></div>
         <div class="kv"><span>Launch / push faster</span><span>swipe up</span></div>
         <div class="kv"><span>Brake</span><span>swipe back down over the ball</span></div>
+        <div class="kv"><span>Shove left / right</span><span>swipe sideways (or diagonally)</span></div>
       </div>
       <div class="row" style="flex-direction:column">
         <button class="btn primary" data-act="useTilt">${failed ? 'Try again' : 'Enable tilt and play'}</button>

@@ -34,6 +34,8 @@ export interface BallInput {
   driveLevel: number;   // 0 coast, 1 cruise, 2 push
   push?: number;        // 0..1 strength of a swipe-up push this frame (edge)
   brake?: number;       // 0..1 strength of a swipe-back brake this frame (edge)
+  /** A sideways swipe this frame (edge): -1..1 across the gutter (+ = right), scaled by strength. */
+  nudge?: number;
 }
 
 export interface BallTuning {
@@ -176,6 +178,7 @@ export class BallPhysics {
   pushTimer = 0;
   /** Speed still to take off from swipe-back brakes (m/s), and seconds since the last one. */
   brakeLeft = 0;
+  nudgeTimer = 0;
   sinceBrake = 99;
   airJumpsLeft = 0;
   private magnetRamp = 0;
@@ -545,6 +548,25 @@ export class BallPhysics {
         }
         if (this.v.length() < 0.4) { this.brakeLeft = 0; }
       }
+    }
+
+    // ---- Sideways swipe: shove the ball across the gutter ----
+    // A flick left or right knocks the ball that way: a few metres a second
+    // across the track (on top of whatever the tilt is doing), so a few
+    // flicks take you from wall to wall. In the air it's a lighter nudge,
+    // pushed through the magnet field: it bends your flight, it can't fly you.
+    this.nudgeTimer -= dt;
+    if (input.nudge && Math.abs(input.nudge) > 0.05 && this.nudgeTimer <= 0) {
+      const side = new Vector3().copy(pr.R).addScaledVector(n, grounded ? -pr.R.dot(n) : 0);
+      // (in a tube "right" is round the pipe, as for steering: the camera rolls with you)
+      if (grounded && this.track.tubeAt(pr.s) > 0.5) side.copy(Tt).cross(n);
+      if (side.lengthSq() < 1e-6) side.copy(pr.R);
+      side.normalize();
+      const dv = (grounded ? 3.2 + 3.2 * Math.min(1, Math.abs(input.nudge)) : 1.6 + 1.4 * Math.min(1, Math.abs(input.nudge))) * Math.sign(input.nudge);
+      this.v.addScaledVector(side, dv);
+      if (grounded) this.w.addScaledVector(new Vector3().copy(n).cross(side), dv / r);
+      this.nudgeTimer = grounded ? 0.12 : 0.25;
+      this.emit('NUDGE', Math.min(1, Math.abs(input.nudge)), dv);
     }
 
     // ---- Jump ----

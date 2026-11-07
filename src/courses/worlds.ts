@@ -1,3 +1,4 @@
+import { skyLines } from './skyLines';
 import type { BranchSpec, CourseLayout, HintSpec, ObstacleSpec, Segment } from '../track/track';
 import { armSpan, berm, branch, dirtSection, funnelBowl, gullyJump, rollers, tabletop, liftHill, vertWall, pipeCorner, tubeRun, camel, cascade, corkscrew, drop, field, hairpin, helix, hops, jump, koch, kreisel, labyrinth, loop, outerbank, pretzel, roll, run, sideArm, sweeper, terraces, tunnelRun, turn, vortex, wave } from './elements';
 
@@ -535,4 +536,7 @@ function snow(): CourseLayout {
   };
 }
 
-export const WORLD_LAYOUTS: Record<string, () => CourseLayout> = { concrete, metal, ice, water, glass, rubber, sand, mud, stone, grating, snow };
+const withSky = (f: () => CourseLayout) => (): CourseLayout => { const l = f(); return { ...l, branches: [...(l.branches ?? []), ...skyLines(l.id)] }; };
+export const WORLD_LAYOUTS: Record<string, () => CourseLayout> = Object.fromEntries(
+  Object.entries({ concrete, metal, ice, water, glass, rubber, sand, mud, stone, grating, snow }).map(([k, f]) => [k, withSky(f)]),
+);

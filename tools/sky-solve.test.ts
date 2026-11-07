@@ -72,7 +72,7 @@ it.runIf(!!process.env.SKY_WORLD)('sky solve', () => {
     const clear = (br: Track) => {
       // closest approach to every other gutter, until the last 160 m (the descent into the merge)
       let worst = Infinity, at = 0;
-      for (let i = 0; i < br.n; i += Math.max(1, Math.round(5 / br.ds))) {
+      for (let i = Math.round((d.deckLen + 30) / br.ds); i < br.n; i += Math.max(1, Math.round(5 / br.ds))) {
         if (i * br.ds > br.length - 160) break;
         for (const o of others) {
           for (let j = 0; j < o.n; j += Math.max(1, Math.round(5 / o.ds))) {
@@ -124,7 +124,18 @@ it.runIf(!!process.env.SKY_WORLD)('sky solve', () => {
     };
     // first fit without the (slow) clearance term, then polish with it
     const step = [20, 4, 20, 4, 4, 8];
-    let best = nelderMead((x) => { const br = build(x); const e = err(br); return e.pos ** 2 + (e.ang * 3) ** 2; }, d.fit.slice(), step, 500);
+    const quick = (x: number[]) => { const br = build(x); const e = err(br); return e.pos ** 2 + (e.ang * 3) ** 2 + level(br).pen * 4; };
+    let best = nelderMead(quick, d.fit.slice(), step, 500);
+    // several restarts from spread-out shapes (the fit has many local minima)
+    if (process.env.SKY_RESTARTS !== '0') {
+      let seed = 7;
+      const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      for (let k = 0; k < +(process.env.SKY_RESTARTS ?? 14); k++) {
+        const x0 = [(rnd() - 0.5) * 400, -25 + rnd() * 30, (rnd() - 0.5) * 400, -25 + rnd() * 30, -10 + rnd() * 8, (rnd() - 0.5) * 30];
+        const r = nelderMead(quick, x0, step, 400);
+        if (r.v < best.v) best = r;
+      }
+    }
     for (let r = 0; r < 3; r++) best = nelderMead(f, best.x, step.map((v) => v / (r + 1)), 400);
     const br = build(best.x);
     const e = err(br), cc = clear(br);

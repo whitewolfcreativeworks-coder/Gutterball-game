@@ -144,3 +144,27 @@ What made the difference:
    - After a crash it rides at a sensible 30 m/s instead of coasting.
 
 The slider is always visible in a race, so you can set the pace first and then hit AUTO. It shows CHILL, CRUISE, FAST or RIP.
+
+## The ball heats up (v11)
+
+Rolling friction at speed heats the steel (visual only, `src/render/ballView.ts`):
+
+- It stays cold below about 200 km/h (55 m/s).
+- It turns white hot at about 540 km/h (150 m/s).
+- It heats over a second or two of hard rolling and cools more slowly, faster in the air.
+
+The colour runs through a blackbody ramp: dark cherry, red, orange, yellow, white. The heat shows in four ways:
+
+- the steel's own emission, with its mirror reflections washing out as it glows;
+- a shimmering halo;
+- a light that tints the gutter around the ball;
+- once it's orange-hot, sparks thrown off the contact patch.
+
+The Apple Watch ball glows the same way, scaled to the watch's speeds.
+
+## Slow-mo flips and the steady horizon (v11)
+
+At insane speeds the track's frame swings round faster than the eye can follow. Two things fix it:
+
+- **The camera's roll and turn rates are capped.** The cap tightens with speed, from about 5.5 rad/s for roll at 40 m/s down to 1.6 rad/s at 120 m/s, so the world sweeps round you instead of flicking.
+- **Time stretches over the top of a loop or roll above 75 m/s.** It slows to as little as 0.55×, like a backflip in slow motion. The ball, the clock and the camera all slow together.

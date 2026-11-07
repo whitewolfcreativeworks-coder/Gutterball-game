@@ -351,6 +351,8 @@ export class Game {
   }
   /** INSANE: Auto Ball with the physics turned loose (never a counted run). */
   insane = false;
+  /** 1 = real time; dips during insane-speed flips (slow-mo). */
+  timeScale = 1;
   setInsane(on: boolean) {
     this.insane = on;
     if (on && !this.auto) this.setAuto(true);
@@ -460,7 +462,7 @@ export class Game {
   private frame = (now: number) => {
     requestAnimationFrame(this.frame);
     // ?fixed=1 makes every frame exactly 1/60 s (deterministic captures on slow software GPUs)
-    const dt = FIXED_DT ? 1 / 60 : Math.min(0.05, (now - this.last) / 1000);
+    let dt = FIXED_DT ? 1 / 60 : Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.dtLast = dt;
     this.frameTimes.push(dt);
@@ -474,6 +476,19 @@ export class Game {
       }
     }
     if (!this.run || !this.track || !this.ballView) return;
+    // SLOW-MO FLIPS: at insane speed going over the top of a loop or a roll, time
+    // stretches for a moment (like a backflip in slow motion), so the world
+    // turns round you at a speed you can take in. The whole world slows
+    // together: the ball, the clock, the camera.
+    {
+      const b0 = this.run.ball, tr0 = b0.track;
+      const sp0 = b0.v.length();
+      let flip = false;
+      if (sp0 > 75 && this.mode === 'play' && !this.replay) for (let d = -5; d <= 25 && !flip; d += 5) if (tr0.isSteepOrInverted(b0.proj.s + d) && tr0.U[tr0.idx(b0.proj.s + d) * 3 + 1] < 0.2) flip = true;
+      const want = flip ? Math.max(0.55, 1 - (sp0 - 75) / 120) : 1;
+      this.timeScale += (want - this.timeScale) * Math.min(1, dt * (want < this.timeScale ? 6 : 2.5));
+    }
+    dt *= this.timeScale;
     this.time += dt;
     let input: BallInput;
     if (this.mode === 'play') {

@@ -18,6 +18,19 @@ import type { Track } from '../track/track';
  *  - Look-ahead along the course so obstacles stay readable.
  * Everything scales with the player's "speed effects" setting.
  */
+/** Turn unit vector `to` back toward `from` so it is at most `maxAng` radians away. Returns true if it was limited. */
+function limitTurn(from: Vector3, to: Vector3, maxAng: number): boolean {
+  const c = Math.max(-1, Math.min(1, from.dot(to)));
+  const ang = Math.acos(c);
+  if (ang <= maxAng || ang < 1e-5) return false;
+  // slerp from `from` toward `to` by maxAng
+  const ortho = to.clone().addScaledVector(from, -c);
+  if (ortho.lengthSq() < 1e-10) return false;
+  ortho.normalize();
+  to.copy(from).multiplyScalar(Math.cos(maxAng)).addScaledVector(ortho, Math.sin(maxAng));
+  return true;
+}
+
 export class ChaseCamera {
   readonly cam: PerspectiveCamera;
   private pos = new Vector3();
@@ -165,11 +178,27 @@ export class ChaseCamera {
       const kp = 1 - Math.exp(-dt * 10);
       const kl = 1 - Math.exp(-dt * 13);
       const ku = 1 - Math.exp(-dt * (inv ? 2.6 : tk > 0.5 ? 6 : 5)); // inverted: the world rolls round you, it doesn't snap
+      const oldUp = this.up.clone();
+      const oldDir = this.look.clone().sub(this.pos).normalize();
       this.pos.lerp(desiredPos, kp);
       this.look.lerp(desiredLook, kl);
       this.up.lerp(desiredUp, ku);
       if (this.up.lengthSq() < 0.09) this.up.addScaledVector(this.R, 0.5); // never collapse when flipping over
       this.up.normalize();
+      // SPIN LIMIT: at insane speeds the track's frame swings round faster than
+      // the eye can follow (loops, rolls, banks taken in a blink). The camera's
+      // roll and turn are capped, so the world sweeps round you smoothly
+      // instead of flicking: the faster you go, the steadier the horizon.
+      const k = Math.max(0, Math.min(1, (speed - 40) / 80));
+      if (k > 0) {
+        limitTurn(oldUp, this.up, (5.5 - 3.9 * k) * dt);
+        const dir = this.look.clone().sub(this.pos);
+        const dist = dir.length();
+        if (dist > 1e-3) {
+          dir.multiplyScalar(1 / dist);
+          if (limitTurn(oldDir, dir, (9 - 5 * k) * dt)) this.look.copy(this.pos).addScaledVector(dir, dist);
+        }
+      }
     }
     if (this.pos.distanceTo(b.p) > 14) this.pos.lerp(desiredPos, 0.5);
 

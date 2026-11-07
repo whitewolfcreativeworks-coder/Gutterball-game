@@ -15,7 +15,7 @@ export const BEAM_COLORS: Record<string, number> = { cyan: 0x47e6ff, magenta: 0x
  * the contact patch. It heats over a couple of seconds of hard rolling and
  * cools more slowly (faster in the air). Visual only: physics never changes.
  */
-export const HEAT = { coldBelow: 55, whiteAt: 150, heatRate: 0.55, coolRate: 0.22, airCool: 0.45 };
+export const HEAT = { coldBelow: 55, whiteAt: 150, heatRate: 0.8, coolRate: 0.22, airCool: 0.45 };
 
 /** Blackbody-ish colour for heat 0..1: dark red, red, orange, yellow, white. */
 export function heatColor(h: number, out: Color): Color {
