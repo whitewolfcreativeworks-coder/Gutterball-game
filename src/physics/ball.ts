@@ -645,6 +645,8 @@ export class BallPhysics {
       this.proj.project(this.p.x, this.p.y, this.p.z);
     }
 
+    this.containBall();
+
     // Resting contact within a small skin still counts as touching (for audio & rolling)
     if (!touched) {
       const d = this.sdfAndNormal(tmpA, true);
@@ -1109,6 +1111,53 @@ export class BallPhysics {
     const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
     this.track.frameAtS(q[0], P, T, U, R);
     return out.copy(P).addScaledVector(R, q[1]).addScaledVector(U, q[2]);
+  }
+
+  /**
+   * THE LID (v13): the ball stays on the track. Playtesting said flying around
+   * outside the course isn't fun, so the gutter now holds the ball like an
+   * invisible box: it can rise at most `LID.over` above the highest wall
+   * beside it (about a ball's height), and never past the walls sideways,
+   * even over a gap or in an open-sky section. Under a tunnel or bridge roof
+   * the lid is the roof, so you go through, not over. Pipes hold you anyway.
+   * Where two gutters share a hollow (a fork or a merge) the lid stands aside
+   * so you can roll from one into the other.
+   */
+  static readonly LID = { over: 1.6 };
+  private containBall() {
+    if (this.netLift || this.recalling) return;
+    const tr = this.track, pr = this.proj;
+    if (Math.abs(pr.along) > 3 || pr.s < 0 || pr.s > tr.length) return;
+    if (tr.tubeAt(pr.s) > 0.5) return;
+    // in a shared hollow (a fork or a merge) or inside another gutter: let it pass
+    for (let i = 0; i < this.tracks.length; i++) {
+      if (i === this.activeIndex) continue;
+      const p2 = this.projs[i];
+      if (Math.abs(p2.along) < 3 && this.tracks[i].channelDepthLocal(p2.s, p2.x, p2.y) > -0.6 && Math.abs(p2.x) < this.tracks[i].halfWidthAt(p2.s) + 2) return;
+    }
+    const r = this.tune.radius;
+    const prof = tr.profileAt(pr.s), W = prof.a + prof.rc;
+    const [wl, wr] = tr.wallsAt(pr.s);
+    const top = Math.max(wl, wr, prof.H);
+    const cap = tr.isTunnel(pr.s) ? prof.H - r - 0.02 : top + BallPhysics.LID.over;
+    let moved = false;
+    // the lid
+    if (pr.y > cap) {
+      this.p.addScaledVector(pr.U, cap - pr.y);
+      const vu = this.v.dot(pr.U);
+      if (vu > 0) this.v.addScaledVector(pr.U, -vu);
+      moved = true;
+    }
+    // the sides (above the fillet, the walls run straight up to the lid)
+    const xMax = W - r;
+    if (pr.y > prof.rc * 0.5 && Math.abs(pr.x) > xMax) {
+      const sgn = Math.sign(pr.x);
+      this.p.addScaledVector(pr.R, sgn * xMax - pr.x);
+      const vx = this.v.dot(pr.R);
+      if (vx * sgn > 0) this.v.addScaledVector(pr.R, -vx);
+      moved = true;
+    }
+    if (moved) this.proj.project(this.p.x, this.p.y, this.p.z);
   }
 
   /**

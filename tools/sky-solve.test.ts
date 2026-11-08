@@ -53,21 +53,24 @@ it.runIf(!!process.env.SKY_WORLD)('sky solve', () => {
   const course = new Course({ ...layout, branches: (layout.branches ?? []).filter((b) => !ids.has(b.id)) });
   const main = course.main;
   const others = course.all;
-  for (const d of defs.filter((x) => !process.env.SKY_ID || x.id === process.env.SKY_ID)) {
+  const lensTry = process.env.SKY_LENS ? process.env.SKY_LENS.split(',').map(Number) : null;
+  for (const d0 of defs.filter((x) => !process.env.SKY_ID || x.id === process.env.SKY_ID)) for (const L of lensTry ?? [0]) {
+    const d: SkyDef = L ? { ...d0, lens: [L, L] } : d0;
     const seg = main.segmentStarts.find((g) => g.label === d.at)!;
     const s0 = seg.s + d.s;
     const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
     main.frameAtS(s0, P, T, U, R);
-    const start = P.clone().addScaledVector(R, d.offset[0]).addScaledVector(U, d.offset[1]);
+    const start = d.fork ? P.clone() : P.clone().addScaledVector(R, d.offset[0]).addScaledVector(U, d.offset[1]);
     const i0 = Math.round(s0 / main.ds) * 3;
-    const yaw0 = main.angles[i0] + d.yawOffset;
+    const yaw0 = main.angles[i0] + (d.fork ? 0 : d.yawOffset);
+    const startAngles: [number, number, number] = d.fork ? [main.angles[i0], main.angles[i0 + 1], main.angles[i0 + 2]] : [yaw0, d.pitch, 0];
     const ms = main.segmentStarts.find((g) => g.label === d.merge.at)!.s + d.merge.s;
     const MP = new Vector3(), MT = new Vector3(), MU = new Vector3();
     main.frameAtS(ms, MP, MT, MU, R);
     log(`${d.id}: merge at main s=${ms.toFixed(0)}: bank ${main.angles[Math.round(ms / main.ds) * 3 + 2].toFixed(1)} pitch ${main.angles[Math.round(ms / main.ds) * 3 + 1].toFixed(1)}`);
     const build = (fit: number[]) => new Track({
       id: d.id, name: d.name, segments: skyBody(d, fit as SkyDef['fit']), obstacles: [], hints: [],
-      startPos: [start.x, start.y, start.z], startAngles: [yaw0, d.pitch, 0], openStart: true, openEnd: true,
+      startPos: [start.x, start.y, start.z], startAngles, openStart: true, openEnd: true,
     });
     const clear = (br: Track) => {
       // closest approach to every other gutter, until the last 160 m (the descent into the merge)
@@ -115,23 +118,26 @@ it.runIf(!!process.env.SKY_WORLD)('sky solve', () => {
       const e = err(br);
       let pen = 0;
       // keep the sweeps flowing (no hairpins) and the slopes sane
-      const [L1, L2] = d.lens;
+      const L1 = x[6] ?? d.lens[0], L2 = x[7] ?? d.lens[1];
+      if (L1 < 50) pen += (50 - L1) ** 2 * 5; if (L2 < 50) pen += (50 - L2) ** 2 * 5;
       for (const [yw, L] of [[x[0], L1], [x[2], L2]]) { const R = (L / Math.max(1e-3, Math.abs(yw) * D)); if (R < 70) pen += (70 - R) ** 2 * 0.5; }
       for (const p of [x[1], x[3], x[4]]) { if (p > 8) pen += (p - 8) ** 2 * 20; if (p < -28) pen += (-28 - p) ** 2 * 20; }
       let cl = 0;
       if (process.env.SKY_CLEAR !== '0') { const cc = clear(br); if (cc.worst < 16) cl = (16 - cc.worst) ** 2 * 8; }
-      return e.pos ** 2 + (e.ang * 3) ** 2 + pen + cl + level(br).pen * 4;
+      return e.pos ** 2 + (e.ang * 3) ** 2 + pen + cl + level(br).pen * +(process.env.SKY_LEVELW ?? 4);
     };
     // first fit without the (slow) clearance term, then polish with it
-    const step = [20, 4, 20, 4, 4, 8];
-    const quick = (x: number[]) => { const br = build(x); const e = err(br); return e.pos ** 2 + (e.ang * 3) ** 2 + level(br).pen * 4; };
-    let best = nelderMead(quick, d.fit.slice(), step, 500);
+    const step = process.env.SKY_FREELEN ? [20, 4, 20, 4, 4, 8, 30, 30] : [20, 4, 20, 4, 4, 8];
+    const quick = (x: number[]) => { if ((x[6] ?? 99) < 40 || (x[7] ?? 99) < 40) return 1e9; const br = build(x); const e = err(br); return e.pos ** 2 + (e.ang * 3) ** 2 + level(br).pen * +(process.env.SKY_LEVELW ?? 4); };
+    const x00 = d.fit.slice(); if (process.env.SKY_FREELEN && x00.length < 8) x00.push(d.lens[0], d.lens[1]);
+    let best = nelderMead(quick, x00, step, 500);
     // several restarts from spread-out shapes (the fit has many local minima)
     if (process.env.SKY_RESTARTS !== '0') {
       let seed = 7;
       const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
       for (let k = 0; k < +(process.env.SKY_RESTARTS ?? 14); k++) {
         const x0 = [(rnd() - 0.5) * 400, -25 + rnd() * 30, (rnd() - 0.5) * 400, -25 + rnd() * 30, -10 + rnd() * 8, (rnd() - 0.5) * 30];
+        if (process.env.SKY_FREELEN) x0.push(60 + rnd() * 160, 60 + rnd() * 160);
         const r = nelderMead(quick, x0, step, 400);
         if (r.v < best.v) best = r;
       }
@@ -139,6 +145,7 @@ it.runIf(!!process.env.SKY_WORLD)('sky solve', () => {
     for (let r = 0; r < 3; r++) best = nelderMead(f, best.x, step.map((v) => v / (r + 1)), 400);
     const br = build(best.x);
     const e = err(br), cc = clear(br);
+    { const k = (br.n - 1) * 3; log(`${d.id}: end miss dx=${(br.P[k] - MP.x).toFixed(1)} dy=${(br.P[k + 1] - MP.y).toFixed(1)} dz=${(br.P[k + 2] - MP.z).toFixed(1)} (y up)`); }
     const lv = level(br);
     log(`${d.id}: level-with-main worst ${lv.worst.toFixed(1)} m (pen ${lv.pen.toFixed(1)})`);
     log(`${d.id}: fit: [${best.x.map((v) => v.toFixed(2)).join(', ')}]  close ${e.pos.toFixed(2)} m, ${e.ang.toFixed(2)} deg; clearance ${cc.worst.toFixed(1)} m at ${cc.at.toFixed(0)} m; length ${br.length.toFixed(0)} m; merge s=${ms.toFixed(0)}`);

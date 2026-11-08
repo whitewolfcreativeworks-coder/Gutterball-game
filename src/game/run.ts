@@ -188,7 +188,7 @@ export class Run {
       const g = this.lastGood, gp = b.projs[g.track];
       const gtr = this.course.all[g.track] ?? tr;
       const far = !!gp && (Math.abs(gp.x) > gtr.halfWidthAt(gp.s) + 6 || gp.y > 20 || Math.abs(gp.along) > 3);
-      if (b.airborneTime > RECALL.after || (far && gp.s > g.s + RECALL.shortcut)) { this.recall(); return; }
+      if (far && gp.s > g.s + RECALL.shortcut) { this.recall(); return; }
     }
     // stuck (wedged against an obstacle)
     // (braked to a stop on purpose is not stuck: a swipe up rolls you on)

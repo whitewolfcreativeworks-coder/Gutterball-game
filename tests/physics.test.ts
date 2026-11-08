@@ -393,7 +393,8 @@ describe('built-up corners', () => {
     expect(Math.abs(x)).toBeLessThan(1.5);
     expect(b.v.length()).toBeGreaterThan(24); // forward momentum kept
   });
-  it('tractor beam on a roof keeps you on the roof (does not drag you toward the floor below)', () => {
+  // (v13) the lid keeps the ball inside the gutter: no riding roofs from outside
+  it.skip('tractor beam on a roof keeps you on the roof (does not drag you toward the floor below)', () => {
     const tr = new Track({ id: 't', name: 't', segments: [{ len: 40, pitch: -4 }, { len: 160, pitch: -4, tunnel: true, label: 'shed' }, { len: 60, pitch: -4 }], obstacles: [], hints: [] } as any);
     const b = new BallPhysics(tr, MATERIALS.wood);
     b.placeAt(70, 14);
@@ -450,7 +451,8 @@ describe('built-up corners', () => {
     expect(maxStep).toBeLessThan(0.02);
   });
 
-  it('aerial control: in the air you can steer a long way either side, without gaining speed', () => {
+  // (v13) the lid keeps the ball between the walls: no steering far out either side
+  it.skip('aerial control: in the air you can steer a long way either side, without gaining speed', () => {
     const tr = new Track({ id: 't', name: 't', segments: [{ len: 400, pitch: -4, openSky: true }], obstacles: [], hints: [] } as any);
     const xs: number[] = [];
     for (const steer of [1, -1]) {

@@ -77,7 +77,8 @@ final class GutterCoreTests: XCTestCase {
         let b = BallPhysics(track: t)
         b.placeAt(s: s, speed: 0)
         let f = t.frame(at: s)
-        b.p = f.P + f.R * (t.profile.halfWidth + 5) + f.U * 2
+        // (the lid keeps the ball between the walls, so it can only reach the net through the floor)
+        b.p = f.P - f.U * 2.5
         b.v = f.T * 18
         var caught = false, back = false
         for _ in 0..<(120 * 7) {

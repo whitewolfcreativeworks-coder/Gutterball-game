@@ -251,3 +251,23 @@ Designed pop-outs are untouched, because they land well inside that time: gap ju
 - The haul takes 0.5–2 s, depending on how far out you were.
 
 It counts as a lost ball (`falls`). There's a sound, a haptic pulse and a "TRACTOR BEAM" flash. The Apple Watch uses the same 2.5 s rule.
+
+## The lid: the ball stays on the track (v13)
+
+The recall beam helped, but the ball still flew too high. So now the gutter holds the ball like an invisible box (`BallPhysics.containBall`):
+
+- **Up:** the ball's centre can never rise more than `LID.over` (1.6 m, about a ball's height) above the highest wall beside it. Crests, kickers and wall rides at any speed keep you down on the track.
+- **Sideways:** the walls run straight up to the lid, so the ball can never get out past them. That holds over a gap and in open-sky sections too.
+- **Under a roof:** in a tunnel or covered bridge the lid is the roof, so you go through, not over. Pipes hold you anyway.
+- **At forks and merges**, where two gutters share a hollow, the lid stands aside so you can roll from one into the other.
+
+The recall beam stays as the backstop. It now only fires if the ball somehow gets clear of the gutter: through a gap's floor, or far ahead of where it left.
+
+Over all 48 Auto Ball runs (12 worlds at four paces), one ball was lost, on Insane. The highest any pop-off rose was 2.2 m at Chill, Middle and Rip.
+
+**Extra tubes now have a ramp.** The rule is that an extra tube must be one you can roll into:
+- The Treetop Line (Wood) forks off the main gutter to the left before the camelbacks, as a Y. It holds its height while the course drops away, then dives in a sky tube and merges onto the finish straight. A sign and a hint point to it.
+- The High Road (Wood) and the Skyhook (Rubber) were reached only by jumping up, so they're parked.
+- The tests for flying across between routes and riding roofs from outside are skipped.
+
+The Apple Watch ball has the same lid.

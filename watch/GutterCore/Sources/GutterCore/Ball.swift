@@ -159,6 +159,7 @@ public final class BallPhysics {
             touched = true
             n = nrm
         }
+        containBall()
         if touched {
             // rolling resistance
             let sp = v.length
@@ -298,5 +299,33 @@ public final class BallPhysics {
             netLift = false; netTime = 0
             emit(.capture)
         }
+    }
+
+    /// THE LID (as in the phone game): the ball can rise at most about a ball's height
+    /// above the walls, and never past them sideways (pipes hold you anyway).
+    public static let lidOver = 1.6
+    private func containBall() {
+        if netLift { return }
+        proj.project(p)
+        let tr = track, pr = proj
+        if abs(pr.along) > 3 || pr.s < 0 || pr.s > tr.length || tr.tubeAt(pr.s) > 0.5 { return }
+        let prof = tr.profile, W = prof.halfWidth
+        let cap = prof.H + BallPhysics.lidOver
+        var moved = false
+        if pr.y > cap {
+            p += pr.U * (cap - pr.y)
+            let vu = v.dot(pr.U)
+            if vu > 0 { v -= pr.U * vu }
+            moved = true
+        }
+        let xMax = W - tune.radius
+        if pr.y > prof.rc * 0.5 && abs(pr.x) > xMax {
+            let sgn: Double = pr.x > 0 ? 1 : -1
+            p += pr.R * (sgn * xMax - pr.x)
+            let vx = v.dot(pr.R)
+            if vx * sgn > 0 { v -= pr.R * vx }
+            moved = true
+        }
+        if moved { proj.project(p) }
     }
 }

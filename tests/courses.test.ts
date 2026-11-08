@@ -60,7 +60,9 @@ describe('the ball never passes THROUGH a wall', () => {
   }
 });
 
-describe('High Road branch (Timberline Run)', () => {
+// (v13) The High Road is parked: it was reached by jumping up into it, and the lid keeps
+// the ball on the track now.
+describe.skip('High Road branch (Timberline Run)', () => {
   const lay = CATALOG.find((c) => c.id === 'wood')!.layout();
   const attempt = (v0: number, jumps: number) => {
     const course = new Course(lay);
@@ -91,7 +93,7 @@ describe('High Road branch (Timberline Run)', () => {
   });
 });
 
-describe('tractor beam picks the track beneath you', () => {
+describe.skip('tractor beam picks the track beneath you (used the parked High Road)', () => {
   it('a toss above the High Road comes down onto the High Road, not the main gutter far below', () => {
     const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
     const HR = course.all.findIndex((t) => t.layout.id === 'highroad');
@@ -285,27 +287,28 @@ describe('quick reset', () => {
   });
 });
 
-describe('no flying off into the sky', () => {
-  it('a ball launched high off the course is beamed back within a few seconds, never ahead of where it left', () => {
+describe('the lid: the ball stays on the track', () => {
+  it('a huge launch never takes the ball more than a ball-height above the walls, nor out past them', async () => {
+    const { BallPhysics: BP } = await import('../src/physics/ball');
     const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
     const run = new Run(course, MATERIALS.wood);
     run.launch();
     run.ball.placeAt(900, 34);
     for (let f = 0; f < 30; f++) run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any);
-    const sLeft = run.ball.mainProj.s;
-    // a huge launch: up and out over the countryside
-    run.ball.v.addScaledVector(run.ball.proj.U, 45).addScaledVector(run.ball.proj.T, 30).addScaledVector(run.ball.proj.R, 12);
-    let t = 0, beamedAt = -1, maxAhead = 0;
-    for (let f = 0; f < 60 * 8; f++) {
-      run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any); t += 1 / 60;
-      if (run.ball.recalling && beamedAt < 0) beamedAt = t;
-      if (beamedAt > 0 && !run.ball.recalling) { maxAhead = run.ball.mainProj.s - sLeft; break; }
+    // up and out over the countryside
+    run.ball.v.addScaledVector(run.ball.proj.U, 45).addScaledVector(run.ball.proj.T, 30).addScaledVector(run.ball.proj.R, 18);
+    let worstOver = -99, worstSide = -99;
+    for (let f = 0; f < 60 * 4; f++) {
+      run.update(1 / 60, { steer: 0, magnet: false, jump: false, driveLevel: 1 } as any);
+      const b = run.ball, pr = b.proj, tr = b.track;
+      if (tr.tubeAt(pr.s) > 0.5) continue;
+      const [wl, wr] = tr.wallsAt(pr.s);
+      worstOver = Math.max(worstOver, pr.y - Math.max(wl, wr, tr.profile.H));
+      worstSide = Math.max(worstSide, Math.abs(pr.x) - tr.halfWidthAt(pr.s));
     }
-    expect(beamedAt).toBeGreaterThan(0);
-    expect(beamedAt).toBeLessThan(3.2);      // out of the gutter for no more than about 2.5 s
-    expect(maxAhead).toBeLessThan(60);       // set back down just past where it left: no shortcut
-    expect(run.ball.contact).toBe(true);
-    expect(run.falls).toBe(1);
+    expect(worstOver).toBeLessThanOrEqual(BP.LID.over + 0.05);
+    expect(worstSide).toBeLessThan(0);
+    expect(run.falls).toBe(0);
   });
 });
 
@@ -342,7 +345,8 @@ describe('no obstacle is perfectly still', () => {
   });
 });
 
-describe('air transfer between routes', () => {
+// (v13) no flying across between routes: the lid keeps the ball in its gutter
+describe.skip('air transfer between routes', () => {
   it('from the main gutter you can fly across and land on the route running alongside', () => {
     const course = new Course(CATALOG.find((c) => c.id === 'wood')!.layout());
     const RID = course.all.findIndex((t) => t.layout.id === 'ridge');

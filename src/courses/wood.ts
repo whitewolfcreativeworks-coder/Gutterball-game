@@ -158,11 +158,10 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'barrier', s: 0, text: 'Barrier — go around, or tilt the top toward you to JUMP' },
     { at: 'slalom', s: 0, text: 'Weave between the posts' },
     { at: 'kicker', s: -14, text: 'Gap! JUMP' },
-    { at: 'bridge', s: 5, text: 'Double-jump up and ride the roof!' },
+    { at: 'bridge', s: 5, text: 'Covered bridge' },
     { at: 'steepDrop', s: 2, text: 'Big drop — hold the MAGNET to boost' },
     { at: 'wallRide', s: 0, text: 'Near-vertical bank — MAGNET grip' },
     { at: 'corkscrew', s: 0, text: 'Corkscrew!' },
-    { at: 'forkRun', s: 0, text: 'HIGH ROAD ahead: jump off the ramp (double-jump if you are slow)' },
     { at: 'preLoop', s: 10, text: 'Loop — hold MAGNET at the top' },
     { at: 'kicker2', s: -20, text: 'Big jump: JUMP, then MAGNET to pull back in' },
     { at: 'woodFork', s: 0, text: 'THE BIG FORK: drift LEFT for the Ridge Route, stay for the Burrow' },
@@ -178,11 +177,12 @@ export const WOOD_COURSE: CourseLayout = {
     { at: 'shed', s: 0, text: 'Drying shed' },
     { at: 'bigLift', s: 0, text: 'The Big One: up the lift hill...' },
     { at: 'trail', s: 0, text: 'Logging trail: pump the rollers, jump the tabletop' },
-    { at: 'camels', s: 0, text: 'Camelbacks: airtime!' },
+    { at: 'camels', s: -40, text: 'Keep LEFT for the Treetop Line' },
+    { at: 'camels', s: 0, text: 'Camelbacks!' },
     { at: 'finale', s: 0, text: 'Final run' },
     { at: 'finish', s: 15, text: 'Finish!' },
   ],
-  signs: [{ at: 'woodFork', s: -30, text: '◀ RIDGE ROUTE' }],
+  signs: [{ at: 'woodFork', s: -30, text: '◀ RIDGE ROUTE' }, { at: 'camels', s: -30, text: '◀ TREETOP LINE' }],
   branches: [
     {
       id: 'daybreak',
@@ -226,26 +226,8 @@ export const WOOD_COURSE: CourseLayout = {
       ],
       hints: [],
     },
-    {
-      id: 'highroad',
-      name: 'High Road',
-      at: 'highKicker',
-      s: 62,                     // where a jump off the ramp peaks
-      offset: [0, 10.5],         // high above the main gutter, which drops away beneath it
-      pitchOffset: -3.5,
-      segments: [
-        { exact: true, len: 20, pitch: -3, label: 'catch', fx: { pulse: 1 } },
-        { exact: true, len: 45, yaw: 55, bank: 45, pitch: -9, label: 'swingOut', fx: { twist: 1.2 } },
-        { exact: true, len: 20, pitch: 8, label: 'crest' },
-        { exact: true, len: 18, pitch: -10 },
-        { exact: true, len: 90, yaw: -110, bank: -55, pitch: -9, label: 'swingBack', fx: { twist: -1.2, flow: -1 } },
-        { exact: true, len: 20, pitch: 6 },
-        { exact: true, len: 18, pitch: -10 },
-        { exact: true, len: 45, yaw: 55, bank: 45, pitch: -9, label: 'returnArc', fx: { twist: 1 } },
-        { exact: true, len: 25, bank: 0, pitch: -16, label: 'dropOff', fx: { flow: -2 } },
-      ],
-      hints: [],
-    },
+    // (The HIGH ROAD, an elevated gutter you jumped up into off the launch ramp, is parked:
+    // the lid keeps the ball on the track now, so there's no jumping up to it.)
     // RIDGE ROUTE: up on the open ridgeline instead of down the Burrow, all the way to its own finish
     {
       id: 'ridge', name: 'Ridge Route', at: 'woodFork', s: 2, offset: [0, 0], junction: 'auto', toFinish: true,
