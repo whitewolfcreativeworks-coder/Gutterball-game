@@ -1,6 +1,6 @@
 import { Quaternion, Vector3 } from 'three';
 import type { RollingState, SensoryEvent, SensoryState } from '../core/events';
-import { Track, TrackProjector, type Junction } from '../track/track';
+import { Track, TrackProjector, splitFill, type Junction } from '../track/track';
 import { halfWidth } from '../track/profile';
 import type { MaterialProfile } from './materials';
 
@@ -115,6 +115,8 @@ const tmpQv = new Vector3();
 const tmpQv2 = new Vector3();
 const jA = new Vector3();
 const jB = new Vector3();
+// scratch vectors for the hot path (240 Hz, and many look-ahead steps a frame: no garbage)
+const sA1 = new Vector3(), sA2 = new Vector3(), sA3 = new Vector3(), sA4 = new Vector3(), sA5 = new Vector3(), sA6 = new Vector3(), sA7 = new Vector3(), sA8 = new Vector3();
 const tmpQ = new Quaternion();
 /** Airborne tractor beam aims at this fraction of your sideways offset (0 = dead centre of the gutter). */
 const AIR_BEAM_CENTRE = 0.2;
@@ -289,12 +291,21 @@ export class BallPhysics {
       const cA = this.depthTrack(ai, jA, false), cB = this.depthTrack(other, jB, false);
       const dB = this.sdfTrack(other, jTmp, includeObstacles, visibleOnly);
       const t1 = Math.max(d, cB), t2 = Math.max(dB, cA);
+      let res: number;
       if (t1 <= t2) {
         if (cB > d) this.depthTrack(other, out, true);
-        return t1;
+        res = t1;
+      } else {
+        if (cA > dB) this.depthTrack(ai, out, true); else out.copy(jTmp);
+        res = t2;
       }
-      if (cA > dB) this.depthTrack(ai, out, true); else out.copy(jTmp);
-      return t2;
+      // a tube split: the divider grows up from the floor; above it the two pipes share one hollow
+      const fill = splitFill(this.tracks[ai], sA, this.tracks[other], po.s, this.proj.x, this.proj.y);
+      if (fill && fill.d > res) {
+        out.set(0, 0, 0).addScaledVector(this.proj.R, fill.gx).addScaledVector(this.proj.U, fill.gy).normalize();
+        res = fill.d;
+      }
+      return res;
     }
     return d;
   }
@@ -402,7 +413,7 @@ export class BallPhysics {
       acc.addScaledVector(Rt, -vlat * 0.5 * onFloor * (1 - Math.min(1, Math.abs(steerIn)))); // a little slippery on the floor
       // Δω = (n × dir)/r * Δv ; scale 3.5 so friction delivers ~the requested linear accel
       const gyro = st * (1 - tu.steerDirectFrac) * 3.5 / r * dt;
-      const axis = new Vector3().copy(n).cross(Rt);
+      const axis = sA1.copy(n).cross(Rt);
       this.w.addScaledVector(axis, gyro);
       // Propulsion (never braking): fades out approaching the level's cap speed
       const lvl = Math.max(0, Math.min(2, input.driveLevel | 0));
@@ -411,7 +422,7 @@ export class BallPhysics {
       const da = tu.driveAccel[lvl] * fade;
       if (da > 0) {
         acc.addScaledVector(Tt, da * 0.3);
-        const ax2 = new Vector3().copy(n).cross(Tt);
+        const ax2 = sA2.copy(n).cross(Tt);
         this.w.addScaledVector(ax2, da * 0.7 * 3.5 / r * dt);
       }
     } else {
@@ -815,7 +826,7 @@ export class BallPhysics {
     const dir = vc.multiplyScalar(-1 / vt); // opposing slip
     this.v.addScaledVector(dir, J / m);
     // angular: Δw = (rc × J dir) / I
-    const tq = new Vector3().copy(rc).cross(dir).multiplyScalar(J / this.I);
+    const tq = sA3.copy(rc).cross(dir).multiplyScalar(J / this.I);
     this.w.add(tq);
   }
 
@@ -855,7 +866,7 @@ export class BallPhysics {
     const dv = Math.min(spd, (crr * N + viscous * spd) * dt);
     this.v.addScaledVector(vt, -dv / spd);
     // keep spin consistent with the slowed rolling
-    const wr = new Vector3().copy(this.n).cross(vt).multiplyScalar(-dv / spd / this.tune.radius);
+    const wr = sA4.copy(this.n).cross(vt).multiplyScalar(-dv / spd / this.tune.radius);
     this.w.add(wr);
   }
 
@@ -873,7 +884,7 @@ export class BallPhysics {
         const buoy = mat.mediumParams?.buoyancy ?? 0.25;
         acc.addScaledVector(WORLD_UP, this.tune.gravity * buoy * sub);
         // drag relative to the moving water
-        const rel = new Vector3().copy(pr.T).multiplyScalar(flow).sub(this.v);
+        const rel = sA5.copy(pr.T).multiplyScalar(flow).sub(this.v);
         acc.addScaledVector(rel, drag * sub * 0.5);
         // angular damping in fluid
         this.w.multiplyScalar(1 - Math.min(0.5, 2 * sub * dt));
@@ -906,7 +917,7 @@ export class BallPhysics {
     this.boosting = false;
     if (active) {
       this.magnetEnergy = Math.max(0, this.magnetEnergy - tu.magnetDrain * (inAir ? 1.6 : 1) * dt);
-      const nn = new Vector3();
+      const nn = sA6.set(0, 0, 0);
       let d = this.sdfAndNormal(nn, false, true);
       const grounded0 = this.sinceContact <= 0.03;
       // The beam works on the track you are ON or directly ABOVE: an upper
@@ -976,14 +987,14 @@ export class BallPhysics {
           const off = this.v.dot(nn);
           if (off > 0) this.v.addScaledVector(nn, -off * Math.min(1, dt * 25));
           // BOOSTER: on the track the field also drives the ball forward along the course
-          const fwd = new Vector3().copy(this.proj.T).addScaledVector(nn, -this.proj.T.dot(nn));
+          const fwd = sA7.copy(this.proj.T).addScaledVector(nn, -this.proj.T.dot(nn));
           if (fwd.lengthSq() > 1e-6) {
             fwd.normalize();
             const vf = this.v.dot(fwd);
             const fade = Math.max(0, Math.min(1, (tu.magnetBoostCap * this.turboMul() - vf) / 8));
             acc.addScaledVector(fwd, tu.magnetBoostAccel * fade);
             // spin the ball up to match, so it keeps rolling rather than skidding
-            this.w.addScaledVector(new Vector3().copy(nn).cross(fwd), (tu.magnetBoostAccel * fade * dt) / this.tune.radius);
+            this.w.addScaledVector(sA8.copy(nn).cross(fwd), (tu.magnetBoostAccel * fade * dt) / this.tune.radius);
             this.boosting = fade > 0.05 || this.turboTime > 0;
             // a full swipe combo + holding the booster charges turbo
             if (this.pushCombo >= 3 && !this.turboArmed && this.turboTime <= 0) {

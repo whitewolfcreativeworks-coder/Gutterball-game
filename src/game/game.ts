@@ -196,8 +196,11 @@ export class Game {
     this.ghostView = new GhostView(this.run.ball.tune.radius);
     this.scene.add(this.ghostView.group);
     this.scene.add(this.lineAhead.mesh, this.lineBehind.mesh);
-    this.predBall = undefined; this.predPts = []; this.trailPts = []; this.fallsSeen = 0; this.autoUsed = false;
+    this.predBall = undefined; this.pred = null; this.predPts = []; this.trailPts = []; this.fallsSeen = 0; this.autoUsed = false;
     this.applyTuning();
+    // compile every shader the course will use now, while loading, not the first time a
+    // tube show, the net or a sky line comes into view (that was a visible hitch mid-ride)
+    this.precompile();
     this.lineAhead.hide(); this.lineBehind.hide();
     if (this.lastRun?.course !== course.id) { this.lastRun = null; this.ghost = null; }
     this.replay = null;
@@ -354,6 +357,7 @@ export class Game {
   insane = false;
   /** 1 = real time; dips during insane-speed flips (slow-mo). */
   timeScale = 1;
+  private fxFlowK = 0; private fxTwist = 0; private fxPush = 0;
   setInsane(on: boolean) {
     this.insane = on;
     if (on && !this.auto) this.setAuto(true);
@@ -366,7 +370,7 @@ export class Game {
     const t = this.run.ball.tune as unknown as Record<string, unknown>;
     const src = { ...DEFAULT_TUNING, ...(this.insane && this.auto ? INSANE_TUNING : {}) } as unknown as Record<string, unknown>;
     for (const k of Object.keys(src)) { const v = src[k]; t[k] = Array.isArray(v) ? [...v] : v; }
-    this.predBall = undefined; // the look-ahead copies the new physics
+    this.predBall = undefined; this.pred = null; // the look-ahead copies the new physics
   }
   setAuto(on: boolean) {
     this.auto = on;
@@ -383,27 +387,50 @@ export class Game {
    * keep the path. The copy never changes the course (no pads lit, no boosts
    * used), and the obstacle clock is put back afterwards.
    */
+  private precompile() {
+    try {
+      const hidden: { visible: boolean }[] = [];
+      this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+      this.renderer.compile(this.scene, this.camera.cam);
+      for (const o of hidden) o.visible = false;
+    } catch { /* (headless: nothing to compile) */ }
+  }
+
+  /**
+   * The racing line ahead: a look-ahead ball driven by a copy of the pro. It's
+   * worked out a slice per frame (never all at once, which made a hitch every
+   * quarter second), on its own copy of the obstacle clock.
+   */
+  private pred: { pilot: ProPilot; k: number; pts: LinePoint[]; t0: number[]; el: number } | null = null;
   private predictLine() {
     if (!this.run || !this.courseGeo || !this.material) return;
     const ball = this.run.ball;
     if (!this.predBall) this.predBall = new BallPhysics(this.courseGeo, this.material, ball.tune);
     const pb = this.predBall;
-    const times = this.courseGeo.all.map((t) => t.time);
     pb.copyStateFrom(ball);
     pb.predict = true;
-    const pilot = this.pro.clone();
+    this.pred = { pilot: this.pro.clone(), k: 0, pts: [], t0: this.courseGeo.all.map((t) => t.time), el: 0 };
+  }
+  private advancePrediction(maxSteps: number) {
+    const st = this.pred, pb = this.predBall;
+    if (!st || !pb || !this.courseGeo) return;
+    const all = this.courseGeo.all;
+    const saved = all.map((t) => t.time);
+    all.forEach((t, i) => { t.time = st.t0[i] + st.el; });
     const dt = this.insane ? 1 / 120 : 1 / 75;
     const steps = this.insane ? 170 : 135;
-    const pts: LinePoint[] = [];
-    for (let k = 0; k < steps; k++) {
-      const inp = pilot.decide(pb, dt);
+    let n = 0, done = false;
+    while (n < maxSteps && st.k < steps) {
+      const inp = st.pilot.decide(pb, dt);
       pb.step(dt, inp);
       pb.events.length = 0;
-      if (!Number.isFinite(pb.p.x)) break;
-      if (k % (this.insane ? 3 : 2) === 0) pts.push({ p: pb.p.clone(), speed: pb.v.length(), air: pb.airborne });
+      st.el += dt;
+      if (!Number.isFinite(pb.p.x)) { done = true; break; }
+      if (st.k % (this.insane ? 3 : 2) === 0) st.pts.push({ p: pb.p.clone(), speed: pb.v.length(), air: pb.airborne });
+      st.k++; n++;
     }
-    this.courseGeo.all.forEach((t, i) => { t.time = times[i]; });
-    this.predPts = pts;
+    all.forEach((t, i) => { t.time = saved[i]; });
+    if (done || st.k >= steps) { this.predPts = st.pts; this.pred = null; }
   }
   private updateAutoVisuals(dt: number) {
     if (!this.run) return;
@@ -411,7 +438,8 @@ export class Game {
     const live = this.auto && this.run.phase === 'running' && !this.finale && !this.intro && !this.replay;
     if (!live) { this.lineAhead.hide(); this.lineBehind.hide(); return; }
     this.predTimer -= dt;
-    if (this.predTimer <= 0) { this.predTimer = 0.22; this.predictLine(); }
+    if (this.predTimer <= 0 && !this.pred) { this.predTimer = 0.22; this.predictLine(); }
+    this.advancePrediction(this.insane ? 45 : 35);
     // start the line at the point nearest the ball now (the look-ahead is a moment old)
     let start = 0, bd = Infinity;
     for (let i = 0; i < Math.min(30, this.predPts.length); i++) { const d = this.predPts[i].p.distanceToSquared(b.p); if (d < bd) { bd = d; start = i; } }
@@ -554,12 +582,26 @@ export class Game {
     if (fx) {
       fx.uFxTime.value = this.time;
       fx.uFxTravel.value += b.v.length() * dt;
+      {
+        // the pattern's motion where the ball is now, eased in time (see FractalUniforms)
+        const tr = b.track, i = tr.idx(b.proj.s), tube = tr.tubeAt(b.proj.s);
+        const flowK = tr.fxMode[i * 3] - (0.7 + 0.9 * tube);
+        const twist = tr.fxMode[i * 3 + 2] + tube * 1.2 * Math.sin(this.time * 0.23);
+        const k = Math.min(1, dt * 1.5);
+        this.fxFlowK += (flowK - this.fxFlowK) * k; this.fxTwist += (twist - this.fxTwist) * k; this.fxPush += (tr.fxMode[i * 3 + 1] - this.fxPush) * k;
+        fx.uFxPhase.value += b.v.length() * dt * this.fxFlowK;
+        fx.uFxTwistPh.value += dt * this.fxTwist;
+        // keep the numbers small (shader precision on phones); a wrap far ahead is never seen as a jump
+        if (Math.abs(fx.uFxPhase.value) > 4096) fx.uFxPhase.value %= 4096;
+        if (Math.abs(fx.uFxTwistPh.value) > 4096) fx.uFxTwistPh.value %= 4096;
+        fx.uFxNow.value[0] = this.fxTwist; fx.uFxNow.value[1] = this.fxPush;
+      }
       fx.uFxBallDark.value = this.ballView.darkness;
       fx.uFxIntensity.value = this.fractalLevel * (this.trackGroup!.userData.fxStrength ?? 0.6) * (b.turboTime > 0 ? 1.3 : 1);
       fx.uFxSpeed.value += (Math.min(1, b.v.length() / 30) - fx.uFxSpeed.value) * Math.min(1, dt * 3);
       for (const bg of this.branchGroups) {
         const f2 = bg.userData.fx;
-        if (f2) { f2.uFxTime.value = fx.uFxTime.value; f2.uFxIntensity.value = fx.uFxIntensity.value; f2.uFxSpeed.value = fx.uFxSpeed.value; f2.uFxTravel.value = fx.uFxTravel.value; f2.uFxBallDark.value = fx.uFxBallDark.value; }
+        if (f2) { f2.uFxTime.value = fx.uFxTime.value; f2.uFxIntensity.value = fx.uFxIntensity.value; f2.uFxSpeed.value = fx.uFxSpeed.value; f2.uFxTravel.value = fx.uFxTravel.value; f2.uFxBallDark.value = fx.uFxBallDark.value; f2.uFxPhase.value = fx.uFxPhase.value; f2.uFxTwistPh.value = fx.uFxTwistPh.value; f2.uFxNow.value = fx.uFxNow.value; }
       }
     }
     this.camera.fx = this.speedFx;
@@ -570,7 +612,7 @@ export class Game {
     this.camera.autoTarget = this.auto && this.run.phase === 'running' && !this.replay ? 1 : 0;
     this.updateAutoVisuals(this.paused ? 0 : dt);
     this.streaks?.update(b.track, b.proj.s, b.v.length(), dt, this.time, 0.5 + 0.5 * this.speedFx);
-    if (!this.intro && !this.finale) this.tubeThemes?.update(b, this.paused ? 0 : dt, this.time, this.mode === 'play' && !this.paused ? (k) => this.audio.themeSound(k) : undefined);
+    if (!this.intro && !this.finale) this.tubeThemes?.update(b, this.paused ? 0 : dt, this.time, this.mode === 'play' && !this.paused ? (k) => this.audio.themeSound(k) : undefined, this.camera.cam);
     // depth: inside a tube the far end falls away into darkness (fog to near-black in the world's colour)
     if (this.fogBase && this.scene.fog instanceof FogExp2) {
       const tkF = Math.max(b.track.tubeAt(b.proj.s), b.track.tubeAt(b.proj.s + 10));

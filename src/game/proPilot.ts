@@ -17,6 +17,8 @@ import { Vector3 } from 'three';
  */
 export type Trick = '' | 'PUSH' | 'TURBO' | 'PAD' | 'HOLOGRAM' | 'AIR' | 'GAP' | 'BEAM' | 'GRIP' | 'DODGE' | 'GAS' | 'CARVE' | 'BRAKE';
 
+const PP_TMP = new Vector3();
+
 export class ProPilot {
   private lastTargetX = 0;
   private pushT = 0;
@@ -182,7 +184,7 @@ export class ProPilot {
     // air over a crest: the gutter drops away ahead, nothing closed or solid coming up
     if (!jump && !careful && (this.insane || (this.pace >= 0.5 && this.pace < 0.85)) && climb === 0 && ball.contact && this.airT <= 0 && speed > 24 && !tube && Math.abs(pr.x) < W * 0.4) {
       const i0 = tr.idx(s), i1 = tr.idx(s + 10);
-      const dT = new Vector3(tr.T[i1 * 3] - tr.T[i0 * 3], tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]);
+      const dT = PP_TMP.set(tr.T[i1 * 3] - tr.T[i0 * 3], tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]);
       const drop = dT.dot(pr.U);
       let clear = true;
       for (let d = 0; d < 60 && clear; d += 4) {

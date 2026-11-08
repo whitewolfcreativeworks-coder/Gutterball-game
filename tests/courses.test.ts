@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Course, Track } from '../src/track/track';
+import { splitFill, Course, Track } from '../src/track/track';
 import { BallPhysics } from '../src/physics/ball';
 import { MATERIALS } from '../src/physics/materials';
 import { Run } from '../src/game/run';
@@ -125,6 +125,8 @@ describe('The Burrow: full tube with a split (Timberline Run)', () => {
       // deepest inside any hollow (at a junction the two pipes' hollows are one)
       let dep = -1e9;
       for (let k = 0; k < b.tracks.length; k++) { const p = b.projs[k]; p.project(b.p.x, b.p.y, b.p.z); if (Math.abs(p.along) < 3) dep = Math.max(dep, b.tracks[k].channelDepthLocal(p.s, p.x, p.y)); }
+      // (and at a split, the shared hollow above the rising divider)
+      { const p0 = b.projs[0], pk = b.projs[SKY]; if (Math.abs(p0.along) < 3 && Math.abs(pk.along) < 3) { const f = splitFill(course.main, p0.s, course.all[SKY], pk.s, p0.x, p0.y); if (f) dep = Math.max(dep, f.d); } }
       minDepth = Math.min(minDepth, dep);
       maxY = Math.max(maxY, b.proj.y);
       // (the two pipes share a hollow for 50 m at each end; count only the separate middle)

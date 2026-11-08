@@ -168,3 +168,31 @@ At insane speeds the track's frame swings round faster than the eye can follow. 
 
 - **The camera's roll and turn rates are capped.** The cap tightens with speed, from about 5.5 rad/s for roll at 40 m/s down to 1.6 rad/s at 120 m/s, so the world sweeps round you instead of flicking.
 - **Time stretches over the top of a loop or roll above 75 m/s.** It slows to as little as 0.55×, like a backflip in slow motion. The ball, the clock and the camera all slow together.
+
+## Smoother graphics (v14)
+
+- **No more flicker at section changes.** The fractal used to move by each section's own flow, multiplied by the whole distance travelled. Where the flow changed from one section to the next, the pattern sheared into a flickering moiré, worse the further you'd gone. Now the pattern's motion is worked out each frame from where the ball is (`uFxPhase`, `uFxTwistPh`, `uFxNow`), so the whole tube moves as one and changes smoothly over time. The phases wrap to stay small, which keeps shader precision on phones.
+- **No garbage in the hot path.** The 240 Hz physics step and the Auto Ball's look-ahead steps were allocating vectors, about a thousand a frame with Auto on, which made garbage-collection hitches. They now use scratch vectors.
+- **The racing line is spread out.** It used to be worked out in one go every quarter second (135–170 physics steps in a single frame, a hitch each time). Now it's done a slice per frame (35–45 steps), on its own copy of the obstacle clock.
+- **Shaders compile while the course loads**, every hidden show, net and sky line included, not mid-ride the first time one comes into view.
+
+## Tube shows are holograms (v14)
+
+Everything a tube show projects is now a hologram, not a painted sticker. The pictures glow and have:
+- scanlines rolling upward, with a brighter sweep passing through;
+- a slight red/blue split at the edges;
+- glitch bands that slip sideways now and then, and flicker;
+- a faint projector cone of light from the wall.
+
+The shows:
+- **Lasers:** fans of soft, volumetric beams. Each has a hot core, a pulse running along it, and a glowing splash where it lands on the wall. They sweep from emitters low on alternating walls.
+- **Fireworks:** a flash, then a scanning shockwave ring, then glittering sparks with soft halos that droop as they fade.
+- **Haunted:** ghosts, eyes, skulls, bats and BOO, flickering and glitching.
+- **Pinball:** JACKPOT, MULTIBALL, 1000 and the rest, popping up.
+- **Day of the Dead (new):**
+  - papel picado banners, strung across the upper pipe and fluttering;
+  - sugar skulls with flower eyes and a heart nose, marigolds, candles and hearts;
+  - a marimba pluck.
+- **Rubber ducky (new):** duckies bobbing low on the sides, iridescent bubbles rising through the pipe, and a squeak.
+
+All the art is drawn in code and is original.

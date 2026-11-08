@@ -17,6 +17,6 @@ describe('tube themes', () => {
       for (const t of themed) { seen.add(t.theme); expect(t.s1 - t.s0).toBeGreaterThanOrEqual(90); }
       lines.push(`${c.id}: ${tubes} tubes, themed ${themed.map((t) => `${t.theme}@${Math.round(t.s0)}${t.track === course.main ? '' : '(route)'}`).join(' ')}`);
     }
-    expect(seen.size).toBe(4);
+    expect(seen.size).toBe(6);   // every theme shows up somewhere: lasers, fireworks, haunted, pinball, Day of the Dead, rubber ducky
   });
 });

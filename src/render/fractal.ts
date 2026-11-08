@@ -48,6 +48,17 @@ export interface FractalUniforms {
   uFxSpeed: { value: number };
   uFxTravel: { value: number }; // distance the ball has travelled (metres)
   uFxBallDark: { value: number }; // 0 = bright steel ball, 1 = dark chrome ball (contrast pairing)
+  /**
+   * (v14) The pattern's motion, integrated on the CPU from where the BALL is:
+   * uFxPhase = distance streamed along, uFxTwistPh = angle spun round, uFxNow =
+   * (twist, push) here now. Motion that varied from place to place along the
+   * course (each section's flow times the whole distance travelled) sheared
+   * the pattern into flicker at every section change, worse the further you
+   * went; now the whole tube moves as one and changes smoothly over time.
+   */
+  uFxPhase: { value: number };
+  uFxTwistPh: { value: number };
+  uFxNow: { value: [number, number] };
 }
 
 const GLSL = /* glsl */ `
@@ -61,6 +72,9 @@ uniform float uFxFlow;
 uniform vec2 uFxC;
 uniform float uFxCenter;
 uniform float uFxTravel;
+uniform float uFxPhase;
+uniform float uFxTwistPh;
+uniform vec2 uFxNow;
 uniform float uFxRing; // distance all the way round the closed pipe
 uniform float uFxPsy;
 uniform float uFxBallDark;
@@ -340,21 +354,20 @@ vec3 fxColor() {
   float tube = vFxMode.w;
   float wall = max(smoothstep(1.4, 3.8, abs(across)), tube * mix(0.35, 0.6, uFxBallDark));   // calmer floor under a bright ball
   // every section moves: a baseline rush toward you, much stronger in tubes
-  float flowK = vFxMode.x - mix(0.7, 1.6, tube);
-  float push = max(vFxMode.y, tube * 0.6);
-  float twist = vFxMode.z + tube * 1.2 * sin(uFxTime * 0.23);
+  float push = max(uFxNow.y, tube * 0.6);
+  float twist = uFxNow.x;
   float breathe = sin(uFxTime * 2.4 + vFxUv.y * 0.04);
   float zoom = 1.0 + push * 0.35 * breathe;
 
   // LAYER 1: the main fractal, streaming with the ride and spiralling (helical twist)
-  float along = vFxUv.y - uFxTime * uFxFlow - uFxTravel * flowK;
+  float along = vFxUv.y - uFxTime * uFxFlow - uFxPhase;
   // across-scale chosen so the pattern wraps seamlessly all the way round a pipe
   float kx = 4.0 * 2.0 * max(1.0, floor(uFxRing * uFxScale / 8.0 + 0.5)) / uFxRing;
-  vec2 p1 = vec2((across + uFxTime * twist * 1.6 + along * twist * 0.04) * kx, along * uFxScale) * zoom;
+  vec2 p1 = vec2((across + uFxTwistPh * 1.6 + vFxUv.y * twist * 0.04) * kx, along * uFxScale) * zoom;
   float f1 = fxPattern(fxMirror(p1));
   // LAYER 2: a bigger, slower layer drifting the other way (parallax depth, like
   // the stacked projection layers of a dome show)
-  vec2 p2 = vec2((across - uFxTime * twist * 1.6) * kx * 0.5, (vFxUv.y * 0.55 - uFxTravel * flowK * 0.4 + uFxTime * 0.5) * uFxScale) / zoom;
+  vec2 p2 = vec2((across - uFxTwistPh * 1.6) * kx * 0.5, (vFxUv.y * 0.55 - uFxPhase * 0.4 + uFxTime * 0.5) * uFxScale) / zoom;
   float f2 = fxPattern(fxMirror(p2 + 0.37));
   // contrast: crush the gaps between features to black, keep the features bright
   // contrast pairing with the ball: a BRIGHT ball needs dark, high-contrast walls;

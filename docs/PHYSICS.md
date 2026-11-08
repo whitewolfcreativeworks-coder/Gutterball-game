@@ -271,3 +271,14 @@ Over all 48 Auto Ball runs (12 worlds at four paces), one ball was lost, on Insa
 - The tests for flying across between routes and riding roofs from outside are skipped.
 
 The Apple Watch ball has the same lid.
+
+## Gradual tube splits (v14)
+
+Where one pipe splits in two (or two merge), the plain union of the two hollows made the divider appear from the middle. A ridge rose from the floor while a fin hung down from the roof, and they met halfway, so the choice came at the last moment.
+
+Now the divider grows from the floor only (`splitFill` in `src/track/track.ts`):
+- A low ridge appears once the two pipe centres are 1.5 m apart.
+- It rises smoothly as the pipes draw apart, until it reaches the roof at 13.5 m.
+- Above the ridge, the two pipes share one stadium-shaped hollow (their hull). So nothing hangs from the roof, and you can see the split coming and pick a side early.
+
+The physics adds the shared hollow to the junction's free space. The renderer carves away the roof fin and builds the shared roof and the top face of the rising divider (`buildSplitRoofs`).

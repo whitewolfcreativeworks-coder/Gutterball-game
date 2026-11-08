@@ -449,7 +449,7 @@ export class AudioEngine {
   }
 
   /** Tube-theme sounds: kept quiet, under the rolling sound. */
-  themeSound(kind: 'lasers' | 'fireworks' | 'haunted' | 'pinball' | 'firework') {
+  themeSound(kind: 'lasers' | 'fireworks' | 'haunted' | 'pinball' | 'deadday' | 'ducky' | 'firework') {
     if (!this.ctx) return;
     if (kind === 'firework') {
       this.pop(true);
@@ -457,6 +457,14 @@ export class AudioEngine {
     } else if (kind === 'haunted') {
       this.sweep(220 + Math.random() * 60, 110, 0.9, 0.05, 'sine');
       this.sweep(330 + Math.random() * 80, 160, 0.8, 0.025, 'triangle');
+    } else if (kind === 'ducky') {
+      // a squeak: a quick rising-then-falling chirp
+      this.sweep(900 + Math.random() * 200, 1500, 0.07, 0.07, 'square');
+      setTimeout(() => this.sweep(1500, 1000, 0.08, 0.05, 'square'), 70);
+    } else if (kind === 'deadday') {
+      // a bright marimba-like pluck
+      const f = [523.25, 659.25, 783.99, 1046.5][Math.floor(Math.random() * 4)];
+      this.chime(f, 0.1); setTimeout(() => this.chime(f * 1.25, 0.07), 110);
     } else if (kind === 'pinball') {
       const f = [1046.5, 1318.5, 1568, 2093][Math.floor(Math.random() * 4)];
       this.chime(f, 0.12); setTimeout(() => this.chime(f * 1.5, 0.08), 60);

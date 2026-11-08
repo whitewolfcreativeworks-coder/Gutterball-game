@@ -810,6 +810,52 @@ export class TrackProjector {
   }
 }
 
+/**
+ * GRADUAL TUBE SPLITS. Where one pipe splits into two (or two merge into
+ * one), the plain union of the two hollows makes the divider appear from
+ * the middle: a ridge rises from the floor AND a fin hangs down from the
+ * roof, and they meet halfway, leaving the choice to the last moment.
+ * Instead the divider grows from the FLOOR only: a low ridge first, rising
+ * gradually as the pipes draw apart until it reaches the roof. Above the
+ * ridge the two pipes share one wide hollow (their stadium-shaped hull), so
+ * there's nothing hanging from the roof and you can see the split coming.
+ *
+ * Returns the extra hollow's depth at (x, y) in pipe A's frame (positive =
+ * free space) and its gradient, or null where it doesn't apply (not both
+ * pipes). `start`/`full`: centre separations (m) where the ridge starts to
+ * rise and where it reaches the roof.
+ */
+export const SPLIT = { start: 1.5, full: 13.5 };
+const sfP = new Vector3(), sfT = new Vector3(), sfU = new Vector3(), sfR = new Vector3();
+const sfQ = new Vector3(), sfQT = new Vector3(), sfQU = new Vector3(), sfQR = new Vector3();
+export function splitFill(A: Track, sA: number, B: Track, sB: number, x: number, y: number): { d: number; gx: number; gy: number; hs: number; bx: number; by: number } | null {
+  if (A.tubeAt(sA) < 0.5 || B.tubeAt(sB) < 0.5) return null;
+  const pa = A.profileAt(sA), pb = B.profileAt(sB);
+  const H = pa.H, W = pa.a + pa.rc;
+  A.frameAtS(sA, sfP, sfT, sfU, sfR);
+  B.frameAtS(sB, sfQ, sfQT, sfQU, sfQR);
+  // B's pipe centre in A's cross-section
+  const cx = sfQ.x + sfQU.x * pb.H - sfP.x, cy = sfQ.y + sfQU.y * pb.H - sfP.y, cz = sfQ.z + sfQU.z * pb.H - sfP.z;
+  const bx = cx * sfR.x + cy * sfR.y + cz * sfR.z, by = cx * sfU.x + cy * sfU.y + cz * sfU.z;
+  const ox = Math.hypot(bx, by - H);
+  const k = Math.max(0, Math.min(1, (ox - SPLIT.start) / (SPLIT.full - SPLIT.start)));
+  const hs = H - W + 2 * W * k * k * (3 - 2 * k);
+  if (hs >= H + W - 0.01) return null;
+  // the hull: a capsule round the segment between the two centres
+  const ax = 0, ay = H, dx = bx - ax, dy = by - ay;
+  const L2 = dx * dx + dy * dy;
+  const t = L2 > 1e-9 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2)) : 0;
+  const qx = x - (ax + dx * t), qy = y - (ay + dy * t);
+  const ql = Math.hypot(qx, qy);
+  const inCap = W - ql;          // depth inside the hull
+  const above = y - hs;          // height above the ridge
+  if (inCap < above) {
+    const l = ql > 1e-6 ? ql : 1;
+    return { d: inCap, gx: -qx / l, gy: -qy / l, hs, bx, by };
+  }
+  return { d: above, gx: 0, gy: 1, hs, bx, by };
+}
+
 /** A course = the main gutter plus any branch gutters. */
 export class Course {
   readonly main: Track;

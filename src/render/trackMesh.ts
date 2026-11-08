@@ -2,7 +2,7 @@ import {
   BoxGeometry, BackSide, Object3D, ShaderMaterial, UniformsLib, MeshBasicMaterial, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
   Mesh, MeshStandardMaterial, MeshPhysicalMaterial, Quaternion, Vector3, Color, CanvasTexture, SRGBColorSpace, PlaneGeometry, TorusGeometry, AdditiveBlending, EdgesGeometry, LineSegments, LineBasicMaterial, RepeatWrapping,
 } from 'three';
-import { TrackProjector, NET, type Track } from '../track/track';
+import { TrackProjector, NET, splitFill, type Track } from '../track/track';
 import { profileRing, halfWidth } from '../track/profile';
 import type { MaterialProfile } from '../physics/materials';
 import { SKY_THEMES } from './sky';
@@ -81,6 +81,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   // Junction carving: drop triangles of this track that lie inside the other
   // track's hollow, so a split pipe is a real opening, not two pipes crossing.
   const carve = (junctions ?? []).map((j) => ({ ...j, proj: new TrackProjector(j.other) }));
+  const cP = new Vector3(), cT = new Vector3(), cU = new Vector3(), cR = new Vector3();
   const carved = (ax: number, ay: number, az: number, s: number) => {
     for (const c of carve) {
       if (s < c.s0 || s > c.s1) continue;
@@ -88,6 +89,11 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
       c.proj.project(ax, ay, az);
       if (Math.abs(c.proj.along) > 1.5 || c.proj.s < 0.2 || c.proj.s > c.other.length - 0.2) continue;
       if (c.other.channelDepthLocal(c.proj.s, c.proj.x, c.proj.y) > 0.03) return true;
+      // a tube split: the shared hollow above the rising divider (no fin hanging from the roof)
+      track.frameAtS(s, cP, cT, cU, cR);
+      const lx = (ax - cP.x) * cR.x + (ay - cP.y) * cR.y + (az - cP.z) * cR.z, ly = (ax - cP.x) * cU.x + (ay - cP.y) * cU.y + (az - cP.z) * cU.z;
+      const f = splitFill(track, s, c.other, c.proj.s, lx, ly);
+      if (f && f.d > 0.05) return true;
     }
     return false;
   };
@@ -185,7 +191,7 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   // Animated fractal glow layer (see fractal.ts)
   const theme = FRACTAL_THEMES[mat.id] ?? FRACTAL_THEMES.wood;
   const centerU = 0;
-  const fx: FractalUniforms = { uFxTime: { value: 0 }, uFxIntensity: { value: 0.5 }, uFxSpeed: { value: 0 }, uFxTravel: { value: 0 }, uFxBallDark: { value: 0 } };
+  const fx: FractalUniforms = { uFxTime: { value: 0 }, uFxIntensity: { value: 0.5 }, uFxSpeed: { value: 0 }, uFxTravel: { value: 0 }, uFxBallDark: { value: 0 }, uFxPhase: { value: 0 }, uFxTwistPh: { value: 0 }, uFxNow: { value: [0, 0] } };
   const closed = ringFor(1).filter((r) => r.part === 0);
   applyFractal(surfaceMat, theme, centerU, fx, closed[closed.length - 1].u - closed[0].u);
   g.userData.fx = fx;
@@ -207,6 +213,9 @@ export function buildTrackGroup(track: Track, mat: MaterialProfile, groundHeight
   shell.castShadow = vis.surface !== 'glass';
   shell.receiveShadow = true;
   g.add(shell);
+
+  // ---- Tube splits: the shared roof over the rising divider, and the divider's top ----
+  { const sp = buildSplitRoofs(track, carve.map((c) => c.other).filter((o) => !allTracks || allTracks.indexOf(track) < allTracks.indexOf(o)), carve, shellMat); if (sp) g.add(sp); }
 
   // ---- Liquid surface (water world) ----
   if (mat.medium === 'water') { const lq = buildLiquid(track, mat); g.add(lq); g.userData.water = lq.userData.water; }
@@ -930,4 +939,59 @@ function buildCheckpointPosts(track: Track, s: number) {
     g.add(post);
   }
   return g;
+}
+
+
+/**
+ * Where a pipe splits gradually (see splitFill), the two pipes share one
+ * stadium-shaped hollow above the divider. This builds its roof (the flat top
+ * between the two pipe crowns) and the top face of the divider as it rises
+ * from the floor, along the junction. Built once, by the parent pipe.
+ */
+function buildSplitRoofs(track: Track, others: Track[], carve: { s0: number; s1: number; other: Track; proj: TrackProjector }[], mat: MeshStandardMaterial): Mesh | null {
+  const pos: number[] = [], nrm: number[] = [], idx: number[] = [];
+  const P = new Vector3(), T = new Vector3(), U = new Vector3(), R = new Vector3();
+  const prof = track.profile, H = prof.H, W = prof.a + prof.rc;
+  for (const c of carve) {
+    if (!others.includes(c.other)) continue;
+    let prev: number[] | null = null;
+    for (let s = Math.max(0, c.s0); s <= Math.min(track.length, c.s1); s += 1) {
+      track.frameAtS(s, P, T, U, R);
+      // the other pipe's centreline point beside this one
+      const ex = P.x + U.x * H, ey = P.y + U.y * H, ez = P.z + U.z * H;
+      c.proj.relocate(ex, ey, ez); c.proj.project(ex, ey, ez);
+      const f = Math.abs(c.proj.along) < 2 ? splitFill(track, s, c.other, c.proj.s, 0, H) : null;
+      if (!f) { prev = null; continue; }
+      const bx = f.bx, by = f.by, dx = bx, dy = by - H, L = Math.hypot(dx, dy) || 1;
+      // roof: the capsule's straight top edge, from above this crown to above the other
+      let nx = -dy / L, ny = dx / L; if (ny < 0) { nx = -nx; ny = -ny; }
+      const a = [nx * W, H + ny * W], b = [bx + nx * W, by + ny * W];
+      // the divider's top: between the two pipe walls at the ridge height
+      const side = Math.sign(bx) || 1;
+      const hA = f.hs - H, hB = f.hs - by;
+      const ca = Math.abs(hA) < W ? [side * Math.sqrt(W * W - hA * hA), f.hs] : null;
+      const cb = Math.abs(hB) < W ? [bx - side * Math.sqrt(W * W - hB * hB), f.hs] : null;
+      const cap = ca && cb && (cb[0] - ca[0]) * side > 0.02 ? [ca, cb] : [[bx / 2, f.hs], [bx / 2, f.hs]];
+      const pts = [a, b, cap[0], cap[1]].map(([x, y]) => [P.x + R.x * x + U.x * y, P.y + R.y * x + U.y * y, P.z + R.z * x + U.z * y]);
+      const row = pos.length / 3;
+      for (const q of pts) pos.push(q[0], q[1], q[2]);
+      nrm.push(-U.x, -U.y, -U.z, -U.x, -U.y, -U.z, U.x, U.y, U.z, U.x, U.y, U.z);
+      if (prev) {
+        const p0 = prev[0];
+        idx.push(p0, p0 + 1, row, p0 + 1, row + 1, row);           // roof
+        idx.push(p0 + 2, p0 + 3, row + 2, p0 + 3, row + 3, row + 2); // divider top
+      }
+      prev = [row];
+    }
+  }
+  if (!idx.length) return null;
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('normal', new BufferAttribute(new Float32Array(nrm), 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const m = mat.clone(); m.side = DoubleSide; m.map = null;
+  const mesh = new Mesh(geo, m);
+  mesh.name = 'splitRoof';
+  return mesh;
 }

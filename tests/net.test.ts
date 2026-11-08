@@ -49,7 +49,7 @@ describe('the safety net', () => {
 
   for (const id of ['wood', 'concrete', 'ice', 'snow'])
     // (v13: the lid keeps the ball between the walls, so it can only reach the net through the floor)
-    for (const from of ['under'] as const)
+    for (const from of ['under'] as ('side' | 'under')[])
       it(`${id}: fall off ${from === 'side' ? 'the side' : 'through the floor'}, land in the net, get lifted back into the gutter`, () => {
         const r = drop(id, from, 0.3);
         expect(r.evs.has('NET_CATCH')).toBe(true);
