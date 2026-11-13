@@ -96,6 +96,13 @@ public final class BallPhysics {
         proj.project(p)
         let pr = proj
         var acc = Vec3(0, -tu.gravity, 0)
+        // WEIGHT (as in the phone game): off the surface the ball gets heavier, more so
+        // the faster and higher it goes, so it comes back down on its own
+        if !contact && !netLift && !magnetActive && sinceContact > 0.06 && pr.U.y > 0.25 && track.tubeAt(pr.s) < 0.5 && !track.isGap(pr.s) && !track.isGap(pr.s + 15) && !track.isGap(pr.s - 15) {
+            let sp = v.length
+            let k = 2.0 * (0.45 + max(0, min(1, (sp - 12) / 30))) * (1 + 0.35 * max(0, min(4, pr.y - 1.5)))
+            acc -= pr.U * (tu.gravity * k * min(1, (sinceContact - 0.06) / 0.18))
+        }
 
         // steering: along the surface when rolling, a gentler push in the air
         if contact {
@@ -152,7 +159,8 @@ public final class BallPhysics {
             let vn = v.dot(nrm)
             if vn < 0 {
                 if -vn > impact { impact = -vn; impactObstacle = isNearObstacle() }
-                let e = magnetActive ? 0 : (-vn > tu.restitutionThreshold ? tu.restitution : 0)
+                var e = magnetActive ? 0 : (-vn > tu.restitutionThreshold ? tu.restitution : 0)
+                if sinceContact > 0.08 { e *= 0.3 }   // a heavy ball lands with a thud
                 v -= nrm * ((1 + e) * vn)
                 friction(nrm, jn: -(1 + e) * vn * m)
             }

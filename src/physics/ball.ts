@@ -48,6 +48,8 @@ export interface BallTuning {
   driveAccel: [number, number, number];
   driveCap: [number, number, number];
   airDrag: number;          // k in a = -k|v|v
+  airWeight: number;        // extra pull toward the floor when off the surface, in g at full speed (see WEIGHT)
+  landBounce: number;       // share of the material's bounce kept when landing from the air (see WEIGHT)
   jumpSpeed: number;
   jumpCooldown: number;
   coyoteTime: number;
@@ -88,6 +90,8 @@ export const DEFAULT_TUNING: BallTuning = {
   driveAccel: [0, 2.6, 3.6],
   driveCap: [0, 30, 38],
   airDrag: 0.0006,
+  airWeight: 2.0,
+  landBounce: 0.3,
   jumpSpeed: 8.6,
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
@@ -366,6 +370,27 @@ export class BallPhysics {
     const sp = this.v.length();
     acc.addScaledVector(this.v, -tu.airDrag * sp);
 
+    // ---- WEIGHT: a heavy steel ball comes back down on its own ----
+    // Real gravity alone lets a fast ball skim a long way off every crest (a
+    // ball at 100 m/s leaves any crest gentler than a kilometre in radius, and
+    // then hangs). So once it's off the surface the ball gets heavier: extra
+    // pull toward the gutter floor, growing with speed and easing in over the
+    // first moment (a hop still feels like a hop). No beam needed to come down.
+    // (the beam, when held, does its own controlled pulling: no doubling up)
+    if (!this.netLift && !this.magnetActive && this.sinceContact > tu.coyoteTime && tu.airWeight > 0) {
+      const inPipe = this.track.tubeAt(pr.s) > 0.5;
+      // (a designed gap jump keeps the flight it was built for)
+      let nearGap = false;
+      for (let d = -30; d <= 30 && !nearGap; d += 6) if (this.track.isGap(pr.s + d)) nearGap = true;
+      if (!inPipe && !nearGap && pr.U.y > 0.25) {
+        const ramp = Math.min(1, (this.sinceContact - tu.coyoteTime) / 0.18);
+        // heavier still the higher it gets above the floor: it never hangs up there
+        const k = tu.airWeight * (0.45 + Math.max(0, Math.min(1, (sp - 18) / 45))) * (1 + 0.35 * Math.max(0, Math.min(4, pr.y - 1.5)));
+        // toward the floor of the gutter below (on a banked track that's not quite straight down)
+        acc.addScaledVector(pr.U, -tu.gravity * k * ramp);
+      }
+    }
+
     // Medium: water (buoyancy, drag toward flow)
     this.updateMedium(acc, dt);
 
@@ -637,7 +662,10 @@ export class BallPhysics {
       const vn = this.v.dot(nn) - vob * pr.R.dot(nn);
       if (vn < 0) {
         if (-vn > impactSpeed) { impactSpeed = -vn; impactSource = src; }
-        const e = this.magnetActive && src === 'track' ? 0 : -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0; // magnet: lands and sticks, no bounce
+        let e = this.magnetActive && src === 'track' ? 0 : -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0; // magnet: lands and sticks, no bounce
+        // WEIGHT: a heavy ball coming down from the air lands with a thud, not a trampoline
+        // bounce that throws it straight back up (obstacles still knock it about)
+        if (src === 'track' && this.sinceContact > 0.08) e *= tu.landBounce;
         const Jn = -(1 + e) * m * vn;
         this.v.addScaledVector(nn, Jn / m);
         normalImpulseTotal += Jn;
@@ -1156,7 +1184,8 @@ export class BallPhysics {
     if (pr.y > cap) {
       this.p.addScaledVector(pr.U, cap - pr.y);
       const vu = this.v.dot(pr.U);
-      if (vu > 0) this.v.addScaledVector(pr.U, -vu);
+      // (it knocks the ball back down, rather than letting it skate along up there)
+      if (vu > -2) this.v.addScaledVector(pr.U, -vu - 2 - 0.3 * Math.max(0, vu));
       moved = true;
     }
     // the sides (above the fillet, the walls run straight up to the lid)

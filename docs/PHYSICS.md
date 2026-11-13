@@ -282,3 +282,25 @@ Now the divider grows from the floor only (`splitFill` in `src/track/track.ts`):
 - Above the ridge, the two pipes share one stadium-shaped hollow (their hull). So nothing hangs from the roof, and you can see the split coming and pick a side early.
 
 The physics adds the shared hollow to the junction's free space. The renderer carves away the roof fin and builds the shared roof and the top face of the rising divider (`buildSplitRoofs`).
+
+## Weight: the ball comes down on its own (v15)
+
+Playtest: a fast ball off a crest hung in the air until you used the beam. Real gravity alone does that at these speeds: a ball at 100 m/s leaves any crest gentler than about a kilometre in radius. Two things fix it (`BallPhysics.step` and the collision response):
+
+- **Heavier in the air** (`airWeight`, 2.0). Once the ball is off the surface (past the coyote moment), it gets an extra pull toward the gutter floor below.
+  - The pull grows with speed, from 0.45× at a crawl to the full amount from about 225 km/h. That's about 3g in total at speed.
+  - It also grows the higher the ball is above the floor, by up to 2.4× at 5.5 m or more.
+  - It eases in over 0.18 s, so a hop still feels like a hop.
+  - It isn't used inside pipes, upside down, near a designed gap jump (so gaps keep the flight they were built for), or while you hold the beam, which does its own controlled pulling.
+- **A thud, not a trampoline** (`landBounce`, 0.3). Coming down from the air, the ball keeps only 30% of the material's bounce on the track. Without this, a heavier landing on rubber bounced the ball straight back up higher. Obstacles still knock it about.
+- **The lid knocks it down.** Touching the lid now sends the ball back down at 2 m/s or more, rather than letting it skate along up there.
+
+Measured over all twelve worlds with a driver who never uses the beam in the air, comparing before and after:
+
+| Pace | Flight time, 90th percentile | Longest flight |
+|---|---|---|
+| Middle | 2.2 s → 1.2 s | 5.3 s → 2.7 s |
+| Rip | 1.9 s → 1.2 s | 4.6 s → 2.6 s |
+| Insane | 1.4 s → 1.1 s | 3.8 s → 2.4 s |
+
+The Apple Watch ball has the same weight.
