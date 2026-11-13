@@ -196,3 +196,18 @@ The shows:
 - **Rubber ducky (new):** duckies bobbing low on the sides, iridescent bubbles rising through the pipe, and a squeak.
 
 All the art is drawn in code and is original.
+
+## The Water world is underwater (v15)
+
+The River Run now runs along the bottom of a psychedelic aquarium (`src/render/underwater.ts`):
+- **Overhead:** the water's surface is a bright, rippling sheet with caustic light dancing across it, and a glow straight up where the sun is. Shafts of sunlight slant down through the blue.
+- **Plankton** glints all around you in shifting colours, streaming past with your speed.
+- **Schools of glowing fish** sweep by, with rainbow colours rippling along their bodies and their tails beating. **Jellyfish** pulse upward, trailing ribbons of light.
+- **The sea floor** has kelp forests swaying toward the light and coral heads and fans in every colour. Deep teal water fog replaces the sky.
+- **Sound:** the whole world is muffled the way sound is underwater. Rolling streams bubbles ("bloops" that rise in pitch as they pop), busier the faster you go.
+
+Everything follows the camera, so it costs the same anywhere on the course.
+
+## Concrete sounds like a skateboard (v15)
+
+Storm Drain's rolling is now urethane wheels on rough slab: a broad, warm low-mid roar with some grit on top and no bright hiss. Every expansion joint (8 m apart) is a skateboard's ka-CHUNK, front wheels then back wheels a wheelbase later (sooner the faster you go). Slides are a powerslide's rasp.

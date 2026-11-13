@@ -12,6 +12,8 @@ import { Ribbon, type LinePoint } from '../render/racingLine';
 import { BallPhysics, DEFAULT_TUNING, INSANE_TUNING } from '../physics/ball';
 import { TubeStreaks } from '../render/streaks';
 import { TubeThemes } from '../render/tubeThemes';
+import { Underwater } from '../render/underwater';
+import { kelpTime } from '../render/world';
 import { FogExp2, Color } from 'three';
 import { FRACTAL_THEMES } from '../render/fractal';
 import { BallView } from '../render/ballView';
@@ -70,6 +72,7 @@ export class Game {
   private branchGroups: Group[] = [];
   private streaks?: TubeStreaks;
   tubeThemes?: TubeThemes;
+  underwater?: Underwater;
   private fogBase?: { color: Color; density: number };
   private fogDark = new Color(0x000000);
   private fogMix = 0;
@@ -191,6 +194,13 @@ export class Game {
     { const th = FRACTAL_THEMES[this.material.id] ?? FRACTAL_THEMES.wood; this.streaks.setPalette(th.a, th.b, th.psy); }
     this.scene.add(this.streaks.mesh);
     this.tubeThemes = new TubeThemes(this.scene, this.courseGeo, course.id);
+    // the Water world runs along the bottom of a psychedelic aquarium
+    this.underwater = undefined;
+    if (this.material.visual.underwater) {
+      this.world.sky.mesh.visible = false;
+      this.world.hemi.color.set(0x7fe8ff); this.world.hemi.groundColor.set(0x1a4a3a);
+      this.underwater = new Underwater(this.scene, this.quality);
+    }
     this.applyCosmetics();
     this.scene.add(this.ballView.group);
     this.ghostView = new GhostView(this.run.ball.tune.radius);
@@ -357,6 +367,7 @@ export class Game {
   insane = false;
   /** 1 = real time; dips during insane-speed flips (slow-mo). */
   timeScale = 1;
+  private uwLook = new Vector3();
   private fxFlowK = 0; private fxTwist = 0; private fxPush = 0;
   setInsane(on: boolean) {
     this.insane = on;
@@ -633,6 +644,11 @@ export class Game {
       sun.position.copy(b.p).addScaledVector(this.world.sunDir, 90);
       // sky dome follows the camera; storms flash the whole scene
       const flash = this.world.sky.update(dt, performance.now() / 1000, this.camera.cam.position);
+      if (this.underwater) {
+        this.camera.cam.getWorldDirection(this.uwLook);
+        this.underwater.update(this.camera.cam.position, this.uwLook, this.time, dt);
+        kelpTime.value = this.time;
+      }
       if (this.hemiBase < 0) this.hemiBase = this.world.hemi.intensity;
       this.world.hemi.intensity = this.hemiBase * (1 + flash * 2.2);
     }

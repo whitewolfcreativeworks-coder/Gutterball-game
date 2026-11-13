@@ -47,6 +47,7 @@ export class AudioEngine {
   private musicTimer = 0;
   private chord = 0;
   private bubbleTimer = 0;
+  private rollBubbleTimer = 0;
 
   /** Create/resume the context. Must be called from a user gesture (iOS). */
   async unlock() {
@@ -314,7 +315,8 @@ export class AudioEngine {
     // --- acoustic space ---
     const wetT = a.reverb + (st.inTunnel ? 0.55 : 0);
     this.wet.gain.setTargetAtTime(wetT, t, 0.25);
-    this.muffle.frequency.setTargetAtTime(st.submersion > 0.75 ? 900 : 20000, t, 0.08);
+    // (an underwater world is muffled all the time; fully under, more so)
+    this.muffle.frequency.setTargetAtTime(st.submersion > 0.75 ? 900 : a.underwater ?? 20000, t, 0.08);
     // --- ambience: occasional bird calls in nature worlds ---
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {
@@ -323,6 +325,12 @@ export class AudioEngine {
     }
     this.musicTimer -= dt;
     if (this.musicTimer <= 0) { this.musicTimer = 6; this.setChord(++this.chord); }
+    // UNDERWATER: rolling burbles. A stream of bubbles off the ball as it rolls,
+    // faster and busier with speed (and in the air, a few trailing ones)
+    if (a.bubbleRoll && sp > 2) {
+      this.rollBubbleTimer -= dt * a.bubbleRoll * (contact ? 2 + sp / 4 : 0.6 + sp / 20);
+      if (this.rollBubbleTimer <= 0) { this.rollBubbleTimer = 0.1 + Math.random() * 0.35; this.bubble(Math.min(1, 0.4 + sp / 60)); }
+    }
     // water bubbles
     if (st.submersion > 0.1) {
       this.bubbleTimer -= dt * (0.5 + sp / 6);
@@ -338,7 +346,7 @@ export class AudioEngine {
       case 'AIRBORNE_END': if (e.intensity > 0.08) this.impact(e.intensity * 0.9, 0.85); break;
       case 'SURFACE_SEAM_CROSSING': {
         const now = this.ctx!.currentTime;
-        if (now - this.lastSeam > 0.025) { this.lastSeam = now; this.seam(e.intensity); }
+        if (now - this.lastSeam > (this.mat?.acoustic.seamStyle === 'skate' ? 0.09 : 0.025)) { this.lastSeam = now; this.seam(e.intensity, st.speed); }
         break;
       }
       case 'LIFT_CLACK': this.clack(); break;
@@ -488,11 +496,28 @@ export class AudioEngine {
     o.connect(og); this.send(og, 0.2); o.start(t); o.stop(t + 0.04);
   }
 
-  private seam(intensity: number) {
+  private seam(intensity: number, speed = 20) {
     if (!this.mat || this.mat.acoustic.seamGain <= 0) return;
     const c = this.ctx!;
     const a = this.mat.acoustic;
     const t = c.currentTime;
+    if (a.seamStyle === 'skate') {
+      // ka-CHUNK: a low thump as the front wheels drop over the joint, then the back
+      // wheels a wheelbase later (sooner the faster you go)
+      const gap = Math.max(0.035, Math.min(0.12, 0.8 / Math.max(1, speed)));
+      for (const [dt, amp] of [[0, 1], [gap, 0.8]] as const) {
+        const n = c.createBufferSource(); n.buffer = this.noise;
+        const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900 + Math.random() * 300; f.Q.value = 1.2;
+        const o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(140 + Math.random() * 30, t + dt); o.frequency.exponentialRampToValueAtTime(70, t + dt + 0.06);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t + dt); g.gain.exponentialRampToValueAtTime(a.seamGain * Math.min(1, intensity + 0.3) * 0.55 * amp, t + dt + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dt + 0.07);
+        n.connect(f).connect(g); o.connect(g);
+        this.send(g, 0.5);
+        n.start(t + dt, Math.random() * 2, 0.08); o.start(t + dt); o.stop(t + dt + 0.09);
+      }
+      return;
+    }
     const n = c.createBufferSource(); n.buffer = this.noise;
     const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = (a.rollBands[1]?.[0] ?? 400) * (1.6 + Math.random() * 0.4); f.Q.value = 3;
     const g = c.createGain();
@@ -539,13 +564,14 @@ export class AudioEngine {
     }
   }
 
-  private bubble() {
+  private bubble(loud = 1) {
     const c = this.ctx!;
     const t = c.currentTime;
     const o = c.createOscillator(); o.type = 'sine';
-    const f = 400 + Math.random() * 900;
-    o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.8, t + 0.05);
-    const g = c.createGain(); g.gain.setValueAtTime(0.04, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    const f = 300 + Math.random() * 1000;
+    // a bubble's "bloop": the pitch rises as it forms and pops
+    o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * (1.6 + Math.random() * 0.6), t + 0.05);
+    const g = c.createGain(); g.gain.setValueAtTime(0.045 * loud, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
     o.connect(g); this.send(g, 0.4);
     o.start(t); o.stop(t + 0.07);
   }

@@ -24,6 +24,12 @@ export interface AcousticProfile {
   impactModes: Array<[number, number]>; // [Hz, decay seconds]
   impactNoise: number;   // noise vs tone ratio in impacts 0..1
   seamGain: number;      // loudness of joint clicks
+  /** 'skate': each joint is a skateboard's ka-CHUNK (front wheels, then back). */
+  seamStyle?: 'click' | 'skate';
+  /** The rolling bubbles as you roll (an underwater world). */
+  bubbleRoll?: number;
+  /** Whole-world underwater muffling: low-pass corner (Hz). */
+  underwater?: number;
   reverb: number;        // base reverb send
 }
 
@@ -44,7 +50,9 @@ export interface VisualProfile {
   fog: number;
   fogDensity: number;
   ground: number;
-  scenery: 'forest' | 'city' | 'industrial' | 'glacier' | 'tropical' | 'canyon' | 'neon' | 'desert' | 'jungle' | 'temple' | 'alpine';
+  scenery: 'forest' | 'city' | 'industrial' | 'glacier' | 'tropical' | 'canyon' | 'neon' | 'desert' | 'jungle' | 'temple' | 'alpine' | 'reef';
+  /** The whole world is underwater (src/render/underwater.ts). */
+  underwater?: boolean;
   water?: number;        // water colour if medium is water
 }
 
@@ -86,13 +94,16 @@ export const MATERIALS: Record<string, MaterialProfile> = {
   concrete: {
     id: 'concrete', name: 'Concrete',
     muStatic: 0.75, muKinetic: 0.55, rollingResistance: 0.022, restitution: 0.25, restitutionThreshold: 1.0,
-    spinDamping: 0.9, compliance: 0.1, seamSpacing: 6, medium: 'none',
+    spinDamping: 0.9, compliance: 0.1, seamSpacing: 8, medium: 'none',
     acoustic: {
-      rollBands: [[70, 1.2, 1.0], [320, 1.0, 0.6], [2400, 0.8, 0.55], [5200, 1, 0.3]],
-      rumbleHz: 55, rollGain: 1.0, brightness: 0.7,
-      slideHz: 2600, slideQ: 0.6, slideGain: 0.8,
+      // SKATEBOARD ON CONCRETE: urethane wheels roaring on rough slab: a broad, warm
+      // low-mid roar with grit on top, no bright hiss; and the ka-CHUNK over every
+      // expansion joint. Slides are a powerslide's rasp.
+      rollBands: [[150, 0.9, 0.85], [420, 0.8, 1.0], [1050, 1.0, 0.5], [2600, 0.9, 0.32]],
+      rumbleHz: 95, rollGain: 1.1, brightness: 0.45,
+      slideHz: 1500, slideQ: 0.7, slideGain: 0.9,
       impactModes: [[140, 0.06], [620, 0.04], [1900, 0.02]], impactNoise: 0.75,
-      seamGain: 0.4, reverb: 0.3,
+      seamGain: 0.75, seamStyle: 'skate', reverb: 0.3,
     },
     haptic: { rollTexture: 0.75, seamPulse: 7, impactScale: 1.1 },
     visual: { surface: 'concrete', tint: 0xb4b1aa, roughness: 0.9, metalness: 0, sky: sky(8, 1.2, 15, 200), fog: 0xc8c6c0, fogDensity: 0.0038, ground: 0x6c6a64, scenery: 'city' },
@@ -135,10 +146,10 @@ export const MATERIALS: Record<string, MaterialProfile> = {
       rumbleHz: 50, rollGain: 0.5, brightness: 0.4,
       slideHz: 1800, slideQ: 0.8, slideGain: 0.4,
       impactModes: [[350, 0.08], [800, 0.05]], impactNoise: 0.9,
-      seamGain: 0.0, reverb: 0.25,
+      seamGain: 0.0, reverb: 0.25, bubbleRoll: 1, underwater: 2400,
     },
     haptic: { rollTexture: 0.3, seamPulse: 0, impactScale: 0.6 },
-    visual: { surface: 'aqueduct', tint: 0xd9cdb2, roughness: 0.7, metalness: 0, sky: sky(3, 1.8, 35, 140), fog: 0xa8d8e6, fogDensity: 0.0035, ground: 0x2f7a4a, scenery: 'tropical', water: 0x3fb7c9 },
+    visual: { surface: 'aqueduct', tint: 0xd9cdb2, roughness: 0.7, metalness: 0, sky: sky(3, 1.8, 35, 140), fog: 0x0f6a84, fogDensity: 0.0068, ground: 0xc8ae7c, scenery: 'reef', water: 0x3fb7c9, underwater: true },
   },
   glass: {
     id: 'glass', name: 'Glass',

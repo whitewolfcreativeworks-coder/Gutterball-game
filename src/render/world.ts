@@ -1,7 +1,7 @@
 import {
   AmbientLight, BufferAttribute, Color, ConeGeometry, CylinderGeometry, DirectionalLight, FogExp2, Group, HemisphereLight,
   IcosahedronGeometry, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PlaneGeometry, PMREMGenerator, Quaternion,
-  Scene, Vector3, WebGLRenderer, BoxGeometry, Texture, MathUtils, ShaderMaterial, BackSide, SphereGeometry,
+  Scene, Vector3, WebGLRenderer, BoxGeometry, Texture, MathUtils, ShaderMaterial, BackSide, SphereGeometry, DoubleSide,
 } from 'three';
 import { SkyDome, SKY_THEMES } from './sky';
 import type { Track } from '../track/track';
@@ -212,9 +212,13 @@ function scenerySettings(s: string) {
     case 'desert': case 'canyon': return { clearance: 40, mountain: 200, rise: 0.25, altColor: 0xb7784a };
     case 'tropical': case 'jungle': return { clearance: 22, mountain: 180, rise: 0.3, altColor: 0x356b33 };
     case 'neon': return { clearance: 40, mountain: 80, rise: 0.1, altColor: 0x101425 };
+    case 'reef': return { clearance: 28, mountain: 140, rise: 0.25, altColor: 0x9a8a5e };
     default: return { clearance: 35, mountain: 120, rise: 0.2, altColor: 0x5a5a5a };
   }
 }
+
+/** The sea floor's kelp sways with this clock (advanced by the game). */
+export const kelpTime = { value: 0 };
 
 function buildScenery(kind: string, gh: (x: number, z: number) => number, nearest: (x: number, z: number) => [number, number], b: number[], quality: 'low' | 'high') {
   const g = new Group();
@@ -283,6 +287,31 @@ function buildScenery(kind: string, gh: (x: number, z: number) => number, neares
       for (let i = 0; i < inst.count; i++) { inst.getMatrixAt(i, m4); m4.multiply(new Matrix4().makeTranslation(0, 22, 0)); strip.setMatrixAt(i, m4); }
       g.add(strip);
     }
+  } else if (kind === 'reef') {
+    // THE SEA FLOOR: kelp forests swaying up toward the light, and coral heads in
+    // every colour (a psychedelic aquarium, so they glow a little)
+    const kelpGeo = new BoxGeometry(0.5, 22, 0.12, 1, 8, 1); kelpGeo.translate(0, 11, 0);
+    const kelpMat = new MeshStandardMaterial({ color: 0x5f9a2c, roughness: 0.8, emissive: 0x16380a, side: DoubleSide });
+    kelpMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uKelpTime = kelpTime;
+      sh.vertexShader = 'uniform float uKelpTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        float sway = position.y / 22.0; float ph = instanceMatrix[3].x * 0.05 + instanceMatrix[3].z * 0.07;
+        transformed.x += sin(uKelpTime * 0.9 + ph + position.y * 0.15) * 2.2 * sway * sway;
+        transformed.z += cos(uKelpTime * 0.7 + ph) * 1.2 * sway * sway;`);
+    };
+    const kelp = new InstancedMesh(kelpGeo, kelpMat, quality === 'high' ? 2600 : 1200);
+    place(kelp, 9, 0.6, 1.6, 0, 0.6);
+    const coralGeo = new IcosahedronGeometry(2.2, 1);
+    const coral = new InstancedMesh(coralGeo, new MeshStandardMaterial({ roughness: 0.6, flatShading: true, emissive: 0x220a2a }), 900);
+    place(coral, 7, 0.5, 2.4, 0.2);
+    const palette = [0xff4f9a, 0xff9a3c, 0xffe14a, 0x6aff7a, 0x3cd9ff, 0xa45cff, 0xff5a5a];
+    const col = new Color();
+    for (let i = 0; i < coral.count; i++) coral.setColorAt(i, col.set(palette[i % palette.length]));
+    const fan = new InstancedMesh(new ConeGeometry(1.6, 4.5, 6, 1, true).translate(0, 2.2, 0), new MeshStandardMaterial({ roughness: 0.7, side: DoubleSide, emissive: 0x1a0820 }), 700);
+    place(fan, 7, 0.6, 1.8);
+    for (let i = 0; i < fan.count; i++) fan.setColorAt(i, col.set(palette[(i * 3) % palette.length]));
+    g.add(kelp, coral, fan);
+    g.userData.kelpTime = kelpTime;
   } else if (kind === 'desert' || kind === 'canyon') {
     const geo = new CylinderGeometry(6, 9, 40, 7);
     geo.translate(0, 18, 0);

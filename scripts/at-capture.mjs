@@ -23,6 +23,7 @@ for (const spec of (process.env.SHOTS ?? '').split(',').filter(Boolean)) {
     await p.evaluate(() => { const b = window.__gutterball.game.run.ball; b.v.addScaledVector(b.proj.R, 14).addScaledVector(b.proj.U, 9); });
   }
   await p.waitForFunction((w) => window.__gutterball?.game?.run?.time > w, { timeout: 900000, polling: 1000 }, Number(wait ?? 0.8));
+  if (process.env.HIDEUI) await p.evaluate(() => { for (const el of document.body.querySelectorAll('body > *:not(canvas)')) if (!el.querySelector('canvas')) el.style.visibility = 'hidden'; });
   await p.screenshot({ path: `screenshots/${name}.png` });
   console.log('shot', name);
   await p.close();
