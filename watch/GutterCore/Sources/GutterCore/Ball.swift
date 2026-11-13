@@ -47,6 +47,7 @@ public final class BallPhysics {
     public var events: [SensoryEvent] = []
 
     private var jumpCooldown = 0.0
+    private var ownFlight = false   // this flight came from your own jump: it stays light
     private var seamAcc = 0.0
     private var inTube = false
     private var netTime = 0.0
@@ -68,7 +69,7 @@ public final class BallPhysics {
         w = n.cross(v) / tune.radius
         proj.reset(s); proj.project(p)
         contact = true; airborne = false; sinceContact = 0; airborneTime = 0
-        netLift = false; netTime = 0
+        netLift = false; netTime = 0; ownFlight = false
     }
 
     // MARK: - collision field
@@ -98,10 +99,20 @@ public final class BallPhysics {
         var acc = Vec3(0, -tu.gravity, 0)
         // WEIGHT (as in the phone game): off the surface the ball gets heavier, more so
         // the faster and higher it goes, so it comes back down on its own
-        if !contact && !netLift && !magnetActive && sinceContact > 0.06 && pr.U.y > 0.25 && track.tubeAt(pr.s) < 0.5 && !track.isGap(pr.s) && !track.isGap(pr.s + 15) && !track.isGap(pr.s - 15) {
+        // (your own jump keeps a long, light arc so it carries to the far side)
+        let nearGap = track.isGap(pr.s) || track.isGap(pr.s + 15) || track.isGap(pr.s - 15) || track.isGap(pr.s + 30)
+        if !contact && !netLift && !magnetActive && sinceContact > 0.06 && pr.U.y > 0.25 && track.tubeAt(pr.s) < 0.5 && !nearGap {
             let sp = v.length
             let k = 2.0 * (0.45 + max(0, min(1, (sp - 12) / 30))) * (1 + 0.35 * max(0, min(4, pr.y - 1.5)))
-            acc -= pr.U * (tu.gravity * k * min(1, (sinceContact - 0.06) / 0.18))
+            acc -= pr.U * (tu.gravity * k * (ownFlight ? 0.15 * min(1, (sinceContact - 0.06) / 0.18) : 1))
+        }
+        // ...and heavy while it rolls: pressed into the floor at speed so it holds its line
+        // over crests, and hugged back down right after a pop it didn't jump for
+        let nU = n.dot(pr.U)
+        if !netLift && !magnetActive && !nearGap && nU > 0 && track.tubeAt(pr.s) < 0.5 && sinceContact < 0.5 && !(ownFlight && sinceContact >= 0.03) {
+            let fast = max(0, min(1, (v.length - 15) / 35))
+            let k = sinceContact < 0.03 ? 1.4 * fast : (sdfAndNormal().d - r < 0.7 ? 7 * (0.3 + 0.7 * fast) : 0)
+            acc -= n * (tu.gravity * k * nU)
         }
 
         // steering: along the surface when rolling, a gentler push in the air
@@ -137,6 +148,7 @@ public final class BallPhysics {
         if input.jump && jumpCooldown <= 0 && (contact || sinceContact < tu.coyoteTime) && !netLift {
             v += n * tu.jumpSpeed
             jumpCooldown = tu.jumpCooldown
+            ownFlight = true
             emit(.jump)
         }
 
@@ -160,7 +172,7 @@ public final class BallPhysics {
             if vn < 0 {
                 if -vn > impact { impact = -vn; impactObstacle = isNearObstacle() }
                 var e = magnetActive ? 0 : (-vn > tu.restitutionThreshold ? tu.restitution : 0)
-                if sinceContact > 0.08 { e *= 0.3 }   // a heavy ball lands with a thud
+                e *= sinceContact > 0.08 ? 0.3 : 0.35   // a heavy ball lands with a thud and doesn't skip on bumps
                 v -= nrm * ((1 + e) * vn)
                 friction(nrm, jn: -(1 + e) * vn * m)
             }
@@ -173,6 +185,7 @@ public final class BallPhysics {
             let sp = v.length
             if sp > 0.05 { v -= v * min(1, tu.rollingResistance * tu.gravity * dt / sp) }
             sinceContact = 0
+            if jumpCooldown < tu.jumpCooldown - 0.1 { ownFlight = false }
             // texture: a tick every few metres while rolling (the wood's joints)
             seamAcc += sp * dt
             if seamAcc > 4 { seamAcc = 0; emit(.seam(min(1, sp / 40))) }

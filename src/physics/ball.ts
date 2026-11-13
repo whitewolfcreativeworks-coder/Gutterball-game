@@ -50,6 +50,10 @@ export interface BallTuning {
   airDrag: number;          // k in a = -k|v|v
   airWeight: number;        // extra pull toward the floor when off the surface, in g at full speed (see WEIGHT)
   landBounce: number;       // share of the material's bounce kept when landing from the air (see WEIGHT)
+  groundWeight: number;     // extra press into the gutter floor while rolling, in g at speed (see WEIGHT)
+  rollBounce: number;       // share of the material's bounce kept on bumps while rolling (see WEIGHT)
+  hugWeight: number;        // pull back onto the floor just after a pop off a crest, in g (see WEIGHT)
+  jumpWeight: number;       // share of the air weight on a flight you launched yourself (see WEIGHT)
   jumpSpeed: number;
   jumpCooldown: number;
   coyoteTime: number;
@@ -92,6 +96,10 @@ export const DEFAULT_TUNING: BallTuning = {
   airDrag: 0.0006,
   airWeight: 2.0,
   landBounce: 0.3,
+  groundWeight: 1.4,
+  hugWeight: 7,
+  rollBounce: 0.35,
+  jumpWeight: 0.15,
   jumpSpeed: 8.6,
   jumpCooldown: 0.55,
   coyoteTime: 0.12,
@@ -187,6 +195,8 @@ export class BallPhysics {
   nudgeTimer = 0;
   sinceBrake = 99;
   airJumpsLeft = 0;
+  /** This flight was launched by the player's own jump (it keeps a long, light arc). */
+  ownFlight = false;
   private magnetRamp = 0;
   wasMagnetAirborne = false;
   // Medium
@@ -245,7 +255,7 @@ export class BallPhysics {
     // rolling without slipping: w = (n x v) / r
     this.w.copy(U).cross(this.v).multiplyScalar(1 / this.tune.radius);
     this.n.copy(U);
-    this.netLift = false; this.netTime = 0; this.recalling = false;
+    this.netLift = false; this.netTime = 0; this.recalling = false; this.ownFlight = false;
     this.proj.reset(s);
     this.proj.project(this.p.x, this.p.y, this.p.z);
     for (let i = 0; i < this.projs.length; i++) { if (i === this.activeIndex) continue; this.projs[i].relocate(this.p.x, this.p.y, this.p.z); this.projs[i].project(this.p.x, this.p.y, this.p.z); }
@@ -383,11 +393,36 @@ export class BallPhysics {
       let nearGap = false;
       for (let d = -30; d <= 30 && !nearGap; d += 6) if (this.track.isGap(pr.s + d)) nearGap = true;
       if (!inPipe && !nearGap && pr.U.y > 0.25) {
-        const ramp = Math.min(1, (this.sinceContact - tu.coyoteTime) / 0.18);
+        // a pop off a bump comes straight back down; your own jump eases in and
+        // stays light, so a long jump still carries to the far side
+        const ramp = this.ownFlight ? tu.jumpWeight * Math.min(1, (this.sinceContact - tu.coyoteTime) / 0.18) : 1;
         // heavier still the higher it gets above the floor: it never hangs up there
         const k = tu.airWeight * (0.45 + Math.max(0, Math.min(1, (sp - 18) / 45))) * (1 + 0.35 * Math.max(0, Math.min(4, pr.y - 1.5)));
         // toward the floor of the gutter below (on a banked track that's not quite straight down)
         acc.addScaledVector(pr.U, -tu.gravity * k * ramp);
+      }
+    }
+
+    // ...and while it rolls it's heavy too: pressed into the gutter floor, so it
+    // holds its line over bumps and crests at speed instead of skipping along
+    // (full on the floor, fading to nothing up a vertical wall, so wall rides
+    // still work; not in pipes, not on a kicker into a gap, not under the beam)
+    // A pop off a crest at speed (not your jump) is hugged straight back down
+    // while the floor is still right under it: the ball follows the hump
+    // instead of skipping off it. Higher than that it's in the air (WEIGHT above).
+    if (tu.groundWeight > 0 && !this.netLift && !this.magnetActive && this.sinceContact < 0.5 && !(this.ownFlight && this.sinceContact >= 0.03)) {
+      const nU = this.n.dot(pr.U);
+      if (nU > 0 && this.track.tubeAt(pr.s) <= 0.5) {
+        let nearGap = false;
+        for (let d = 0; d <= 36 && !nearGap; d += 6) if (this.track.isGap(pr.s + d)) nearGap = true;
+        if (!nearGap) {
+          const fast = Math.max(0, Math.min(1, (sp - 15) / 35));
+          let k = 0;
+          // (only at speed, where it skips: a slow roll keeps its natural pace)
+          if (this.sinceContact < 0.03) k = tu.groundWeight * fast;
+          else if (this.sdfAndNormal(sA8) - r < 0.7) k = tu.hugWeight * (0.3 + 0.7 * fast);
+          acc.addScaledVector(this.n, -tu.gravity * k * nU);
+        }
       }
     }
 
@@ -617,6 +652,7 @@ export class BallPhysics {
       this.sinceContact = tu.coyoteTime + 0.01;
       this.magnetSuppress = 0.22;
       this.airJumpsLeft = 1;
+      this.ownFlight = true;
       this.emit('JUMP', 1, jv);
     } else if (input.jump && !grounded && this.airJumpsLeft > 0 && this.jumpTimer <= tu.jumpCooldown - 0.12) {
       // Double jump: a second flick in the air pushes the ball higher (away from
@@ -665,7 +701,7 @@ export class BallPhysics {
         let e = this.magnetActive && src === 'track' ? 0 : -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0; // magnet: lands and sticks, no bounce
         // WEIGHT: a heavy ball coming down from the air lands with a thud, not a trampoline
         // bounce that throws it straight back up (obstacles still knock it about)
-        if (src === 'track' && this.sinceContact > 0.08) e *= tu.landBounce;
+        if (src === 'track') e *= this.sinceContact > 0.08 ? tu.landBounce : tu.rollBounce; // (bumps while rolling don't skip it either)
         const Jn = -(1 + e) * m * vn;
         this.v.addScaledVector(nn, Jn / m);
         normalImpulseTotal += Jn;
@@ -707,6 +743,7 @@ export class BallPhysics {
       }
       this.spinPrevN.copy(this.n); this.spinPrevValid = true;
       this.sinceContact = 0;
+      if (this.jumpTimer < tu.jumpCooldown - 0.1) this.ownFlight = false;
       // Rolling resistance (opposes tangential velocity, scales with normal load)
       this.rollingResistance(dt);
       // Spin damping about the normal (drilling friction)

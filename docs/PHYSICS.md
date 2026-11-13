@@ -304,3 +304,23 @@ Measured over all twelve worlds with a driver who never uses the beam in the air
 | Insane | 1.4 s → 1.1 s | 3.8 s → 2.4 s |
 
 The Apple Watch ball has the same weight.
+
+## Weight on the track, light on your own jumps (v16)
+
+Playtest on Neon Rebound (rubber): the air weight helped, but rolling still felt hoppy, and your own long jumps now fell short of the ramp or tube they were aimed at (ending up under the entry until the recall fetched the ball).
+
+- **Pressed into the floor at speed** (`groundWeight`, 1.4). While the ball rolls, an extra pull into the surface. It is zero below 54 km/h, so a slow roll keeps its pace (and Water's slow current still carries you home). It reaches the full amount at 180 km/h. It is scaled by how much the surface faces the gutter's "up", so it is full on the floor and nothing on a vertical wall, which keeps wall rides working.
+- **Hugged back down after a pop** (`hugWeight`, 7). When the ball leaves the floor without you jumping (off a crest at speed), and the floor is still within 0.7 m, a strong pull brings it straight back. The ball follows the hump instead of skipping off it. Higher than that, the air weight takes over.
+- **No skipping on bumps** (`rollBounce`, 0.35). While rolling, the ball keeps 35% of the material's bounce, so rubber's bounce is still felt on landings but doesn't chatter.
+- **Your own jumps stay light** (`jumpWeight`, 0.15). A flight you launched with the jump keeps only 15% of the air weight, so a long jump carries to the far side again. Pops you didn't ask for get the full air weight at once (no ease-in).
+- None of this is used in pipes, within 36 m before a designed gap (so kickers still launch), under the beam, or in the net.
+
+Measured with `tools/feel-lab.test.ts`: the pro pilot's steering with no beam and no jumps, over all twelve worlds. Hops are times the ball left the surface for more than 0.1 s, with designed gaps excluded.
+
+| Pace | Hops (before → after) | Seconds off the surface |
+|---|---|---|
+| Middle | 667 → 302 | 298 → 170 |
+| Rip | 740 → 342 | 333 → 186 |
+| Insane | 581 → 384 | 265 → 213 |
+
+On rubber at rip pace, hops went from 104 to 43 and time off the surface from 45 s to 19 s. `tools/gap-lab.test.ts` checks every designed gap at 14–60 m/s, hands off and with a jump at the lip; the results were unchanged by this.
