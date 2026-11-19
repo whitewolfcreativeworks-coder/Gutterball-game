@@ -37,6 +37,11 @@ export class AudioEngine {
   private roll?: { src: AudioBufferSourceNode; rumble: BiquadFilterNode; rumbleGain: GainNode; bands: BiquadFilterNode[]; bandGain: GainNode; tone: BiquadFilterNode; am: GainNode; amOsc: OscillatorNode; amDepth: GainNode; out: GainNode };
   private slide?: { src: AudioBufferSourceNode; filt: BiquadFilterNode; gain: GainNode; squeal: OscillatorNode; squealFilt: BiquadFilterNode; squealGain: GainNode };
   private wind?: { src: AudioBufferSourceNode; filt: BiquadFilterNode; gain: GainNode };
+  /** (v17) The beam-throttle's own voice: a soft rushing jet of air (bubbles under water). */
+  private jet?: { src: AudioBufferSourceNode; filt: BiquadFilterNode; gain: GainNode; sub: OscillatorNode; subGain: GainNode };
+  private jetLevel = 0;
+  private boostBubbleTimer = 0;
+  private tunnelBubbleTimer = 0;
   private hum?: { o1: OscillatorNode; o2: OscillatorNode; filt: BiquadFilterNode; gain: GainNode; lfo: OscillatorNode; lfoGain: GainNode };
   private ambience?: { src: AudioBufferSourceNode; filt: BiquadFilterNode; gain: GainNode };
   private music?: { gain: GainNode; voices: OscillatorNode[]; filt: BiquadFilterNode };
@@ -191,6 +196,19 @@ export class AudioEngine {
       o1.start(); o2.start(); lfo.start();
       this.hum = { o1, o2, filt, gain, lfo, lfoGain };
     }
+    // Boost jet: band-passed noise (a rush of air) over a soft sine swell, no buzz
+    {
+      const src = this.noiseSrc();
+      const filt = c.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 700; filt.Q.value = 0.9;
+      const gain = c.createGain(); gain.gain.value = 0;
+      src.connect(filt).connect(gain);
+      const sub = c.createOscillator(); sub.type = 'sine'; sub.frequency.value = 70;
+      const subGain = c.createGain(); subGain.gain.value = 0;
+      sub.connect(subGain);
+      this.send(gain, 0.35); this.send(subGain, 0.2);
+      src.start(); sub.start();
+      this.jet = { src, filt, gain, sub, subGain };
+    }
     // Ambience
     {
       const src = this.noiseSrc();
@@ -251,7 +269,7 @@ export class AudioEngine {
     stop(this.roll?.src); stop(this.roll?.amOsc);
     stop(this.slide?.src); stop(this.slide?.squeal);
     stop(this.wind?.src);
-    stop(this.hum?.o1); stop(this.hum?.o2); stop(this.hum?.lfo);
+    stop(this.hum?.o1); stop(this.hum?.o2); stop(this.hum?.lfo); stop(this.jet?.src); stop(this.jet?.sub); this.jet = undefined;
     stop(this.ambience?.src);
     this.music?.voices.forEach((v) => stop(v));
     this.roll = this.slide = this.wind = this.hum = this.ambience = this.music = undefined;
@@ -266,6 +284,7 @@ export class AudioEngine {
     this.slide?.squealGain.gain.setTargetAtTime(0, t, 0.05);
     this.wind?.gain.gain.setTargetAtTime(0, t, 0.1);
     this.hum?.gain.gain.setTargetAtTime(0, t, 0.05);
+    this.jet?.gain.gain.setTargetAtTime(0, t, 0.05); this.jet?.subGain.gain.setTargetAtTime(0, t, 0.05);
   }
 
   /** Drive continuous layers from the physics state; synthesise discrete events. */
@@ -308,10 +327,27 @@ export class AudioEngine {
     this.wind!.filt.frequency.setTargetAtTime(250 + sp * (tubeAir ? 48 : 35), t, 0.08);
     // --- magnet hum ---
     // magnet hum; when boosting on the track it becomes a rising thrust tone tied to speed
-    const mag = st.magnetActive ? (st.boosting ? 0.3 : 0.12 + 0.16 * st.magnetForce) : 0; // (v9) the throttle: you hear the gas
+    // (v17) on the track the beam is the throttle, and it no longer buzzes: the hum
+    // drops to a faint bed and the BOOST JET below carries it. In the air the hum
+    // is the tractor beam's voice, as before but a little softer.
+    const mag = st.magnetActive ? (st.boosting ? 0.03 : 0.09 + 0.12 * st.magnetForce) : 0;
     this.hum!.gain.gain.setTargetAtTime(mag, t, 0.04);
-    this.hum!.filt.frequency.setTargetAtTime(st.boosting ? 900 + sp * 45 : 350 + st.magnetForce * 1200, t, 0.05);
-    this.hum!.o1.frequency.setTargetAtTime(st.boosting ? 60 + sp * 2.2 : 52 + st.magnetForce * 14, t, 0.05);
+    this.hum!.filt.frequency.setTargetAtTime(st.boosting ? 260 : 350 + st.magnetForce * 1200, t, 0.05);
+    this.hum!.o1.frequency.setTargetAtTime(st.boosting ? 48 : 52 + st.magnetForce * 14, t, 0.05);
+    // --- boost jet: a rush of air that rises with speed (under water, a stream of bubbles) ---
+    const wantJet = st.boosting ? 1 : 0;
+    this.jetLevel += (wantJet - this.jetLevel) * Math.min(1, dt * (wantJet ? 6 : 3));
+    const bubbly = !!a.bubbleRoll;
+    const jl = this.jetLevel * (0.55 + 0.45 * sp01);
+    this.jet!.gain.gain.setTargetAtTime(jl * (bubbly ? 0.035 : 0.11), t, 0.05);
+    this.jet!.filt.frequency.setTargetAtTime(bubbly ? 380 + sp * 6 : 450 + sp * 22, t, 0.08);
+    this.jet!.subGain.gain.setTargetAtTime(jl * (bubbly ? 0.05 : 0.04), t, 0.08);
+    this.jet!.sub.frequency.setTargetAtTime(bubbly ? 55 + sp * 0.6 : 60 + sp * 1.1, t, 0.1);
+    if (bubbly && this.jetLevel > 0.1) {
+      // the beam churns the water: a fizzing stream of bubbles, busier with speed
+      this.boostBubbleTimer -= dt * this.jetLevel * (14 + sp * 0.6);
+      while (this.boostBubbleTimer <= 0) { this.boostBubbleTimer += 0.4 + Math.random() * 0.8; this.bubble(0.35 + 0.4 * Math.random()); }
+    }
     // --- acoustic space ---
     const wetT = a.reverb + (st.inTunnel ? 0.55 : 0);
     this.wet.gain.setTargetAtTime(wetT, t, 0.25);
@@ -330,6 +366,11 @@ export class AudioEngine {
     if (a.bubbleRoll && sp > 2) {
       this.rollBubbleTimer -= dt * a.bubbleRoll * (contact ? 2 + sp / 4 : 0.6 + sp / 20);
       if (this.rollBubbleTimer <= 0) { this.rollBubbleTimer = 0.1 + Math.random() * 0.35; this.bubble(Math.min(1, 0.4 + sp / 60)); }
+    }
+    // (v17) under water, a tube's current is a rush of bubbles streaming past you
+    if (a.bubbleRoll && st.inTunnel && sp > 4) {
+      this.tunnelBubbleTimer -= dt * (6 + sp * 0.5);
+      while (this.tunnelBubbleTimer <= 0) { this.tunnelBubbleTimer += 0.5 + Math.random() * 0.9; this.bubble(0.3 + 0.5 * Math.random()); }
     }
     // water bubbles
     if (st.submersion > 0.1) {
@@ -352,11 +393,18 @@ export class AudioEngine {
       case 'LIFT_CLACK': this.clack(); break;
       case 'TRIGGER_PAD': this.chime(1318.5, 0.16); setTimeout(() => this.chime(1975.5, 0.12), 70); break;
       case 'HOLO_BOOST': this.whoosh(0.9); this.sweep(300, 1400, 0.3, 0.12, 'triangle'); this.sweep(600, 2800, 0.22, 0.05, 'sine'); break;
-      case 'TURBO_ARMED': this.sweep(400, 1600, 0.35, 0.16, 'triangle'); this.sweep(800, 2400, 0.3, 0.1, 'sine'); break;
-      case 'TURBO_START': this.sweep(80, 1800, 0.6, 0.28, 'sawtooth'); this.sweep(50, 30, 0.6, 0.3, 'sine'); break;
+      case 'TURBO_ARMED': this.sweep(400, 1600, 0.35, 0.08, 'triangle'); this.sweep(800, 2400, 0.3, 0.05, 'sine'); break;
+      case 'TURBO_START':
+        // (v17) a soft surge, not a sawtooth blast; under water, a burst of bubbles
+        if (this.mat?.acoustic.bubbleRoll) { for (let i = 0; i < 10; i++) setTimeout(() => this.bubble(0.6 + 0.4 * Math.random()), i * 28); this.sweep(60, 140, 0.5, 0.08, 'sine'); }
+        else { this.whoosh(0.8); this.sweep(90, 420, 0.5, 0.07, 'triangle'); this.sweep(45, 70, 0.5, 0.1, 'sine'); }
+        break;
       case 'TURBO_END': this.sweep(900, 200, 0.4, 0.1, 'triangle'); break;
       case 'RECALL': this.sweep(80, 1600, 0.6, 0.18, 'sawtooth'); this.sweep(40, 160, 0.7, 0.2, 'sine'); break;
-      case 'MAGNET_ENGAGED': this.sweep(120, 900, 0.28, 0.2, 'sawtooth'); this.sweep(60, 240, 0.25, 0.16, 'sine'); break;
+      case 'MAGNET_ENGAGED':
+        if (this.mat?.acoustic.bubbleRoll) { for (let i = 0; i < 4; i++) setTimeout(() => this.bubble(0.5), i * 35); this.sweep(80, 200, 0.25, 0.06, 'sine'); }
+        else { this.sweep(120, 700, 0.24, 0.08, 'triangle'); this.sweep(60, 200, 0.25, 0.09, 'sine'); }
+        break;
       case 'MAGNET_RELEASED': this.sweep(520, 160, 0.12, 0.08, 'triangle'); break;
       case 'MAGNETIC_CAPTURE': this.sweep(1400, 260, 0.16, 0.18, 'square'); this.sweep(110, 40, 0.3, 0.24, 'sine'); break;
       case 'JUMP': this.sweep(260, 520, 0.1, 0.06, 'sine'); break;

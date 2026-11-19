@@ -50,8 +50,11 @@ export interface BallTuning {
   airDrag: number;          // k in a = -k|v|v
   airWeight: number;        // extra pull toward the floor when off the surface, in g at full speed (see WEIGHT)
   landBounce: number;       // share of the material's bounce kept when landing from the air (see WEIGHT)
+  crossWeight: number;      // extra gravity across the gutter while rolling, in g (see HEAVY BALL)
+  tiltMax: number;          // a full tilt leans that gravity over by this many degrees (see HEAVY BALL)
   groundWeight: number;     // extra press into the gutter floor while rolling, in g at speed (see WEIGHT)
   rollBounce: number;       // share of the material's bounce kept on bumps while rolling (see WEIGHT)
+  hugReach: number;         // ...while the floor is within this many metres (see WEIGHT)
   hugWeight: number;        // pull back onto the floor just after a pop off a crest, in g (see WEIGHT)
   jumpWeight: number;       // share of the air weight on a flight you launched yourself (see WEIGHT)
   jumpSpeed: number;
@@ -96,8 +99,11 @@ export const DEFAULT_TUNING: BallTuning = {
   airDrag: 0.0006,
   airWeight: 2.0,
   landBounce: 0.3,
+  crossWeight: 1.2,
+  tiltMax: 65,
   groundWeight: 1.4,
-  hugWeight: 7,
+  hugWeight: 10,
+  hugReach: 1.5,
   rollBounce: 0.35,
   jumpWeight: 0.15,
   jumpSpeed: 8.6,
@@ -168,6 +174,8 @@ export class BallPhysics {
   airborne = true;
   airborneTime = 0;
   normalAccel = 0;
+  /** The share of normalAccel that's the heavy-ball extra (rolling resistance ignores it). */
+  extraLoad = 0;
   slipSpeed = 0;
   private spinPrevN = new Vector3();
   private spinPrevValid = false;
@@ -420,11 +428,40 @@ export class BallPhysics {
           let k = 0;
           // (only at speed, where it skips: a slow roll keeps its natural pace)
           if (this.sinceContact < 0.03) k = tu.groundWeight * fast;
-          else if (this.sdfAndNormal(sA8) - r < 0.7) k = tu.hugWeight * (0.3 + 0.7 * fast);
+          else if (this.sdfAndNormal(sA8) - r < tu.hugReach) k = tu.hugWeight * (0.3 + 0.7 * fast);
           acc.addScaledVector(this.n, -tu.gravity * k * nU);
         }
       }
     }
+
+    // ---- HEAVY BALL: the gutter in your hands ----
+    // Gravity across the gutter (down the walls and into the floor) is heavier
+    // than gravity along it. Tilting a hand-held gutter rolls a heavy ball over
+    // and it sits up the wall; level it and the ball swings back to the middle
+    // and settles. Downhill speed (the along-track part) is untouched, so the
+    // courses keep their pace. Rolling only: in the air the WEIGHT rules apply.
+    let extraIn = 0;
+    let tiltG = 0; // the heavy cross-gravity here, for tilt steering (0 = not in an open gutter)
+    if (tu.crossWeight > 0 && this.sinceContact < 0.03 && !this.netLift && pr.U.y > 0.25 && this.track.tubeAt(pr.s) <= 0.5) {
+      let nearGap = false;
+      for (let d = 0; d <= 36 && !nearGap; d += 6) if (this.track.isGap(pr.s + d)) nearGap = true;
+      if (!nearGap) {
+        // gravity minus its along-track part, scaled up
+        const gT = -tu.gravity * pr.T.y;
+        // Full everywhere, except up a built-up wall (a vert ramp, the outside of
+        // a fast corner): those are made for riding high, so there it fades out
+        // as the wall steepens. (Not under water: buoyancy carries it there.)
+        const nU = this.n.dot(pr.U);
+        const myWall = this.track.wallsAt(pr.s)[pr.x > 0 ? 1 : 0];
+        const builtUp = myWall > this.track.profile.H + 1;
+        const k = tu.crossWeight * (builtUp ? Math.max(0, Math.min(1, (nU - 0.35) / 0.4)) : 1) * (this.submersion > 0.05 ? 0 : 1);
+        const gx = -pr.T.x * gT, gy = -tu.gravity - pr.T.y * gT, gz = -pr.T.z * gT;
+        acc.x += gx * k; acc.y += gy * k; acc.z += gz * k;
+        extraIn = -(gx * this.n.x + gy * this.n.y + gz * this.n.z) * k;
+        tiltG = Math.hypot(gx, gy, gz) * (1 + k);
+      }
+    }
+    this.extraLoad += (Math.max(0, extraIn) - this.extraLoad) * Math.min(1, dt * 30);
 
     // Medium: water (buoyancy, drag toward flow)
     this.updateMedium(acc, dt);
@@ -461,11 +498,22 @@ export class BallPhysics {
       const wallness = Math.max(tubeHere, Math.min(1, Math.max(0, (Math.abs(pr.x) - flA * 0.45) / (flA * 0.55 + this.track.profile.rc * 0.5))));
       const ease = wallness * wallness * (3 - 2 * wallness);
       // smooth the steering input low down (slower response), crisp up high
-      this.steerSmooth += (input.steer - this.steerSmooth) * Math.min(1, dt * (5 + 20 * ease));
+      // (tilting the gutter needs no smoothing: the heavy ball's own inertia is the smoothing)
+      this.steerSmooth += (input.steer - this.steerSmooth) * Math.min(1, dt * (tiltG > 0 ? 14 : 5 + 20 * ease));
       const steerIn = this.steerSmooth;
       const latFade = Math.max(0, Math.min(1, 1 - (Math.sign(steerIn) * vlat - latCap) / 5));
-      const st = steerIn * tu.steerAccel * speedK * latFade * (0.6 + 0.4 * ease);
-      acc.addScaledVector(Rt, st * tu.steerDirectFrac);
+      let st = steerIn * tu.steerAccel * speedK * latFade * (0.6 + 0.4 * ease);
+      if (tiltG > 0) {
+        // TILT = TILTING THE GUTTER: a full tilt leans the heavy gravity over by
+        // tiltMax, sideways (level, not along the wall). The ball rolls over and
+        // sits up the wall where its slope matches your tilt; level the phone and
+        // it swings back down to the middle. At speed the lean grows a little so
+        // you can still place it through fast sections.
+        const lean = Math.sin(tu.tiltMax * Math.PI / 180) * (1 + 0.5 * Math.max(0, Math.min(1, (sp - 20) / 40)));
+        const side = sA3.copy(pr.R).addScaledVector(pr.T, -pr.R.dot(pr.T)).normalize();
+        acc.addScaledVector(side, steerIn * tiltG * lean);
+        st = 0; // (no gyro push: friction spins it up, as a rolling ball does)
+      } else acc.addScaledVector(Rt, st * tu.steerDirectFrac);
       // Grip assist: sideways sliding settles quickly when you ease off the
       // tilt, so the ball goes where you point it instead of wandering.
       // (only on the flat floor: on a wall, sideways motion IS the ride up the corner and must keep its energy)
@@ -698,7 +746,7 @@ export class BallPhysics {
       const vn = this.v.dot(nn) - vob * pr.R.dot(nn);
       if (vn < 0) {
         if (-vn > impactSpeed) { impactSpeed = -vn; impactSource = src; }
-        let e = this.magnetActive && src === 'track' ? 0 : -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution, 0.35) : mat.restitution) : 0; // magnet: lands and sticks, no bounce
+        let e = this.magnetActive && src === 'track' ? 0 : -vn > mat.restitutionThreshold ? (src === 'obstacle' ? Math.max(mat.restitution * 0.6, 0.2) : mat.restitution) : 0; // magnet: lands and sticks, no bounce
         // WEIGHT: a heavy ball coming down from the air lands with a thud, not a trampoline
         // bounce that throws it straight back up (obstacles still knock it about)
         if (src === 'track') e *= this.sinceContact > 0.08 ? tu.landBounce : tu.rollBounce; // (bumps while rolling don't skip it either)
@@ -720,7 +768,7 @@ export class BallPhysics {
       this.proj.project(this.p.x, this.p.y, this.p.z);
     }
 
-    this.containBall();
+    this.containBall(dt);
 
     // Resting contact within a small skin still counts as touching (for audio & rolling)
     if (!touched) {
@@ -927,7 +975,8 @@ export class BallPhysics {
     const vt = tmpB.copy(this.v).addScaledVector(this.n, -this.v.dot(this.n));
     const spd = vt.length();
     if (spd < 1e-4) return;
-    const N = Math.max(this.normalAccel, 0);
+    // (the heavy-ball extra presses for grip, not for drag: slow rolls keep their pace)
+    const N = Math.max(this.normalAccel - this.extraLoad, Math.min(this.normalAccel, 0.3 * this.tune.gravity), 0);
     const dv = Math.min(spd, (crr * N + viscous * spd) * dt);
     this.v.addScaledVector(vt, -dv / spd);
     // keep spin consistent with the slowed rolling
@@ -1200,7 +1249,10 @@ export class BallPhysics {
    * so you can roll from one into the other.
    */
   static readonly LID = { over: 1.6 };
-  private containBall() {
+  /** What the lid/sides did this step (diagnostics: 'lid', 'side', or ''). */
+  contained = '';
+  private containBall(dt: number) {
+    this.contained = '';
     if (this.netLift || this.recalling) return;
     const tr = this.track, pr = this.proj;
     if (Math.abs(pr.along) > 3 || pr.s < 0 || pr.s > tr.length) return;
@@ -1214,25 +1266,63 @@ export class BallPhysics {
     const r = this.tune.radius;
     const prof = tr.profileAt(pr.s), W = prof.a + prof.rc;
     const [wl, wr] = tr.wallsAt(pr.s);
-    const top = Math.max(wl, wr, prof.H);
-    const cap = tr.isTunnel(pr.s) ? prof.H - r - 0.02 : top + BallPhysics.LID.over;
-    let moved = false;
-    // the lid
-    if (pr.y > cap) {
-      this.p.addScaledVector(pr.U, cap - pr.y);
-      const vu = this.v.dot(pr.U);
-      // (it knocks the ball back down, rather than letting it skate along up there)
-      if (vu > -2) this.v.addScaledVector(pr.U, -vu - 2 - 0.3 * Math.max(0, vu));
-      moved = true;
+    let top = Math.max(wl, wr, prof.H);
+    // (v17) where a built-up wall ends (a vert ramp tapering back down), the lid
+    // comes down no faster than the ball can: it follows the highest wall of the
+    // last stretch you covered, so it never shoves the ball down out of the air.
+    // Coming out of a pipe (it may be riding the roof) the lid stays off until
+    // it's back down; over a designed gap jump the lid sits high, so the jump
+    // keeps the arc it was built for.
+    let lidOver: number = BallPhysics.LID.over;
+    if (pr.y > prof.H) {
+      const look = Math.min(90, 10 + this.v.length() * 0.7);
+      for (let d = 4; d <= look; d += 4) {
+        const [a1, b1] = tr.wallsAt(pr.s - d); top = Math.max(top, a1, b1);
+        if (tr.tubeAt(pr.s - d) > 0.3) return;
+      }
+      for (let d = -24; d <= 60; d += 6) if (tr.isGap(pr.s + d)) { lidOver = 6; break; }
     }
-    // the sides (above the fillet, the walls run straight up to the lid)
+    const cap = tr.isTunnel(pr.s) ? prof.H - r - 0.02 : top + lidOver;
+    let moved = false;
+    // THE LID (v17: soft). From the wall top up to the cap it pushes down like a
+    // firm spring (stronger the further in, and it soaks up the upward speed),
+    // so the ball turns over smoothly instead of hitting a ceiling. The cap
+    // itself (and a tunnel roof) is still a hard stop, rarely reached now.
+    const vu = this.v.dot(pr.U);
+    // (the zone deepens for a ball racing up a tall wall, so even that is eased
+    // to a stop over the last few metres instead of hitting the cap)
+    const soft = tr.isTunnel(pr.s) ? 0 : Math.max(lidOver, Math.min(12, vu > 0 ? (vu * vu) / 160 : 0));
+    if (soft > 0 && pr.y > cap - soft) {
+      const depth = pr.y - (cap - soft);
+      const a = this.tune.gravity * 10 * depth + 8 * Math.max(0, vu);
+      this.v.addScaledVector(pr.U, -a * dt);
+      this.contained = 'lid';
+    }
+    const hard = cap;
+    if (pr.y > hard) {
+      this.p.addScaledVector(pr.U, hard - pr.y);
+      const vu2 = this.v.dot(pr.U);
+      if (vu2 > 0) this.v.addScaledVector(pr.U, -vu2);
+      moved = true; this.contained = 'lid';
+    }
+    // THE SIDES (above the fillet, the walls run straight up to the lid). Soft
+    // the same way: an inward spring past the wall line, a hard stop 0.8 m out.
     const xMax = W - r;
-    if (pr.y > prof.rc * 0.5 && Math.abs(pr.x) > xMax) {
+    // (only out past the wall line, above that side's wall top: a ball riding the
+    // wall itself is held by the wall, not pulled off it)
+    const sideTop = pr.x > 0 ? wr : wl;
+    if (pr.y > Math.max(prof.rc * 0.5, sideTop) && Math.abs(pr.x) > xMax) {
       const sgn = Math.sign(pr.x);
-      this.p.addScaledVector(pr.R, sgn * xMax - pr.x);
-      const vx = this.v.dot(pr.R);
-      if (vx * sgn > 0) this.v.addScaledVector(pr.R, -vx);
-      moved = true;
+      const depth = Math.abs(pr.x) - xMax;
+      const vx = this.v.dot(pr.R) * sgn;
+      this.v.addScaledVector(pr.R, -sgn * (this.tune.gravity * 14 * depth + 8 * Math.max(0, vx)) * dt);
+      if (Math.abs(pr.x) > xMax + 0.8) {
+        this.p.addScaledVector(pr.R, sgn * (xMax + 0.8) - pr.x);
+        const vx2 = this.v.dot(pr.R);
+        if (vx2 * sgn > 0) this.v.addScaledVector(pr.R, -vx2);
+        moved = true;
+      }
+      this.contained = 'side';
     }
     if (moved) this.proj.project(this.p.x, this.p.y, this.p.z);
   }

@@ -164,7 +164,7 @@ export class ProPilot {
         // rolls along the wall over the pad instead of launching off it
         const yT = pd.y * Math.max(0.3, Math.min(1, 1 - (ds - 8) / Math.max(20, speed * 1.2)));
         const vUp = ball.v.dot(pr.U);
-        climb = pd.side * Math.max(-1, Math.min(1, 0.45 + 0.55 * (yT - pr.y) - 0.3 * vUp));
+        climb = pd.side * Math.max(-1, Math.min(1, 0.9 + 1.2 * (yT - pr.y) - 0.2 * vUp)); // (v17: the heavy ball needs a firmer tilt to sit high)
         this.padK = pk;
         break;
       }

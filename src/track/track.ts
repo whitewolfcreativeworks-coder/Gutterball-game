@@ -296,7 +296,7 @@ export class Track {
       const first = this.obstacles[g[0]].s, last = this.obstacles[g[g.length - 1]].s;
       const hash = Math.abs(Math.sin((first + 1) * 12.9898) * 43758.5453) % 1;
       const side: 1 | -1 = (gi + (hash > 0.5 ? 1 : 0)) % 2 === 0 ? 1 : -1;
-      const y = p.rc + 0.6 + hash * 0.9;  // (always fits under a standard wall top)
+      const y = p.rc - 0.1 + hash * 0.6;  // (v17: low on the wall, where a firm tilt sits the heavy ball; always fits under a standard wall top)
       const len = 5, tall = 2.2;
       const ok = (c: number) => {
         if (c < 15 || c - len < prevEnd + 10) return false;

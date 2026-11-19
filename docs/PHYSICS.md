@@ -324,3 +324,35 @@ Measured with `tools/feel-lab.test.ts`: the pro pilot's steering with no beam an
 | Insane | 581 → 384 | 265 → 213 |
 
 On rubber at rip pace, hops went from 104 to 43 and time off the surface from 45 s to 19 s. `tools/gap-lab.test.ts` checks every designed gap at 14–60 m/s, hands off and with a jump at the lip; the results were unchanged by this.
+
+## The gutter in your hands (v17)
+
+Playtest: "It should feel like holding a gutter with a heavy ball in it. Tilt it left and the ball rolls left because it has weight." The ball was still jumpy, and steering felt like a push rather than a tilt.
+
+- **Heavier across the gutter** (`crossWeight`, 1.2). While the ball rolls in an open gutter, gravity across the gutter is 2.2 g: down the walls and into the floor. Gravity along the gutter (downhill) is unchanged, so every course keeps its pace.
+  - It fades out only up a built-up wall (vert ramps, the outside of fast corners), which are made for riding high.
+  - It's off in pipes, upside down, within 36 m of a designed gap, and under water (buoyancy rules there).
+  - Rolling resistance ignores the extra load (`extraLoad`), so slow rolls don't drag. The extra load still adds grip.
+- **Tilt leans that gravity** (`tiltMax`, 65°). A full tilt leans the heavy gravity sideways (level, not along the wall). The ball rolls over and settles up the wall where the wall's slope matches your tilt. Level the phone and it swings back down. At speed the lean grows by up to 1.5× so fast sections can still be placed.
+  - The old push-and-spin steering is kept for pipes, loops and upside-down track.
+  - The input smoothing on the floor is gone: the ball's own inertia is the smoothing now.
+- **Crest hug** reaches further (`hugReach` 1.5 m, `hugWeight` 10 g).
+- **Obstacles** keep 60% of the material's bounce (at least 0.2), down from at least 0.35: a heavy ball knocks, it doesn't ping.
+- **The soft lid.** The lid used to be a hard ceiling that knocked the ball down at once, and it caused most of the glitches:
+  - It snapped the ball 2–3 m down when a pipe opened under a ball riding the pipe's roof.
+  - It did the same at the end of every vert ramp, where the wall tapers faster than a ball can fall.
+  - A ball racing up a tall wall at 160 km/h stopped dead.
+
+  Now:
+  - From the wall top to the cap a firm spring eases the ball back down. The zone deepens for a ball rising fast.
+  - The cap follows the highest wall of the stretch just covered.
+  - The lid stays off just after a pipe.
+  - Over designed gaps it sits 6 m up, so jumps keep their arcs.
+  - The side limits are springs too, applied only out past the wall line above that wall's top.
+- **Trigger pads** sit lower, where the curve meets the vertical wall, so a firm tilt reaches them.
+
+Measured:
+
+- **Tilt lab** (`tools/tilt-lab.test.ts`): a 1.2 s full tilt on a plain open stretch, then let go. On wood at 30 m/s the ball went 3.6–5.5 m up the wall before and 4.0 m now. Hops during the manoeuvre went from about 2 per run to 0–1.
+- **Glitch lab** (`tools/glitch-lab.test.ts`): flags any frame where the ball snaps position (> 0.8 m beyond its velocity) or changes velocity by more than 6 m/s with no impact, jump, boost or beam to explain it. Over all twelve worlds at two paces, flags went from 585 to 62. The rest are mostly the steel grating's designed rattle and 400–500 km/h insane-pace runs.
+- **Feel lab**: hops at middle, rip and insane pace went from 302, 342 and 384 (v16) to 264, 310 and 358. The gap lab results are unchanged.

@@ -116,7 +116,19 @@ public final class BallPhysics {
         }
 
         // steering: along the surface when rolling, a gentler push in the air
-        if contact {
+        // HEAVY BALL (as in the phone game): rolling in an open gutter, gravity across
+        // the gutter is 2.2x, and a tilt leans that gravity over (up to 65 degrees), like
+        // tilting a gutter in your hands: the ball rolls over and sits up the wall, then
+        // swings back to the middle when you level it. Downhill pace is unchanged.
+        let openGutter = contact && !netLift && pr.U.y > 0.25 && track.tubeAt(pr.s) <= 0.5
+        if openGutter {
+            let g = Vec3(0, -tu.gravity, 0)
+            let gc = g - pr.T * g.dot(pr.T)
+            acc += gc * 1.2
+            let side = (pr.R - pr.T * pr.R.dot(pr.T)).normalized
+            let lean = sin(65 * Double.pi / 180) * (1 + 0.5 * max(0, min(1, (v.length - 20) / 40)))
+            acc += side * (input.steer * gc.length * 2.2 * lean)
+        } else if contact {
             let rt = (pr.R - n * pr.R.dot(n)).normalized
             acc += rt * (input.steer * tu.steerAccel)
         } else {
@@ -179,7 +191,7 @@ public final class BallPhysics {
             touched = true
             n = nrm
         }
-        containBall()
+        containBall(dt)
         if touched {
             // rolling resistance
             let sp = v.length
@@ -325,14 +337,25 @@ public final class BallPhysics {
     /// THE LID (as in the phone game): the ball can rise at most about a ball's height
     /// above the walls, and never past them sideways (pipes hold you anyway).
     public static let lidOver = 1.6
-    private func containBall() {
+    private func containBall(_ dt: Double) {
         if netLift { return }
         proj.project(p)
         let tr = track, pr = proj
         if abs(pr.along) > 3 || pr.s < 0 || pr.s > tr.length || tr.tubeAt(pr.s) > 0.5 { return }
+        // just out of a pipe (maybe riding its roof): no lid until it's back down
+        var d = 4.0
+        while d <= 60 { if tr.tubeAt(pr.s - d) > 0.3 { return }; d += 4 }
         let prof = tr.profile, W = prof.halfWidth
         let cap = prof.H + BallPhysics.lidOver
         var moved = false
+        // soft lid: from the wall top up to the cap a firm spring eases the ball back down
+        // (deeper for a ball racing upward), so it turns over instead of hitting a ceiling
+        let vu0 = v.dot(pr.U)
+        let soft = max(BallPhysics.lidOver, min(12, vu0 > 0 ? vu0 * vu0 / 160 : 0))
+        if pr.y > cap - soft {
+            let depth = pr.y - (cap - soft)
+            v -= pr.U * ((tune.gravity * 10 * depth + 8 * max(0, vu0)) * dt)
+        }
         if pr.y > cap {
             p += pr.U * (cap - pr.y)
             let vu = v.dot(pr.U)

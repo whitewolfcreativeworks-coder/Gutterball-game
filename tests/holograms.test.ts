@@ -20,7 +20,7 @@ describe('trigger pads and hologram obstacles', () => {
         expect(p.obs.length).toBeGreaterThan(0);
         const firstOb = Math.min(...p.obs.map((o) => t.obstacles[o].s));
         expect(firstOb - p.s).toBeGreaterThanOrEqual(20);
-        expect(p.y).toBeGreaterThan(t.profile.rc); // high on the vertical part of the wall
+        expect(p.y).toBeGreaterThan(t.profile.rc - 0.15); // (v17) where the curve meets the vertical wall: a firm tilt reaches it
       }
     }
   });

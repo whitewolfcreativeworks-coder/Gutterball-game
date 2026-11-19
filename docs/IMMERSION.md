@@ -211,3 +211,12 @@ Everything follows the camera, so it costs the same anywhere on the course.
 ## Concrete sounds like a skateboard (v15)
 
 Storm Drain's rolling is now urethane wheels on rough slab: a broad, warm low-mid roar with some grit on top and no bright hiss. Every expansion joint (8 m apart) is a skateboard's ka-CHUNK, front wheels then back wheels a wheelbase later (sooner the faster you go). Slides are a powerslide's rasp.
+
+
+## The beam's throttle is a rush of air, not a buzz (v17)
+
+Playtest: the turbo sound from holding the beam on the track was too loud and harsh.
+
+- On the track, the beam's hum (a sawtooth and a square wave) drops to a faint bed. A new **boost jet** carries the sound: band-passed noise, a rush of air rising with speed, over a soft sine swell. It sits at about a third of the old level.
+- Turbo start and beam engage are now soft surges (a whoosh, a triangle sweep and a sine) instead of sawtooth blasts.
+- **On Water** the throttle is a fizzing stream of bubbles, and turbo start is a burst of bubbles. Riding through a tube under water, its current is a rush of bubbles streaming past.
