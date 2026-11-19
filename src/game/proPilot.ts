@@ -21,6 +21,8 @@ const PP_TMP = new Vector3();
 
 export class ProPilot {
   private lastTargetX = 0;
+  /** (v18) The tilt actually sent: eased, like a rider's hands, so the line is smooth. */
+  private steerOut = 0;
   private pushT = 0;
   private airT = 0;
   private padK = -1;
@@ -45,7 +47,7 @@ export class ProPilot {
   /** A copy with the same plan (for the look-ahead). */
   clone(): ProPilot {
     const c = new ProPilot();
-    c.lastTargetX = this.lastTargetX; c.pushT = this.pushT; c.airT = this.airT; c.padK = this.padK; c.brakeT = this.brakeT;
+    c.lastTargetX = this.lastTargetX; c.steerOut = this.steerOut; c.pushT = this.pushT; c.airT = this.airT; c.padK = this.padK; c.brakeT = this.brakeT;
     c.trick = this.trick; c.trickHold = this.trickHold;
     c.lastP.copy(this.lastP); c.lastTrack = this.lastTrack; c.cautiousTo = this.cautiousTo; c.pace = this.pace; c.insane = this.insane;
     return c;
@@ -96,7 +98,8 @@ export class ProPilot {
       if (!tr.openSky[tr.idx(q)]) continue;
       const i0 = tr.idx(q - 6), i1 = tr.idx(q + 6);
       const kappa = Math.hypot(tr.T[i1 * 3] - tr.T[i0 * 3], tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1], tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]) / 12;
-      if (kappa > 0.008) v = Math.min(v, Math.sqrt((30 + 60 * this.pace) / kappa) + d * 0.08);
+      // (v18: the heavy ball holds the gutter much better, so it can carry far more speed)
+      if (kappa > 0.008) v = Math.min(v, Math.sqrt((70 + 70 * this.pace) / kappa) + d * 0.08);
     }
     return v;
   }
@@ -115,7 +118,8 @@ export class ProPilot {
     const careful = ball.activeIndex === this.lastTrack && s < this.cautiousTo;
 
     // ---- the line: dodge solid blocks, aim through holograms ----
-    const look = Math.min(55, speed * 1.7);
+    // (v18: the heavy ball takes longer to move across, so it looks further ahead to pick its line)
+    const look = Math.min(140, 12 + speed * 1.4);
     const blocked = (x: number) => {
       for (let oi = 0; oi < tr.obstacles.length; oi++) {
         if (tr.ghost[oi]) continue;
@@ -156,7 +160,7 @@ export class ProPilot {
       for (let pk = 0; pk < tr.pads.length; pk++) {
         if (tr.padHit[pk]) continue;
         const pd = tr.pads[pk], ds = pd.s - s;
-        if (ds < -pd.len || ds > Math.max(45, speed * 1.9)) continue;
+        if (ds < -pd.len || ds > Math.max(60, speed * 2.4)) continue; // (v18: start the climb earlier, the heavy ball takes longer to get up there)
         // nothing solid in the way up the wall
         if (blocked(pd.side * (W - 1.5)) >= 0 && blocked(pd.side * (W - 1.5)) < ds) continue;
         // ride smoothly up the wall: a target height that rises as the pad nears, held with
@@ -222,8 +226,9 @@ export class ProPilot {
     let brake = 0;
     // (only where too much speed would throw it off the course: an open-sky edge or a gap ahead,
     // never before loops and climbs, which need every bit of speed)
-    if (!this.insane && this.pace <= 0.6 && ball.contact && this.brakeT <= 0 && speed > this.flyOffSpeed(ball, Math.max(80, speed * 2.5)) + 9) {
-      brake = 0.7; this.brakeT = 0.45; this.say('BRAKE', 0.6);
+    // (v18: one scrub at a time, never braking a run down to a crawl)
+    if (!this.insane && this.pace <= 0.6 && ball.contact && this.brakeT <= 0 && ball.brakeLeft <= 0 && speed > 30 && speed > this.flyOffSpeed(ball, Math.max(80, speed * 2.5)) + 12) {
+      brake = 0.7; this.brakeT = 1.2; this.say('BRAKE', 0.6);
     }
     if (ball.contact && climb === 0 && !magnet && this.pace >= 0.15) {
       if (ball.turboArmed && turboOk) { push = 1; this.say('TURBO', 1.4); }
@@ -261,9 +266,21 @@ export class ProPilot {
         const turnR = (tr.T[i1 * 3] - tr.T[i0 * 3]) * pr.R.x + (tr.T[i1 * 3 + 1] - tr.T[i0 * 3 + 1]) * pr.R.y + (tr.T[i1 * 3 + 2] - tr.T[i0 * 3 + 2]) * pr.R.z;
         if (Math.abs(turnR) > 0.06) { targetX = -Math.sign(turnR) * W * 0.4 * Math.min(1, Math.abs(turnR) / 0.2) * this.pace; if (!this.trick) this.say('CARVE', 0.4); }
       }
-      steer = Math.max(-1, Math.min(1, (targetX - pr.x) * 0.55 - vLat * (gapAhead ? 0.7 : 0.35)));
+      // (v18) the heavy ball answers a tilt with real force, so the gains ease off
+      // with speed and the damping leads: a smooth carve, not a twitch
+      const kP = 0.55 / (1 + Math.max(0, speed - 25) / 45);
+      steer = Math.max(-1, Math.min(1, (targetX - pr.x) * kP - vLat * (gapAhead ? 0.7 : 0.45)));
     }
     this.lastTargetX = targetX;
+    // A rider's hands: the tilt eases toward what's wanted (quick, but never a
+    // flick back and forth); a pad climb or a dodge still gets there in ~0.2 s.
+    {
+      const rate = 6 * dt;
+      if (climb !== 0) this.steerOut = steer; // (a pad climb is one firm lean, already smooth)
+      else this.steerOut += Math.max(-rate, Math.min(rate, steer - this.steerOut));
+      if (Math.abs(this.steerOut) < 0.04 && Math.abs(steer) < 0.04) this.steerOut = 0;
+      steer = this.steerOut;
+    }
     return { steer, jump, magnet: brake ? false : magnet, driveLevel: 2, push: brake ? 0 : push, brake };
   }
 }

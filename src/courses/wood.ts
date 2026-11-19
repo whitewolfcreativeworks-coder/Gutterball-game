@@ -44,8 +44,9 @@ export const WOOD_COURSE: CourseLayout = {
     { len: 14, pitch: 9, label: 'kicker', fx: { flow: -1 } },
     { len: 9, pitch: -8, gap: true, label: 'gap1' },
     { len: 30, pitch: -10, label: 'landing1', fx: { flow: -1 } },
-    { len: 75, yaw: 45, bank: 25, pitch: -7, tunnel: true, label: 'bridge', fx: { flow: -2 } },
-    { len: 75, yaw: -45, bank: -25, pitch: -7, tunnel: true },
+    // (v18: a longer, better-banked S through the bridge, carried at speed)
+    { len: 95, yaw: 40, bank: 35, pitch: -7, tunnel: true, label: 'bridge', fx: { flow: -2 } },
+    { len: 95, yaw: -40, bank: -35, pitch: -7, tunnel: true },
     { len: 25, bank: 0, pitch: -6, tunnel: true },
     { len: 70, pitch: -34, label: 'steepDrop', fx: { flow: -2 } },
     { len: 32, pitch: -5 },
@@ -96,16 +97,18 @@ export const WOOD_COURSE: CourseLayout = {
     { len: 26, bank: 0, pitch: -8, tube: true },
     { len: 150, yaw: -95, bank: -12, pitch: -8, label: 'millSweep2', fx: { twist: -0.8, flow: -0.5 } },
     { len: 20, bank: 0, pitch: -7 },
-    { len: 16, pitch: -26, label: 'flume', fx: { flow: -1 } }, { len: 18, pitch: -3, fx: { pulse: 1 } },
-    { len: 16, pitch: -26, fx: { flow: -1 } }, { len: 18, pitch: -3, fx: { pulse: 1 } },
-    { len: 16, pitch: -26, fx: { flow: -1 } }, { len: 18, pitch: -3, fx: { pulse: 1 } },
+    // (v18: rounded flume steps: drop, shelf, drop, without the launch-and-slam)
+    { len: 22, pitch: -19, label: 'flume', fx: { flow: -1 } }, { len: 18, pitch: -6, fx: { pulse: 1 } },
+    { len: 22, pitch: -19, fx: { flow: -1 } }, { len: 18, pitch: -6, fx: { pulse: 1 } },
+    { len: 22, pitch: -19, fx: { flow: -1 } }, { len: 18, pitch: -6, fx: { pulse: 1 } },
     { len: 90, pitch: -7, label: 'logs', fx: { flow: 1 } },
     // SKATE WALL: the outside wall shoots up; ride it as high as your speed takes you
     ...vertWall(1).map((g, i) => (i === 0 ? { ...g, label: 'woodVert' } : g)),
     { len: 380, yaw: 360, bank: 50, pitch: -10, tube: true, label: 'funnel', fx: { twist: 1.8, flow: -1.2 } }, // one long smooth spiral
     { len: 30, bank: 0, pitch: -8, tube: true },
-    { len: 80, yaw: -40, bank: -20, pitch: -7, tunnel: true, label: 'shed', fx: { flow: -2 } },
-    { len: 80, yaw: 40, bank: 20, pitch: -7, tunnel: true, fx: { flow: -2 } },
+    // (v18: out of the funnel at full tilt, so the shed is a long, banked S)
+    { len: 115, yaw: -28, bank: -32, pitch: -7, tunnel: true, label: 'shed', fx: { flow: -2 } },
+    { len: 115, yaw: 28, bank: 32, pitch: -7, tunnel: true, fx: { flow: -2 } },
     { len: 20, bank: 0, pitch: -7, tunnel: true },
     // THE BIG ONE: a chain lift, the crest, and a stomach-dropping plunge
     { len: 26, pitch: 26, lift: 20, label: 'bigLift', fx: { pulse: 0.5 } },

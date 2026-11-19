@@ -140,7 +140,7 @@ export const MATERIALS: Record<string, MaterialProfile> = {
     id: 'water', name: 'Water',
     muStatic: 0.4, muKinetic: 0.3, rollingResistance: 0.01, restitution: 0.15, restitutionThreshold: 1.5,
     spinDamping: 1.5, compliance: 0.6, seamSpacing: 0, medium: 'water',
-    mediumParams: { depth: 1.35, flow: 14, drag: 1.4, buoyancy: 0.28 },
+    mediumParams: { depth: 1.35, flow: 24, drag: 1.1, buoyancy: 0.28 }, // (v18: a fast river that carries you: ~86 km/h current)
     acoustic: {
       rollBands: [[300, 0.8, 0.6], [900, 1, 0.5], [2600, 1.2, 0.35]],
       rumbleHz: 50, rollGain: 0.5, brightness: 0.4,
@@ -198,7 +198,7 @@ export const MATERIALS: Record<string, MaterialProfile> = {
     id: 'mud', name: 'Mud',
     muStatic: 0.9, muKinetic: 0.5, rollingResistance: 0.06, restitution: 0.03, restitutionThreshold: 2.5,
     spinDamping: 2.0, compliance: 0.95, seamSpacing: 0, medium: 'mud',
-    mediumParams: { viscous: 0.35, gripVariation: 0.55 },
+    mediumParams: { viscous: 0.22, gripVariation: 0.55 }, // (v18: thick, but you can still rip it)
     acoustic: {
       rollBands: [[110, 1.5, 0.9], [380, 2, 0.6]],
       rumbleHz: 50, rollGain: 0.7, brightness: 0.2,

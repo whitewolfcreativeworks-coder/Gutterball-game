@@ -48,8 +48,10 @@ const sign = (at: string, route: string, dir: number) => ({ at, s: -30, text: di
 // stepped spillways; splits in threes (the Menger cross).
 // ---------------------------------------------------------------------------
 function concrete(): CourseLayout {
-  const step = (): Seg[] => [{ len: 16, pitch: -30 }, { len: 14, pitch: -2, fx: { pulse: 1 } }];
-  const box = (dir: number, pitch = -6): Seg[] => [{ len: 95, yaw: 90 * dir, bank: 10 * dir, pitch, fx: { twist: dir } }, { len: 26, bank: 0, pitch }];
+  // (v18) rounded steps and banked box corners: still square-ish storm-drain
+  // architecture, but carried at speed they flow instead of launch and slam
+  const step = (): Seg[] => [{ len: 22, pitch: -20 }, { len: 16, pitch: -6, fx: { pulse: 1 } }];
+  const box = (dir: number, pitch = -6): Seg[] => [{ len: 130, yaw: 90 * dir, bank: 30 * dir, pitch, fx: { twist: dir } }, { len: 26, bank: 0, pitch }];
   const legs = 34, mid = 50;
   const segs: Seg[] = [
     ...START(),
@@ -161,13 +163,13 @@ function ice(): CourseLayout {
   const legs = 40;
   const segs: Seg[] = [
     ...START(),
-    ...L(labyrinth(5, 28, 42, 30, -6), 'labyrinth'),
+    ...L(labyrinth(5, 20, 56, 36, -6), 'labyrinth'),              // (v18: wider S-curves you can carry speed through)
     ...turn(120, 100, 65, -7), ...turn(120, -100, 65, -7),
     ...L([{ len: 60, yaw: 45, bank: 30, pitch: -7 }, { len: 230, yaw: -270, bank: -72, pitch: -8, fx: { twist: -2 } }, { len: 60, yaw: 45, bank: 30, pitch: -7 }, { len: 24, bank: 0, pitch: -7 }], 'omega'),
     // FROST BRANCH: a 60-degree dendrite needle leaves and rejoins
     ...L(run(armSpan(legs, 60), -7, { fx: { flow: -1 } }), 'dendrite'),
     ...L(corkscrew(100, -12, 25, { tube: true }), 'iceCave'), ...run(30, -7, { tube: true }),
-    ...L(labyrinth(6, 40, 40, 40, -8, -1, { tube: true }), 'labyrinth2'),
+    ...L(labyrinth(6, 30, 56, 40, -8, -1, { tube: true }), 'labyrinth2'),
     ...L(kreisel(330, 230, 78, -8), 'kreisel'),
     ...L(run(armSpan(34, 40), -8, { fx: { flow: -1 } }), 'fan'),
     ...run(40, -3),
@@ -176,7 +178,7 @@ function ice(): CourseLayout {
     ...L(vortex(1.75, 36, 18, 60, -9, 1, { tube: true }), 'iceFunnel'),
     ...run(30, -7),
     ...L(hops(5, 24, 4, -7), 'seracs'), ...L(funnelBowl(1), 'iceBowl'),
-    ...L(labyrinth(5, 34, 40, 34, -8), 'labyrinth3'),
+    ...L(labyrinth(5, 24, 56, 38, -8), 'labyrinth3'),
     ...L([{ len: 60, yaw: -45, bank: -30, pitch: -7 }, { len: 230, yaw: 270, bank: 72, pitch: -8, fx: { twist: 2 } }, { len: 60, yaw: -45, bank: -30, pitch: -7 }, { len: 24, bank: 0, pitch: -7 }], 'omega2'),
     ...L(sweeper(140, 80, -7), 'moraine'), ...sweeper(140, -80, -7),
     ...L(tubeRun(200, -35, -7), 'blueTunnel'),
@@ -209,16 +211,16 @@ function water(): CourseLayout {
   const segs: Seg[] = [
     ...START(),
     ...L(run(60, -3, { fx: { flow: 2 } }), 'source'),
-    ...L(meander(5, 55, 85), 'meanders'),
+    ...L(meander(5, 40, 100), 'meanders'),                        // (v18: wider bends, carried by a faster river)
     ...L(hops(6, 26, 4, -7), 'rapids'),
     ...L(run(armSpan(legs, 90), -6, { fx: { flow: 2 } }), 'braids'),
     ...run(30, -6),
     ...L(helix(1, 34, 35, -9, 1, { tube: true }), 'flume'),
-    ...L(meander(3, 70, 100), 'oxbow'),
+    ...L(meander(3, 55, 115), 'oxbow'),
     ...L(drop(45, -40, -4), 'waterfall'),
     ...L(run(80, -3, { fx: { flow: 1 } }), 'basin'),
     // ACT II — DELTA & CAVES: second rapids, the flume pretzel, the cave, the falls
-    ...L(meander(4, 50, 80), 'delta'),
+    ...L(meander(4, 38, 95), 'delta'),
     ...L(hops(7, 24, 5, -7), 'rapids2'),
     ...L(pretzel(32, 40, -8, { tube: true }), 'flumes'),
     ...L(tubeRun(220, 45, -6), 'cave'),
@@ -333,7 +335,8 @@ function sand(): CourseLayout {
   const legs = 34;
   // (v8) dunes flow: a long glide down each face, no up-and-over hump
   const dune = (): Seg[] => [{ len: 50, pitch: -5, fx: { flow: 0.6 } }, { len: 30, pitch: -12, fx: { flow: -2 } }, { len: 20, pitch: -7 }];
-  const girih = (dirs: number[]): Seg[] => dirs.flatMap((d) => [{ len: 22, yaw: 36 * d, bank: 18 * d, pitch: -8 }, { len: 18, bank: 0, pitch: -8 }]);
+  // (v18: the 36-degree kinks are rounded into short banked arcs you can rip through)
+  const girih = (dirs: number[]): Seg[] => dirs.flatMap((d) => [{ len: 36, yaw: 36 * d, bank: 28 * d, pitch: -8 }, { len: 16, bank: 0, pitch: -8 }]);
   const segs: Seg[] = [
     ...START(),
     ...L(drop(50, -30, -6), 'slipFace'),
@@ -344,7 +347,7 @@ function sand(): CourseLayout {
     ...L(drop(70, -32, -8), 'greatFace'),
     ...L(run(armSpan(legs, 50), -8, { fx: { pulse: 1 } }), 'courtyard'),
     ...run(30, -8),
-    ...L(jump(30, 13, 10), 'horns'),
+    ...L(skimGap(10), 'horns'),                                     // (v18: a skim, not a launch: the old kicker's 40 m gap was too far to clear at a chill pace on sand)
     ...L(drop(60, -30, -5), 'lastFace'),
     // ACT II — SANDSTORM CANYON: slot canyon, sweepers, the second star, the last dunes
     ...L(tubeRun(220, -40, -8), 'slotCanyon'),
@@ -361,7 +364,7 @@ function sand(): CourseLayout {
     id: 'sand', name: 'Dune Run', checkpointEvery: 220, segments: segs,
     obstacles: [...field('oasis', 'posts', 4, 16, 24), { at: 'scour', s: 100, x: 0, ls: 2.1, w: 3.6, h: 1.7, move: { amp: 2.6, period: 3.4 } }, { at: 'scour', s: 40, x: -3.4, ls: 2, w: 5, h: 1.7 }, { at: 'scour', s: 75, x: 3.4, ls: 2, w: 5, h: 1.7 }],
     hints: [firstHint, H('slotCanyon', 0, 'Act II: the slot canyon'), H('canyonBend', 0, 'Ride the high wall'), H('dunes2', 0, 'Dune sea'), H('duneBMX', 0, 'Dune BMX: pump and jump'), H('duneWall', 0, 'Dune wall: ride it up'), H('minaret', 0, 'Minaret'), H('stepwell', 0, 'Stepwell'), H('dunes', 0, 'Dunes: keep your momentum'), H('ruins', 0, 'Ruins: 36-degree kinks'), H('greatFace', 0, 'The great slip face'),
-      H('courtyard', -10, 'STAR COURTYARD: three exits'), H('horns', -8, 'Dune horns: JUMP')],
+      H('courtyard', -10, 'STAR COURTYARD: three exits'), H('horns', -8, 'Dune horns: skim the gap')],
     signs: [sign('courtyard', 'Oasis Road', -1)],
     branches: [route('routeOasis', 'Oasis Road', 'courtyard', [
       ...peel(-1, -8),
@@ -384,18 +387,18 @@ function mud(): CourseLayout {
     ...L(run(80, -10, { fx: { flow: -0.5 } }), 'trench'),
     ...L(run(armSpan(legs, mid), -11), 'fork1'),
     ...L(drop(30, -40, -10), 'sinkhole'),
-    ...L([{ len: 26, pitch: -16 }, { len: 26, pitch: 8, fx: { pulse: 1 } }, { len: 20, pitch: -10 }], 'sump'),
+    ...L([{ len: 30, pitch: -15 }, { len: 26, pitch: -3, fx: { pulse: 1 } }, { len: 20, pitch: -10 }], 'sump'),   // (v18: a dip, not a pit you climb out of)
     ...L(run(160, -16, { tube: true, fx: { flow: -2 } }), 'mudslide'),
     ...L(run(armSpan(legs, mid), -12), 'delta1'),
     ...L(run(armSpan(legs, mid), -12), 'delta2'),
     ...L(run(armSpan(legs, mid), -12), 'delta3'),
-    ...L([{ len: 30, pitch: -26 }, { len: 14, pitch: -4 }, { len: 30, pitch: -26 }, { len: 20, pitch: -8 }], 'doubleDip'),
+    ...L([{ len: 36, pitch: -22 }, { len: 18, pitch: -8 }, { len: 36, pitch: -22 }, { len: 20, pitch: -9 }], 'doubleDip'),
     // ACT II — LANDSLIDE: terraced paddies, the sinkhole funnel, the long slide
     ...L(dirtSection(1), 'motocross'), ...L(terraces(5, 16, -30, 18), 'paddies'),
     ...L(pipeCorner(140, 90, -10), 'gully'), ...pipeCorner(140, -90, -10),
     ...L(funnelBowl(1), 'sinkFunnel'),
     ...L(run(130, -12), 'boulders'),
-    ...L([{ len: 26, pitch: -16 }, { len: 26, pitch: 8, fx: { pulse: 1 } }, { len: 20, pitch: -10 }], 'sump2'),
+    ...L([{ len: 30, pitch: -15 }, { len: 26, pitch: -3, fx: { pulse: 1 } }, { len: 20, pitch: -10 }], 'sump2'),
     ...L(tubeRun(220, 40, -12), 'burrow'),
     ...liftHill(60, -60, 0, { label: 'ridge' }), ...L(run(200, -16, { tube: true, fx: { flow: -2 } }), 'landslide'),
     ...FINISH(),
@@ -475,7 +478,7 @@ function grating(): CourseLayout {
     ...START(),
     ...L(tubeRun(200, 30, -6), 'rhythm'),
     ...L(hairpin(1, 230, 12, -6), 'hairpin1'), ...run(40, -6),
-    ...L([{ len: 18, pitch: -28 }, { len: 14, pitch: -3 }, { len: 18, pitch: -28 }, { len: 18, pitch: -5 }], 'mouseDrops'),
+    ...L([{ len: 22, pitch: -22 }, { len: 16, pitch: -6 }, { len: 22, pitch: -22 }, { len: 18, pitch: -6 }], 'mouseDrops'),
     ...L([...hairpin(-1, 230), ...run(30, -7), ...hairpin(1, 230)], 'chain'),
     ...run(30, -7),
     ...L(helix(1, 26, 30, -12, -1, { tube: true }), 'stair'),

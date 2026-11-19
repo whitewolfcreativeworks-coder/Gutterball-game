@@ -194,7 +194,7 @@ export const pipeCorner = (len: number, yaw: number, pitch: number): Seg[] => [
 ];
 
 /** Wave turn: a high-banked sweeping turn you can ride up the wall (v8: no climb-and-drop, just the sweep). */
-export const wave = (dir: number, len = 80, bank = 70): Seg[] => [
+export const wave = (dir: number, len = 120, bank = 70): Seg[] => [ // (v18: a wider sweep, 80 m before: carried at speed it slammed the wall)
   { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: -6, fx: { twist: dir, pulse: 0.8 } },
   { len: len * 0.5, yaw: 45 * dir, bank: bank * dir, pitch: -9, fx: { flow: -1.5 } },
   { len: 26, bank: 0, pitch: -6 },
@@ -208,10 +208,15 @@ export const pretzel = (radius: number, bank: number, pitch: number, extra: Part
   { len: 30, bank: 0, pitch, ...(extra.tube ? { tube: true } : {}) },
 ];
 
-/** Terraces: a staircase of short steep drops and flats. */
+/**
+ * Terraces: a staircase of drops and flats. (v18: rounded steps. A sheer drop
+ * onto a flat launched the ball off every lip and slammed it into every floor
+ * at speed; now each step is a longer, gentler face onto a still-falling shelf,
+ * so it flows down the stair like water. About the same height overall.)
+ */
 export const terraces = (n: number, dropLen = 16, dropPitch = -28, flat = 18): Seg[] => {
   const out: Seg[] = [];
-  for (let i = 0; i < n; i++) out.push({ len: dropLen, pitch: dropPitch, fx: { flow: -1 } }, { len: flat, pitch: -3, fx: { pulse: 1 } });
+  for (let i = 0; i < n; i++) out.push({ len: Math.round(dropLen * 1.5), pitch: Math.round(dropPitch * 0.62), fx: { flow: -1 } }, { len: flat, pitch: -7, fx: { pulse: 1 } });
   return out;
 };
 

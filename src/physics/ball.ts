@@ -1270,20 +1270,35 @@ export class BallPhysics {
     // (v17) where a built-up wall ends (a vert ramp tapering back down), the lid
     // comes down no faster than the ball can: it follows the highest wall of the
     // last stretch you covered, so it never shoves the ball down out of the air.
-    // Coming out of a pipe (it may be riding the roof) the lid stays off until
-    // it's back down; over a designed gap jump the lid sits high, so the jump
-    // keeps the arc it was built for.
+    // Coming out of a pipe (it may be riding the roof as the pipe opens) there's
+    // no ceiling to hit: a gentle pull guides it back down into the gutter
+    // instead (v18; switching the lid off let a roof-rider sail out over the
+    // wall). Over a designed gap jump the lid sits high, so the jump keeps the
+    // arc it was built for.
     let lidOver: number = BallPhysics.LID.over;
+    let afterTube = false;
     if (pr.y > prof.H) {
       const look = Math.min(90, 10 + this.v.length() * 0.7);
       for (let d = 4; d <= look; d += 4) {
         const [a1, b1] = tr.wallsAt(pr.s - d); top = Math.max(top, a1, b1);
-        if (tr.tubeAt(pr.s - d) > 0.3) return;
+        if (tr.tubeAt(pr.s - d) > 0.3) afterTube = true;
       }
       for (let d = -24; d <= 60; d += 6) if (tr.isGap(pr.s + d)) { lidOver = 6; break; }
     }
     const cap = tr.isTunnel(pr.s) ? prof.H - r - 0.02 : top + lidOver;
     let moved = false;
+    if (afterTube) {
+      // back toward the gutter: down toward the wall top and in toward the middle,
+      // firm enough to land it within half a second or so, never a snap
+      // (only a ball up above the walls: one riding a wall is left to ride it)
+      if (pr.y <= top) return;
+      const up = pr.y - top, vu0 = this.v.dot(pr.U);
+      if (up > 0) this.v.addScaledVector(pr.U, -(this.tune.gravity * 2.2 * Math.min(up, 6) + 3 * Math.max(0, vu0)) * dt);
+      const out = Math.abs(pr.x) - (W - r - 1.5), vx0 = this.v.dot(pr.R) * Math.sign(pr.x);
+      if (out > 0) this.v.addScaledVector(pr.R, -Math.sign(pr.x) * (this.tune.gravity * 3 * Math.min(out, 3) + 4 * Math.max(0, vx0)) * dt);
+      this.contained = 'guide';
+      return;
+    }
     // THE LID (v17: soft). From the wall top up to the cap it pushes down like a
     // firm spring (stronger the further in, and it soaks up the upward speed),
     // so the ball turns over smoothly instead of hitting a ceiling. The cap

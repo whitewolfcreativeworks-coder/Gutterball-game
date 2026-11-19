@@ -356,3 +356,55 @@ Measured:
 - **Tilt lab** (`tools/tilt-lab.test.ts`): a 1.2 s full tilt on a plain open stretch, then let go. On wood at 30 m/s the ball went 3.6–5.5 m up the wall before and 4.0 m now. Hops during the manoeuvre went from about 2 per run to 0–1.
 - **Glitch lab** (`tools/glitch-lab.test.ts`): flags any frame where the ball snaps position (> 0.8 m beyond its velocity) or changes velocity by more than 6 m/s with no impact, jump, boost or beam to explain it. Over all twelve worlds at two paces, flags went from 585 to 62. The rest are mostly the steel grating's designed rattle and 400–500 km/h insane-pace runs.
 - **Feel lab**: hops at middle, rip and insane pace went from 302, 342 and 384 (v16) to 264, 310 and 358. The gap lab results are unchanged.
+
+## The flow pass: every course on AUTO (v18)
+
+Playtest: "Watch it on auto on chill and you can see parts that aren't fun: you lose momentum. Move the bar up to insane and other parts stick out, where you jitter back and forth. It's not a BMX course. It's a smooth, fast, clean ride, like a luge."
+
+**Method.** New tools ride every world on AUTO at chill, middle, rip and insane, the way the player watches it:
+- `tools/flow-lab.test.ts`: scores every labelled section for speed lost, steering reversals per second, hard hits on the track, air time, brakes and time spent crawling.
+- `tools/sink-lab.test.ts` (with `sinks`-style analysis): finds where the speed line drops and which layout segments are under it.
+- `tools/trace.test.ts`: a frame-by-frame log of one stretch.
+
+**What was breaking the flow, and the fixes.**
+
+1. **The autopilot's hands.**
+   - At rip and insane its steering flipped left/right up to 50 times a second in places. With the heavy ball, every flip is a real shove, and that was the jittery line. Its tilt now eases toward what it wants (a rider's hands, about 0.17 s to full lock), and the gains fall off with speed. Pad climbs stay crisp.
+   - It looks further ahead for obstacles: up to 140 m instead of 55 m, because the heavy ball takes longer to move across.
+2. **The autopilot's brake.**
+   - On chill it stacked swipe-back brakes until the ball crawled. Rubber's mitosis went from 340 to 45 km/h, and Sheet Metal's twins from 406 to 53 km/h.
+   - It now brakes once at a time, only above 108 km/h, and only well over the real fly-off speed. The heavy ball holds the gutter far better, so that speed is higher now.
+3. **Course shapes** (net heading kept, so everything downstream just shifts):
+   - **Concrete:** box corners are 130 m with 30° bank (were 95 m with 10°). Spillway steps are rounded.
+   - **Wood:** the covered bridge and the drying shed are longer, better-banked S-curves. The flume steps are rounded.
+   - **Ice:** the three labyrinths have wider, longer S-curves.
+   - **Water:** wider meanders, oxbow and delta. The river runs at about 86 km/h, up from 50 (`flow` 14 → 24, `drag` 1.4 → 1.1).
+   - **Mud:** the two sumps are dips, not pits you climb out of. The double dip is rounded. Mud is less gloopy (`viscous` 0.35 → 0.22).
+   - **Sand:** the girih ruins' 36° kinks are banked arcs. The horns jump is a skim (its kicker made a 40 m gap, too far at a chill pace on sand).
+   - **Steel grating:** the mouse drops are rounded.
+   - **Everywhere:** terraces (stairs) are longer, gentler faces onto still-falling shelves. Wave turns sweep wider.
+4. **The recall beam fired inside pipes.** Riding the roof of a spiral tube for more than 2.5 s counted as "off the course", and the beam yanked the ball out. It accounted for every lost ball on Rubber's spin bowl, Stone's spiral stair and Wood's funnel. Anywhere inside a closed pipe is now in the course.
+5. **Coming out of a pipe** above the walls, a gentle pull guides the ball back down and in. Before, there was either a snap (v16) or no ceiling at all (v17 for a moment).
+
+**Results** (AUTO, all twelve worlds, four paces):
+
+| | Before | After |
+|---|---|---|
+| Lost balls | 8 | 1 (wood insane, at 450+ km/h in the Treetop tube) |
+| Total time over all 48 runs | 4059 s | 3847 s |
+| Missed designed jumps (gap lab) | 13 | 4 |
+| Glitch flags | 62 | 48 |
+
+Chill lap times:
+
+| World | Before | After |
+|---|---|---|
+| Mud | 226 s | 136 s |
+| Ice | 107 s | 85 s |
+| Water | 228 s | 200 s |
+| Concrete | 123 s | 108 s |
+| Wood | 145 s | 134 s |
+
+Typical chill speed on Water went from 54 to 79 km/h, and on Mud from 42 to 66 km/h.
+
+**Left as designed.** Lift hills (a deliberate slow climb), obstacle fields (the autopilot still clips the odd block), and insane-pace slams in loops and corkscrews at 600–900 km/h.

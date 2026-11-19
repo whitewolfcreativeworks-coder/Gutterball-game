@@ -159,6 +159,9 @@ export class Run {
     let inChannel = false; // ...and not just above it: high in the air over a gutter is still out of it
     for (let k = 0; k < b.tracks.length && !inChannel; k++) {
       const p = b.projs[k], tk = b.tracks[k];
+      // (v18) inside a closed pipe anywhere round it, roof included, is in the course:
+      // riding the roof of a spiral tube used to set off the recall beam
+      if (Math.abs(p.along) < 3 && tk.tubeAt(p.s) > 0.5 && Math.abs(p.x) < tk.halfWidthAt(p.s) + 1 && p.y > -1 && p.y < tk.profile.H * 2.2) { insideAny = true; inChannel = true; break; }
       if (Math.abs(p.along) < 3 && tk.channelDepthLocal(p.s, p.x, p.y) > -0.3) {
         insideAny = true;
         const [wl, wr] = tk.wallsAt(p.s);
