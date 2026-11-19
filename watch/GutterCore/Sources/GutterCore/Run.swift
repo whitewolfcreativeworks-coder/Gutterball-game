@@ -94,7 +94,10 @@ public final class Run {
         let netted = b.netLift || (tr.netAt(pr.s) && abs(pr.x) < Net.half + 3 && pr.y > -Net.depth - 3 && abs(pr.along) < 3)
         if netted { underTimer = 0; stuckTimer = 0; offTimer = 0; return }
         // out of the gutter (high above it counts too) for more than a moment: back in, a little slower
-        let inChannel = tr.channelDepthLocal(pr.s, pr.x, pr.y) > -0.3 && abs(pr.along) < 3 && (pr.y < tr.profile.H + 5 || tr.tubeAt(pr.s) > 0.5)
+        // (inside a closed pipe, roof included, is in the course: riding a tube's roof
+        // used to set off the recall)
+        let inTube = tr.tubeAt(pr.s) > 0.5 && abs(pr.along) < 3 && abs(pr.x) < tr.profile.halfWidth + 1 && pr.y > -1 && pr.y < tr.profile.H * 2.2
+        let inChannel = inTube || (tr.channelDepthLocal(pr.s, pr.x, pr.y) > -0.3 && abs(pr.along) < 3 && pr.y < tr.profile.H + 5)
         offTimer = inChannel ? 0 : offTimer + fixedDt
         if offTimer > Run.recallAfter { fail(keep: 0.75); return }
         let inside = tr.channelDepthLocal(pr.s, pr.x, pr.y) > -0.3
